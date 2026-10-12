@@ -12,7 +12,9 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a2` (alpha — Docker runtime verification required before calling a deploy “fully validated”).
+**Version:** `0.2.0a3` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
+
+Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Local Docker may still be unavailable in some agent VMs. Passing CI does **not** mean Shannon/Briar egress is fully contained.
 
 ## Quick install (MCP profile)
 
@@ -59,11 +61,13 @@ python -m core.cli scope-check --target https://staging.example.com --category a
 ## Docker
 
 ```bash
-docker compose build
-docker compose run --rm orchestrator
+bash scripts/docker_runtime_verify.sh   # config, build orchestrator+briar, doctor, host smoke
 ```
 
-Install Docker yourself: https://docs.docker.com/get-docker/
+CI job: `Docker build and runtime` (see `.github/workflows/ci.yml`).  
+Install Docker yourself if needed: https://docs.docker.com/get-docker/
+
+**Architecture note:** the orchestrator container does **not** mount the Docker socket. Shannon workers are launched from a host/environment that has Docker, not from inside the orchestrator image.
 
 ## Documentation
 

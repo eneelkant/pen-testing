@@ -17,8 +17,9 @@ else
 fi
 
 echo "== dry-run shannon/briar without executing scans =="
-python3 -m core.cli run --tool shannon --target "https://127.0.0.1:9" --repo "$ROOT" --dry-run --skip-scope-check >/dev/null
-python3 -m core.cli run --tool briar --target "https://127.0.0.1:9" --mode quick --dry-run --skip-scope-check >/dev/null
+# Fixture-only skip requires an explicit env gate (see CLI --skip-scope-check).
+PEN_ALLOW_SKIP_SCOPE=1 python3 -m core.cli run --tool shannon --target "https://127.0.0.1:9" --repo "$ROOT" --dry-run --skip-scope-check >/dev/null
+PEN_ALLOW_SKIP_SCOPE=1 python3 -m core.cli run --tool briar --target "https://127.0.0.1:9" --mode quick --dry-run --skip-scope-check >/dev/null
 echo "OK: dry-runs completed"
 
 echo "== daily report stub =="

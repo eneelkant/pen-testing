@@ -52,6 +52,9 @@ services:
     volumes:
       - pen_reports:/work/reports
       - pen_workspaces:/work/workspaces
+    read_only: true
+    tmpfs:
+      - /tmp
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -60,6 +63,7 @@ services:
     cpus: 2.0
     # Network left default so authorized remote targets can be reached when explicitly run.
     # Prefer host-level firewall / scope registry controls before launching.
+    # No Docker socket is mounted (Shannon/Briar workers cannot control the host daemon).
     command: ["--help"]
 
   # Intentionally vulnerable local fixture for safe integration tests (no external targets).

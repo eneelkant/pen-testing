@@ -43,26 +43,32 @@ def normalize_generic_finding(
 ) -> Finding:
     """Build a sanitized normalized Finding from generic scanner output."""
     finding = Finding(
-        title=title,
+        title=redact_secrets(title) if isinstance(title, str) else title,
         category=category,
         source_tool=source_tool,
         source_tool_version=source_tool_version,
-        asset=asset,
+        asset=redact_secrets(asset) if isinstance(asset, str) else asset,
         program=program,
         severity=severity.lower(),
         evidence_sanitized=redact_secrets(evidence or {}),
-        reproduction_steps=reproduction_steps or [],
-        remediation=remediation or [],
-        references=references or [],
+        reproduction_steps=redact_secrets(list(reproduction_steps or [])),
+        remediation=redact_secrets(list(remediation or [])),
+        references=redact_secrets(list(references or [])),
         execution_id=execution_id,
         verification_state=verification_state,
         lifecycle=lifecycle,
         confidence=confidence,
         raw_refs=redact_secrets(raw_refs or {}),
-        impact=impact,
-        severity_rationale=severity_rationale,
-        expected_behavior=expected_behavior,
-        observed_behavior=observed_behavior,
+        impact=redact_secrets(impact) if isinstance(impact, str) else impact,
+        severity_rationale=redact_secrets(severity_rationale)
+        if isinstance(severity_rationale, str)
+        else severity_rationale,
+        expected_behavior=redact_secrets(expected_behavior)
+        if isinstance(expected_behavior, str)
+        else expected_behavior,
+        observed_behavior=redact_secrets(observed_behavior)
+        if isinstance(observed_behavior, str)
+        else observed_behavior,
     )
     errors = validate_finding(finding.to_dict())
     if errors:

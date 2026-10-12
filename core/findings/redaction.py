@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from core.net import redact_url_userinfo
+
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("authorization_header", re.compile(r"(?i)(authorization\s*[:=]\s*)(bearer\s+)?\S+")),
     ("api_key_assign", re.compile(r"(?i)((?:api[_-]?key|token|secret|password)\s*[:=]\s*)([^\s,\"']+)")),
@@ -15,7 +17,7 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 
 def redact_text(value: str, replacement: str = "[REDACTED]") -> str:
-    redacted = value
+    redacted = redact_url_userinfo(value)
     for _, pattern in _SECRET_PATTERNS:
         redacted = pattern.sub(lambda m: (m.group(1) + replacement) if m.lastindex else replacement, redacted)
     return redacted

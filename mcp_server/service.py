@@ -16,6 +16,9 @@ from uuid import UUID, uuid4
 from core.config import PlatformConfig
 from core.diagnostics import collect_diagnostics
 from core.findings import Finding
+from core.findings.redaction import redact_text
+from core.net import redact_url_userinfo
+from core.paths import confine_path
 from core.reporting import export_json, export_markdown, export_sarif
 from core.results import ExecutionResult
 from core.scope import ScopeEngine
@@ -69,17 +72,23 @@ def _looks_like_url_or_path(target: str, tool: str | None = None) -> tuple[bool,
     text = (target or "").strip()
     if not text:
         return False, "Target is empty"
-    # Local scanners may accept filesystem paths.
+    # Local scanners may accept filesystem paths under confined roots only.
     if tool in LOCAL_PATH_TOOLS:
         if text.startswith(("http://", "https://")):
-            parsed = urlparse(text)
-            if not parsed.hostname:
-                return False, "URL target is missing a hostname"
+            return False, "Local scanners require a filesystem path, not an http(s) URL"
         return True, "ok"
     parsed = urlparse(text)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return False, "Target must be an absolute http(s) URL with a hostname"
     return True, "ok"
+
+
+def _confine_local_scan_path(cfg: PlatformConfig, target: str, repo_path: str | None) -> str | dict[str, Any]:
+    roots = [Path(cfg.work_dir), Path(cfg.reports_dir), Path.cwd()]
+    try:
+        return str(confine_path(repo_path or target, roots))
+    except PermissionError as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def _adapters(cfg: PlatformConfig, scope: ScopeEngine | None) -> dict[str, Any]:
@@ -97,7 +106,7 @@ def platform_status() -> dict[str, Any]:
     diag = collect_diagnostics(cfg)
     return {
         "ok": True,
-        "platform_version": "0.2.0a2",
+        "platform_version": "0.2.0a3",
         "python": sys.version.split()[0],
         "system": platform.system(),
         "machine": platform.machine(),
@@ -260,16 +269,25 @@ def run_security_assessment(
     if Path(cfg.scopes_file).exists():
         scope = ScopeEngine.from_file(cfg.scopes_file)
 
+    safe_target = redact_url_userinfo(target)
+    scan_path = None
+    if tool in LOCAL_PATH_TOOLS:
+        confined = _confine_local_scan_path(cfg, target, repo_path)
+        if isinstance(confined, dict):
+            return confined
+        scan_path = confined
+        safe_target = scan_path
+
     assessment_id = str(uuid4())
     adapters = _adapters(cfg, scope)
     adapter = adapters[tool]
     # Confine generated artifacts under reports_dir.
     out_dir = Path(cfg.reports_dir).resolve() / f"mcp-{assessment_id}"
     request = AdapterRequest(
-        target=target,
+        target=scan_path or target,
         test_category=category,
         mode=mode,
-        repo_path=repo_path,
+        repo_path=scan_path or repo_path,
         dry_run=dry_run,
         timeout_seconds=timeout_seconds,
         skip_scope_check=bool(demo and tool == "briar"),
@@ -305,12 +323,12 @@ def run_security_assessment(
     record = {
         "assessment_id": assessment_id,
         "tool": tool,
-        "target": target,
+        "target": safe_target,
         "category": category,
         "dry_run": dry_run,
         "demo": demo,
         "status": result.status,
-        "error": result.error,
+        "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
         "execution_id": result.execution_id,
         "artifacts": result.artifacts,
         "metadata": result.metadata,

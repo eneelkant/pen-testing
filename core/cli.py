@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from core import __version__
 from core.config import load_config
+from core.net import redact_url_userinfo
 from core.reporting import export_json, export_markdown, export_sarif, generate_daily_report
 from core.scope import ScopeEngine
 from integrations.briar import BriarAdapter
@@ -16,6 +18,10 @@ from integrations.scanners import GitleaksAdapter, HeadersAdapter, TrivyAdapter
 from integrations.shannon import ShannonAdapter
 from integrations.base import AdapterRequest
 from providers import list_provider_status
+
+
+def _skip_scope_allowed() -> bool:
+    return os.environ.get("PEN_ALLOW_SKIP_SCOPE", "").strip().lower() in {"1", "true", "yes"}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -48,7 +54,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--timeout", type=int)
     p_run.add_argument("--dry-run", action="store_true")
     p_run.add_argument("--demo", action="store_true", help="Briar built-in demo only")
-    p_run.add_argument("--skip-scope-check", action="store_true", help="Tests/fixtures only")
+    p_run.add_argument(
+        "--skip-scope-check",
+        action="store_true",
+        help="Fixtures/tests only; also requires PEN_ALLOW_SKIP_SCOPE=1",
+    )
 
     p_report = sub.add_parser("export-report", help="Export findings JSON to Markdown/SARIF")
     p_report.add_argument("--input", required=True, help="Findings JSON from a previous run")
@@ -105,6 +115,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run":
+        if args.skip_scope_check and not _skip_scope_allowed():
+            print(
+                "ERROR: --skip-scope-check requires PEN_ALLOW_SKIP_SCOPE=1 "
+                "(fixtures/tests only).",
+                file=sys.stderr,
+            )
+            return 2
+        if scope is None and not args.skip_scope_check and config.require_scope_for_active:
+            if args.tool in {"shannon", "briar", "headers"}:
+                print(
+                    f"ERROR: authorization registry required for tool '{args.tool}' "
+                    f"(missing {scopes_file})",
+                    file=sys.stderr,
+                )
+                return 2
         adapters = _adapters(config, scope)
         adapter = adapters[args.tool]
         request = AdapterRequest(
@@ -115,10 +140,13 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output,
             timeout_seconds=args.timeout,
             dry_run=args.dry_run,
-            skip_scope_check=args.skip_scope_check,
+            skip_scope_check=bool(args.skip_scope_check and _skip_scope_allowed()),
             extra={"demo": bool(args.demo)},
         )
         result = adapter.run(request)
+        # Avoid echoing credentials that may appear in URL userinfo.
+        if isinstance(result.metadata, dict) and "target" in result.metadata:
+            result.metadata["target"] = redact_url_userinfo(str(result.metadata["target"]))
         out = Path(args.output or config.reports_dir) / f"{args.tool}-{result.execution_id}.json"
         if args.output:
             out = Path(args.output)

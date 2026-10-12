@@ -1,0 +1,46 @@
+# Authorization registry — required for active testing.
+# Public URLs are NOT authorized unless explicitly listed here.
+authorizations:
+  - program_name: local-fixture-headers
+    program_url: https://github.com/eneelkant/pen-testing
+    target_id: local-headers-fixture
+    asset_type: url
+    scope_source: repository-fixture
+    policy_reference: docs/INTEGRATION_GUIDE.md#authorization
+    allowed_assets:
+      - http://127.0.0.1:18080/
+      - http://127.0.0.1:18080
+      - http://localhost:18080/
+      - http://localhost:18080
+    excluded_assets: []
+    allowed_test_categories:
+      - passive
+      - active
+      - dast
+    prohibited_actions:
+      - dos
+      - data_destruction
+    rate_limit_rps: 5
+    authorization_start: "2020-01-01T00:00:00+00:00"
+    authorization_expiry: "2099-01-01T00:00:00+00:00"
+    environment: local
+    notes: Intentionally weak headers fixture for smoke/integration tests only.
+    last_verified_at: "2026-10-12T00:00:00+00:00"
+
+  - program_name: example-expired
+    program_url: https://example.invalid/program
+    target_id: expired-demo
+    asset_type: url
+    scope_source: example
+    policy_reference: docs/INTEGRATION_GUIDE.md#authorization
+    allowed_assets:
+      - https://expired.example.invalid
+    excluded_assets: []
+    allowed_test_categories:
+      - active
+    prohibited_actions: []
+    authorization_start: "2020-01-01T00:00:00+00:00"
+    authorization_expiry: "2020-12-31T00:00:00+00:00"
+    environment: staging
+    notes: Used by unit tests to verify expiry rejection.
+    last_verified_at: "2026-10-12T00:00:00+00:00"

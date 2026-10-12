@@ -1,0 +1,13 @@
+---
+description: Authorization and safety rules for the pen-testing platform
+alwaysApply: true
+---
+
+# Security rules
+
+- Enforce `scopes/registry.yaml` before active or remote testing.
+- Never invent findings or reproduction evidence.
+- Never commit `.env`, raw exploit evidence, or credentials.
+- Invoke Shannon/Briar as pinned external tools; do not vendor their source.
+- Prefer `--dry-run`, unit mocks, and local fixtures in CI.
+- Do not mount Docker socket into active-testing containers.

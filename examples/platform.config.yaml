@@ -1,0 +1,8 @@
+work_dir: workspaces
+reports_dir: reports/out
+scopes_file: scopes/registry.yaml
+default_timeout_seconds: 3600
+shannon_package: "@keygraph/shannon@3.4.0"
+briar_package: "briar-pentest==0.4.62"
+require_scope_for_active: true
+allow_production_active: false

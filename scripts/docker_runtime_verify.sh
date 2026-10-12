@@ -82,20 +82,25 @@ echo "$PROBE_OUT" | grep -q 'ISOLATED_BLOCKED' || die "isolated probe did not re
 log "== runtime connectivity: control network can reach local fixture =="
 docker compose --profile fixtures up -d fixture-headers
 # Wait briefly for fixture readiness
-for _ in 1 2 3 4 5 6 7 8 9 10; do
+ready=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   if docker compose --profile fixtures exec -T fixture-headers python -c 'import socket; s=socket.create_connection(("127.0.0.1",8080),2); s.close()' 2>/dev/null; then
+    ready=1
     break
   fi
   sleep 1
 done
+test "$ready" -eq 1 || die "fixture-headers did not become ready"
 CTRL_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-control$' | head -n1 || true)"
 test -n "$CTRL_NET" || die "could not locate pen-control docker network"
-docker run --rm --network "$CTRL_NET" python:3.12-slim-bookworm \
+CTRL_OUT="$(docker run --rm --network "$CTRL_NET" python:3.12-slim-bookworm \
   python -c 'import socket,sys
 s=socket.create_connection(("fixture-headers",8080), timeout=5)
 s.close()
 print("CONTROL_REACHES_FIXTURE")
-' | grep -q 'CONTROL_REACHES_FIXTURE' || die "control network could not reach fixture-headers"
+')"
+echo "$CTRL_OUT"
+echo "$CTRL_OUT" | grep -q 'CONTROL_REACHES_FIXTURE' || die "control network could not reach fixture-headers"
 
 log "== host smoke script (no external targets) =="
 bash scripts/smoke.sh

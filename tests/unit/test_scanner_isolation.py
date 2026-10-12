@@ -43,9 +43,13 @@ def _scope(url: str) -> ScopeEngine:
 def test_policy_defaults_require_egress(monkeypatch):
     monkeypatch.delenv("PEN_REQUIRE_EGRESS_POLICY", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SCOPE_DISABLE", raising=False)
+    monkeypatch.delenv("PEN_ALLOW_SHANNON_LIVE", raising=False)
+    monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
     policy = load_isolation_policy()
     assert policy.require_egress_policy is True
     assert policy.allow_scope_disable is False
+    assert policy.allow_shannon_live is False
+    assert policy.allow_briar_live is False
 
 
 def test_unauthorized_hostname_denied():
@@ -265,6 +269,110 @@ def test_live_shannon_launches_only_with_allow_and_public_dns(tmp_path: Path, mo
             repo_path=str(Path(__file__).resolve().parents[2]),
             dry_run=False,
         )
+    )
+    assert result.status == "succeeded"
+    runner.run.assert_called_once()
+
+
+def _healthy_briar() -> dict:
+    return {
+        "installed": True,
+        "healthy": True,
+        "errors": [],
+        "commands": {"scan": True},
+    }
+
+
+def test_live_briar_blocks_dns_rebinding_before_launch(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(target=url, mode="quick", dry_run=False)
+    )
+    assert result.status == "blocked"
+    assert "non-public" in (result.error or "").lower()
+    adapter.runner.run.assert_not_called()
+
+
+def test_live_briar_requires_explicit_allow_even_when_dns_ok(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(target=url, mode="quick", dry_run=False)
+    )
+    assert result.status == "blocked"
+    assert "PEN_ALLOW_BRIAR_LIVE" in (result.error or "")
+    assert (result.metadata or {}).get("isolation") == "briar_live_gate"
+    adapter.runner.run.assert_not_called()
+
+
+def test_live_briar_launches_only_with_allow_and_public_dns(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    runner = MagicMock()
+
+    class R:
+        ok = True
+        timed_out = False
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    runner.run.return_value = R()
+    runner.which.return_value = "/usr/bin/briar"
+    adapter.runner = runner
+    result = adapter.run(
+        AdapterRequest(target=url, mode="quick", dry_run=False)
+    )
+    assert result.status == "succeeded"
+    runner.run.assert_called_once()
+
+
+def test_briar_demo_skips_live_gate(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, scope_engine=None)
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    runner = MagicMock()
+
+    class R:
+        ok = True
+        timed_out = False
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    runner.run.return_value = R()
+    runner.which.return_value = "/usr/bin/briar"
+    adapter.runner = runner
+    result = adapter.run(
+        AdapterRequest(target="", mode="demo", dry_run=False, extra={"demo": True})
     )
     assert result.status == "succeeded"
     runner.run.assert_called_once()

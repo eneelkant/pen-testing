@@ -14,7 +14,7 @@ from mcp_server import service
 
 mcp = MCPServer(
     name="pen-testing",
-    version="0.2.0a6",
+    version="0.2.0a7",
     instructions=(
         "Authorized security-testing orchestration platform. "
         "Always call validate_target_scope before run_security_assessment with dry_run=false. "

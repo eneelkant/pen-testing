@@ -174,6 +174,8 @@ def test_require_scope_false_with_dual_gate(tmp_path: Path, monkeypatch):
 
 
 def test_live_shannon_blocks_dns_rebinding_before_launch(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+
     def fake_getaddrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
 
@@ -199,6 +201,73 @@ def test_live_shannon_blocks_dns_rebinding_before_launch(tmp_path: Path, monkeyp
     assert result.status == "blocked"
     assert "non-public" in (result.error or "").lower()
     adapter.runner.run.assert_not_called()
+
+
+def test_live_shannon_requires_explicit_allow_even_when_dns_ok(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("PEN_ALLOW_SHANNON_LIVE", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+        )
+    )
+    assert result.status == "blocked"
+    assert "PEN_ALLOW_SHANNON_LIVE" in (result.error or "")
+    adapter.runner.run.assert_not_called()
+
+
+def test_live_shannon_launches_only_with_allow_and_public_dns(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    runner = MagicMock()
+
+    class R:
+        ok = True
+        timed_out = False
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    runner.run.return_value = R()
+    adapter.runner = runner
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+        )
+    )
+    assert result.status == "succeeded"
+    runner.run.assert_called_once()
 
 
 def test_assert_live_destination_skipped_on_dry_run():

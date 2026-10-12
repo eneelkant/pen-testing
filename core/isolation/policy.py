@@ -25,6 +25,9 @@ class IsolationPolicy:
     allow_non_public_literals: bool = True
     # Disabling PEN_REQUIRE_SCOPE also needs this second gate.
     allow_scope_disable: bool = False
+    # Shannon workers are NOT attached to platform Compose networks; live runs need
+    # an explicit operator acknowledgement beyond launch-time DNS preflight.
+    allow_shannon_live: bool = False
     # Optional explicit host allowlist (comma-separated). Empty = rely on scope registry.
     egress_allow_hosts: tuple[str, ...] = ()
 
@@ -46,5 +49,6 @@ def load_isolation_policy() -> IsolationPolicy:
         block_non_public_resolved=_truthy("PEN_BLOCK_NON_PUBLIC_RESOLVED", True),
         allow_non_public_literals=_truthy("PEN_ALLOW_NON_PUBLIC_LITERALS", True),
         allow_scope_disable=_truthy("PEN_ALLOW_SCOPE_DISABLE", False),
+        allow_shannon_live=_truthy("PEN_ALLOW_SHANNON_LIVE", False),
         egress_allow_hosts=hosts,
     )

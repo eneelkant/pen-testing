@@ -106,7 +106,7 @@ def platform_status() -> dict[str, Any]:
     diag = collect_diagnostics(cfg)
     return {
         "ok": True,
-        "platform_version": "0.2.0a5",
+        "platform_version": "0.2.0a6",
         "python": sys.version.split()[0],
         "system": platform.system(),
         "machine": platform.machine(),

@@ -2,33 +2,33 @@
 
 Status: **partial platform enforcement** — READY FOR CONTROLLED TESTING, not full in-engine containment.
 
+Verified on `main` merge of PR #5 (`dad086d`) plus PR #6 runtime connectivity proof (when merged).
+
 ## What each layer protects
 
 | Component | Scope preflight | Resolve-time egress policy | Docker network | In-engine DNS/redirects |
 |---|---|---|---|---|
 | Orchestrator CLI/MCP | Yes | Launch gate for remote tools | N/A (host process) | N/A |
 | HeadersAdapter | Yes (fail closed) | Yes + redirect re-check | N/A | Platform-owned (no-follow) |
-| Shannon adapter | Yes | Yes **before** `npx` launch | Shannon spawns its own workers | **Not controlled** by this platform |
-| Briar adapter | Yes | Yes **before** CLI launch | Compose `briar` vs `briar-live` | **Not controlled** by this platform |
+| Shannon adapter | Yes | Yes **before** `npx` launch | Shannon spawns its own workers | **Not controlled** |
+| Briar adapter (host CLI) | Yes | Yes **before** CLI launch | N/A for host CLI | **Not controlled** |
+| Briar Compose `briar` (`workers`) | N/A (image `--help` smoke) | N/A | `pen-scanner-isolated` **`internal: true`** | N/A for `--help` |
+| Briar Compose `briar-live` | Operator-driven | Operator + launch policy if via adapter | `pen-scanner-live` (egress on) | **Not controlled** |
 | Gitleaks/Trivy | N/A (local paths) | N/A | `--network none` when via Docker | N/A |
 
-**Do not assume** that a successful URL preflight means Shannon or Briar cannot later resolve DNS differently or follow redirects to other hosts. Those engines perform independent network I/O after launch.
+**Do not assume** that a successful URL preflight means Shannon or Briar cannot later resolve DNS differently or follow redirects to other hosts.
 
-## Enforceable controls in this repository
+## Verified vs static-only
 
-1. **Authorization registry** (`scopes/registry.yaml`) via `ScopeEngine` — fail closed when missing for active tools.
-2. **Dual-gate scope disable** — `PEN_REQUIRE_SCOPE=false` also requires `PEN_ALLOW_SCOPE_DISABLE=1`.
-3. **Skip-scope gate** — CLI `--skip-scope-check` requires `PEN_ALLOW_SKIP_SCOPE=1`; MCP only sets skip for Briar `demo`.
-4. **Launch-time egress policy** (`core/isolation/`) — for live Shannon/Briar/Headers:
-   - http(s) only
-   - optional `PEN_EGRESS_ALLOW_HOSTS`
-   - block named hosts resolving to non-public/link-local/metadata addresses
-   - IP literals allowed only when `PEN_ALLOW_NON_PUBLIC_LITERALS=true` (default) *and* scope authorized them
-5. **Compose networks**
-   - `pen-scanner-isolated` (`internal: true`) for default `briar` worker profile
-   - `pen-scanner-live` for explicit `live-workers` profile (`briar-live`)
-   - **No Docker socket** on orchestrator or Briar services
-6. **Report path safety** — `confine_path` + `safe_write_text` / `O_NOFOLLOW`
+| Claim | Evidence type |
+|---|---|
+| Compose defines `pen-scanner-isolated` with `internal: true` | Static render assert in `scripts/docker_runtime_verify.sh` |
+| Isolated network **cannot** connect to `1.1.1.1:443` | **Runtime** probe in Docker verify (PR #6) |
+| Control network **can** reach local `fixture-headers` | **Runtime** probe in Docker verify (PR #6) |
+| No `docker.sock` in Compose | Static render grep |
+| Launch-time DNS→non-public blocks Shannon subprocess | Unit tests with mocked DNS |
+| Live Shannon blocked without `PEN_ALLOW_SHANNON_LIVE=1` | Unit tests (PR #6) |
+| Shannon worker containers inherit platform networks | **False / not implemented** |
 
 ## Operator environment
 
@@ -40,19 +40,20 @@ Status: **partial platform enforcement** — READY FOR CONTROLLED TESTING, not f
 | `PEN_REQUIRE_EGRESS_POLICY` | `true` | Launch-time destination evaluation for live remote tools |
 | `PEN_BLOCK_NON_PUBLIC_RESOLVED` | `true` | Deny DNS→non-public for named hosts |
 | `PEN_ALLOW_NON_PUBLIC_LITERALS` | `true` | Allow scoped `127.0.0.1` / RFC1918 literals |
+| `PEN_ALLOW_SHANNON_LIVE` | `false` | Explicit ack that Shannon workers are not network-isolated by this platform |
 | `PEN_EGRESS_ALLOW_HOSTS` | empty | Optional extra host allowlist |
 
 ## Remaining limitations
 
-1. Shannon Temporal/Docker workers are not attached to `pen-scanner-*` networks by this platform.
-2. Briar browser automation after CLI start is not connection-intercepted.
+1. Shannon Temporal/Docker workers are not attached to `pen-scanner-*` networks.
+2. Host-invoked Briar CLI is not placed into the Compose isolated network automatically.
 3. DNS rebinding **after** launch inside upstream engines remains an upstream/operator firewall problem.
-4. Compose `internal: true` proves isolation for the default Briar worker profile; it does **not** prove Shannon worker isolation.
-5. Briar remains upstream Alpha; AGPL redistribution needs human legal review.
+4. Briar remains upstream Alpha; AGPL redistribution needs human legal review.
 
 ## Failure behavior
 
 - Missing scope engine + active tool → **blocked**
 - Live destination fails egress policy → **blocked** (subprocess not started)
+- Live Shannon without `PEN_ALLOW_SHANNON_LIVE=1` → **blocked**
 - Shannon without Docker daemon → **blocked**
-- Isolation unit tests missing in Docker verify script → **fail**
+- Isolated-network runtime probe reaches external IP → Docker verify **fails**

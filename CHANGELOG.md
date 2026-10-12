@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0a6 — 2026-10-12
+
+### Security
+
+- Live Shannon requires explicit `PEN_ALLOW_SHANNON_LIVE=1` (workers are not on platform networks)
+- Docker runtime verify adds **runtime** probes: isolated network cannot reach `1.1.1.1:443`; control network reaches local fixture
+
+### Documentation
+
+- Reconcile isolation docs after PR #5 merge; distinguish static vs runtime evidence
+
 ## 0.2.0a5 — 2026-10-12
 
 ### Security

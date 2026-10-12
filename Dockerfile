@@ -19,8 +19,9 @@ COPY pyproject.toml README.md LICENSE ./
 COPY core ./core
 COPY integrations ./integrations
 COPY providers ./providers
+COPY mcp_server ./mcp_server
 COPY scopes ./scopes
-COPY reports ./reports
+COPY reports/templates ./reports/templates
 COPY scripts ./scripts
 
 RUN pip install --no-cache-dir . \

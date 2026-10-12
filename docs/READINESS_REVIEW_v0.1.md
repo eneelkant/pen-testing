@@ -58,12 +58,8 @@ Then:
 
 ```bash
 docker compose version
-docker compose config -q
-docker compose build
-docker compose run --rm orchestrator
-docker compose --profile workers build briar
-bash scripts/smoke.sh
-docker compose --profile workers --profile fixtures down -v
+bash scripts/docker_runtime_verify.sh
+# CI equivalent: GitHub Actions job "Docker build and runtime" on ubuntu-latest
 ```
 
 ## Network containment gaps (explicit)

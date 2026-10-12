@@ -57,8 +57,8 @@ Not installed by these scripts. Official docs: https://docs.docker.com/get-docke
 
 ```bash
 docker compose version
-docker compose build
-docker compose run --rm orchestrator
+bash scripts/docker_runtime_verify.sh
+# Equivalent steps: compose config -q, build orchestrator + briar, run orchestrator doctor, host smoke
 ```
 
 ## Uninstall

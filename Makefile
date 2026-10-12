@@ -1,4 +1,4 @@
-.PHONY: help install install-mcp doctor smoke test lint compose-build compose-doctor clean
+.PHONY: help install install-mcp doctor smoke test lint compose-build compose-doctor docker-runtime clean
 
 PYTHON ?= python3
 export PYTHONPATH := $(CURDIR)$(if $(PYTHONPATH),:$(PYTHONPATH),)
@@ -12,6 +12,7 @@ help:
 	@echo "  test            Run unit tests"
 	@echo "  compose-build   Build docker compose images (requires Docker)"
 	@echo "  compose-doctor  Run doctor inside orchestrator container"
+	@echo "  docker-runtime  Full Docker Engine/Compose verification (CI equivalent)"
 	@echo "  clean           Remove local caches and generated reports"
 
 install:
@@ -38,6 +39,9 @@ compose-build:
 
 compose-doctor:
 	docker compose run --rm orchestrator
+
+docker-runtime:
+	bash scripts/docker_runtime_verify.sh
 
 clean:
 	rm -rf .pytest_cache .coverage htmlcov dist build *.egg-info

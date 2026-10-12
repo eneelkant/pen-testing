@@ -90,3 +90,32 @@ def test_require_raises():
     engine = ScopeEngine.from_file(FIXTURE)
     with pytest.raises(PermissionError):
         engine.require("https://not-authorized.example", test_category="active")
+
+
+def test_private_ip_not_auto_authorized():
+    engine = ScopeEngine.from_file(FIXTURE)
+    decision = engine.evaluate("http://10.0.0.1/", test_category="active")
+    assert decision.allowed is False
+
+
+def test_exclusion_blocks_exact_asset():
+    from core.scope import AuthorizationRecord
+
+    engine = ScopeEngine(
+        [
+            AuthorizationRecord(
+                program_name="p",
+                program_url="https://example.invalid",
+                target_id="t",
+                asset_type="url",
+                scope_source="test",
+                policy_reference="t",
+                allowed_assets=["https://staging.example.invalid"],
+                excluded_assets=["https://staging.example.invalid/logout"],
+                allowed_test_categories=["active"],
+                environment="staging",
+            )
+        ]
+    )
+    assert engine.evaluate("https://staging.example.invalid", test_category="active").allowed is True
+    assert engine.evaluate("https://staging.example.invalid/logout", test_category="active").allowed is False

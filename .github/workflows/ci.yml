@@ -59,16 +59,52 @@ jobs:
       - name: Smoke (no external targets)
         run: bash scripts/smoke.sh
 
-      - name: Validate compose file
+  docker-runtime:
+    name: Docker build and runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Docker Engine and Compose on runner
         run: |
-          if command -v docker >/dev/null 2>&1; then
-            docker compose config -q
-          else
-            echo "Docker not available on runner tool cache path; skipping compose config"
-            # GitHub-hosted runners include Docker — this branch is defensive for forks
-            docker version
-            docker compose config -q
-          fi
+          set -euo pipefail
+          command -v docker
+          docker version
+          docker compose version
+          docker info >/dev/null
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package (host smoke)
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Docker runtime verification
+        run: bash scripts/docker_runtime_verify.sh
+
+      - name: Collect Docker diagnostics on failure
+        if: failure()
+        run: |
+          set +e
+          echo "== docker compose ps =="
+          docker compose --profile workers --profile fixtures ps -a
+          echo "== docker images (project) =="
+          docker images 'pen-testing-*'
+          echo "== docker compose config =="
+          docker compose config
+          echo "== disk =="
+          df -h
+
+      - name: Cleanup compose resources
+        if: always()
+        run: |
+          docker compose --profile workers --profile fixtures down -v --remove-orphans || true
 
   secret-scan:
     name: Secret scanning (gitleaks)

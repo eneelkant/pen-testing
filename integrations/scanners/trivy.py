@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from core.execution import CommandRunner
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding, redact_secrets
+from core.paths import confine_path
 from core.results import ExecutionResult
 from integrations.base import AdapterRequest, SecurityAdapter
 
@@ -40,7 +41,16 @@ class TrivyAdapter(SecurityAdapter):
 
     def run(self, request: AdapterRequest) -> ExecutionResult:
         execution_id = str(uuid4())
-        target = Path(request.repo_path or request.target)
+        roots = [Path(self.config.work_dir), Path(self.config.reports_dir), Path.cwd()]
+        try:
+            target = confine_path(request.repo_path or request.target, roots)
+        except PermissionError as exc:
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=str(exc),
+            )
         if not target.exists():
             return ExecutionResult(
                 tool=self.name,
@@ -70,16 +80,21 @@ class TrivyAdapter(SecurityAdapter):
                 str(target),
             ]
         elif health.get("docker"):
+            # Prefer offline/cache-friendly isolation. Network disabled to match Gitleaks.
+            # Operators needing DB refresh should run `trivy image --download-db-only` on the host.
             cmd = [
                 "docker",
                 "run",
                 "--rm",
+                "--network",
+                "none",
                 "-v",
                 f"{target.resolve()}:/src:ro",
                 "-v",
                 f"{out_dir.resolve()}:/out",
                 f"aquasec/trivy:{self.version_pin}",
                 "fs",
+                "--skip-db-update",
                 "--format",
                 "json",
                 "--output",

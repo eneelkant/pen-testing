@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding
+from core.net import is_loopback_hostname, redact_url_userinfo, require_http_url, validate_resolved_target
 from core.results import ExecutionResult
 from core.scope import validate_redirect_stays_in_scope
 from integrations.base import AdapterRequest, SecurityAdapter
@@ -31,10 +33,11 @@ class _NoFollowRedirects(HTTPRedirectHandler):
 
 
 def _fetch_no_follow(url: str, timeout: int = 15):
+    require_http_url(url)
     opener = build_opener(_NoFollowRedirects)
     req = Request(url, method="GET", headers={"User-Agent": "pen-testing-headers/0.1"})
     try:
-        resp = opener.open(req, timeout=timeout)  # nosec B310 - gated by scope engine
+        resp = opener.open(req, timeout=timeout)  # nosec B310 - scheme + scope + DNS policy gated
         headers = {k.lower(): v for k, v in resp.headers.items()}
         status_code = getattr(resp, "status", None) or resp.getcode()
         resp.close()
@@ -55,16 +58,31 @@ class HeadersAdapter(SecurityAdapter):
 
     def run(self, request: AdapterRequest) -> ExecutionResult:
         execution_id = str(uuid4())
-        # Local fixture URLs (loopback) may skip scope when explicitly requested.
-        is_loopback = any(h in request.target for h in ("127.0.0.1", "localhost", "[::1]"))
-        if not (request.skip_scope_check and is_loopback):
+        safe_target = redact_url_userinfo(request.target)
+
+        try:
+            require_http_url(request.target)
+        except ValueError as exc:
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=str(exc),
+            )
+
+        # Fail closed via shared preflight unless an explicit loopback fixture skip is allowed.
+        # skip_scope_check must not apply based on substring tricks in the URL path/query.
+        host = urlparse(request.target.strip()).hostname
+        loopback_skip = bool(request.skip_scope_check and is_loopback_hostname(host))
+        if not loopback_skip:
             try:
-                if self.scope_engine is not None and self.config.require_scope_for_active:
-                    self.scope_engine.require(
-                        request.target,
-                        test_category=request.test_category or "passive",
-                        require_non_production=not self.config.allow_production_active,
-                    )
+                gated = AdapterRequest(
+                    target=request.target,
+                    test_category=request.test_category,
+                    dry_run=request.dry_run,
+                    skip_scope_check=False,
+                )
+                self.preflight(gated)
             except PermissionError as exc:
                 return ExecutionResult(
                     tool=self.name,
@@ -78,17 +96,35 @@ class HeadersAdapter(SecurityAdapter):
                 tool=self.name,
                 execution_id=execution_id,
                 status="skipped",
-                metadata={"dry_run": True, "target": request.target},
+                metadata={"dry_run": True, "target": safe_target},
+            )
+
+        try:
+            validate_resolved_target(request.target, allow_non_public_literal=True)
+        except PermissionError as exc:
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=str(exc),
             )
 
         try:
             status_code, headers = _fetch_no_follow(request.target, timeout=15)
-        except (URLError, ValueError, TimeoutError, OSError) as exc:
+        except (URLError, ValueError, TimeoutError, OSError, PermissionError) as exc:
             return ExecutionResult(
                 tool=self.name,
                 execution_id=execution_id,
                 status="failed",
                 error=f"Failed to fetch target: {exc}",
+            )
+
+        if status_code is None:
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="failed",
+                error="Target returned no HTTP status code",
             )
 
         if 300 <= int(status_code) < 400:
@@ -111,7 +147,7 @@ class HeadersAdapter(SecurityAdapter):
                         category="security-headers",
                         source_tool=self.name,
                         source_tool_version=self.version_pin,
-                        asset=request.target,
+                        asset=safe_target,
                         severity=severity,
                         evidence={"status_code": status_code, "missing_header": header},
                         expected_behavior=f"Response includes {header}",

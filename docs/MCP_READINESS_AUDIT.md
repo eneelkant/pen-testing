@@ -1,82 +1,67 @@
 # MCP Readiness Audit
 
-Audit date: **2026-10-12**  
-Baseline `main` commit: `25fec5093db6b96dea30e4b55e1ff406f0509626` (PR #1 merge)  
-Audit branch: `cursor/mcp-audit-hardening-39f7`  
-Audit branch head (initial publish): `78c6b812502772048c80b792c96e4deacf36869d`  
-PR: https://github.com/eneelkant/pen-testing/pull/2 (draft — Docker runtime BLOCKED; do not merge)
+## Post-merge status (current)
 
-## Summary
+Verification date: **2026-10-12**  
+Starting `main` SHA for this review: **`b4e4fab6329abce2e1f686e9d6b1704bd1166fd1`** (merge of PR #2)  
+Follow-up hardening branch: `cursor/post-merge-security-audit-39f7`
 
-MCP is **implemented and usable** for local stdio diagnostics and dry-run orchestration via the official Python SDK (`mcp` 2.3.0). Nine tools are registered and call-tested. Docker runtime remains **BLOCKED** in this environment. ChatGPT remote end-to-end connection is **BLOCKED** (no public HTTPS deployment).
+| Check | Result on `b4e4fab` / hardening branch |
+|---|---|
+| GitHub Actions CI on merge commit `b4e4fab` | **PASS** — Lint/unit, Docker build and runtime, gitleaks, dependency metadata ([run 38245405070](https://github.com/eneelkant/pen-testing/actions/runs/38245405070)) |
+| Prior Docker proof on PR head `bb06250` | **PASS** ([run 38244472440](https://github.com/eneelkant/pen-testing/actions/runs/38244472440)) — historical evidence for the same Docker job |
+| Local unit tests (agent) | **PASS** — 78 passed after post-merge hardening |
+| `scripts/smoke.sh` (agent) | **PASS** (requires `PEN_ALLOW_SKIP_SCOPE=1` for fixture dry-runs) |
+| MCP tool discovery | **PASS** — 9 tools |
+| Local Docker Engine (Cursor agent VM) | **BLOCKED** — `docker: command not found` |
+| Cursor / Claude / Gemini UI E2E | **BLOCKED** — clients not installed here |
+| ChatGPT remote HTTPS connector | **BLOCKED** — not deployed |
 
-## Implementation facts
+### Assessment
 
-| Item | Finding | Status |
+**READY FOR CONTROLLED TESTING** — not production-ready for unconstrained active scanning. Platform-owned headers path is hardened against fail-open scope, `file://`, skip-scope substring tricks, and DNS→non-public pivots. Shannon/Briar egress, DNS rebinding inside upstream engines, and Briar Alpha status remain residual risks.
+
+### Post-merge defects fixed (hardening PR)
+
+| Defect | Severity | Fix |
 |---|---|---|
-| Package | `mcp_server/` | PASS |
-| Entry point | `python -m mcp_server.server` / `pen-testing-mcp` | PASS |
-| SDK | `mcp==2.3.0` (`MCPServer`) | PASS |
-| Transport | stdio (default); Streamable HTTP available in SDK but not productized | PASS / documented |
-| Tool count | 9 | PASS |
-| Arbitrary shell/FS tools | None exposed | PASS |
-| Active scans on startup | No | PASS |
+| HeadersAdapter failed open when registry missing | Critical | Shared `preflight()` fail-closed |
+| `file://` local file read via HeadersAdapter | Critical | http(s)-only scheme gate |
+| `--skip-scope-check` substring loopback bypass | High | Hostname parse + `PEN_ALLOW_SKIP_SCOPE=1` CLI gate |
+| Scheme-less `host/path` assets authorized whole host | High | Path-prefix match only |
+| Named host → non-public DNS for headers | High | Resolve-time policy in `core/net/ssrf.py` |
+| URL userinfo leaked in findings/logs | Medium | Redact userinfo in `redact_text` / normalize |
+| Gitleaks/Trivy arbitrary path scan | Medium | Confine under work/reports/cwd |
+| Trivy docker without `--network none` | Medium | Match Gitleaks isolation + `--skip-db-update` |
 
-## Baseline tests (pre-fix)
+### Outstanding risks (not claimed fixed for upstream engines)
 
-| Check | Result |
-|---|---|
-| `pytest` on `main` | PASS — 47 passed, 1 skipped (historical baseline before audit hardening) |
-| `scripts/smoke.sh` | PASS |
-| Docker Engine | BLOCKED — not installed |
-| Branch protection API | BLOCKED — token cannot read protection settings (403) |
+1. Shannon/Briar browser and worker egress are **not** governed by platform DNS/IP policy.
+2. Orchestrator image intentionally has **no Docker socket** — Shannon workers are not launched from inside that container.
+3. Briar remains upstream **Alpha**.
+4. `PEN_REQUIRE_SCOPE=false` remains a powerful config override — treat as operator-controlled.
+5. License/redistribution of AGPL Shannon/Briar via process isolation still needs human legal review (see `THIRD_PARTY_NOTICES.md`).
 
-## Post-fix verification (this branch)
+---
 
-| Check | Result |
-|---|---|
-| `python3 -m pytest -q tests/unit` | PASS — **63 passed** |
-| `bash scripts/smoke.sh` | PASS |
-| MCP tool discovery (`mcp.list_tools`) | PASS — 9 tools |
-| Docker Engine / Compose runtime (Cursor agent VM) | BLOCKED — `docker: command not found` |
-| Docker Engine / Compose runtime (GitHub Actions `ubuntu-latest`) | **PASS** — job `Docker build and runtime` on commit `bb06250` (run `38244472440`); log ends with `Docker runtime verification passed.` |
-| Cursor / Claude / Gemini UI E2E | BLOCKED — clients not installed in agent VM |
-| ChatGPT remote HTTPS connector | BLOCKED / NOT APPLICABLE locally |
+## Historical pre-merge audit (PR #2 era)
 
-## Defects found and fixed in this audit
+> The following section is **historical**. PR #2 was subsequently merged to `main` as `b4e4fab`. Do not treat draft/unmerged language below as current repository policy.
+
+Audit date: **2026-10-12**  
+Baseline `main` commit at audit start: `25fec5093db6b96dea30e4b55e1ff406f0509626` (PR #1 merge)  
+Audit branch: `cursor/mcp-audit-hardening-39f7`  
+Historical PR: https://github.com/eneelkant/pen-testing/pull/2 (**merged**)
+
+### Historical summary
+
+MCP was implemented and usable for local stdio diagnostics and dry-run orchestration via the official Python SDK (`mcp` 2.3.0). Nine tools were registered and call-tested. Agent-local Docker was blocked; GitHub Actions Docker runtime later passed.
+
+### Historical defects fixed in PR #2
 
 | Defect | Severity | Fix |
 |---|---|---|
 | `export_report(outdir=...)` could write outside project dirs | High | Confine outdir to `reports_dir` / `work_dir` |
-| `get_assessment_status` / `list_findings` / `export_report` accepted path-like IDs | High | Require UUID assessment IDs |
+| Assessment IDs accepted path-like values | High | Require UUID assessment IDs |
 | `validate_target_scope("not-a-url")` fell through to scope match | Medium | Require absolute http(s) URL with hostname |
 | Logging handler not explicitly bound to stderr | Medium | Force `StreamHandler(sys.stderr)` + `propagate=False` |
-
-## Environment
-
-| Dependency | Result |
-|---|---|
-| Python 3.12.3 | PASS |
-| `mcp` 2.3.0 | PASS |
-| PyYAML / jsonschema | PASS |
-| Node/npx (Shannon launcher) | PASS |
-| Docker / Compose | BLOCKED |
-| Briar in system Python | FAIL (expected) — optional isolated venv |
-| Shannon CLI via npx | PASS (version 3.4.0); workers need Docker |
-
-## Client integration (config artifacts)
-
-| Client | Result |
-|---|---|
-| Cursor project `.cursor/mcp.json` | PASS (present); E2E Cursor UI BLOCKED (no Cursor Desktop here) |
-| Claude Desktop helper | PASS (script); E2E BLOCKED (app not installed) |
-| Gemini helper | PASS (print/optional apply); E2E BLOCKED |
-| ChatGPT remote | NOT APPLICABLE locally — requires authenticated HTTPS connector |
-
-## Residual risks
-
-1. Shannon/Briar browser/egress not fully contained by scope preflight.
-2. DNS rebinding / private-IP pivot after redirect not fully enforced for upstream engines.
-3. Agent-local Docker remains unavailable; runtime proof is via GitHub Actions `ubuntu-latest`.
-4. Briar remains upstream Alpha.
-5. Orchestrator container intentionally lacks Docker socket (Shannon worker launch from inside the container remains unavailable by design).

@@ -59,7 +59,8 @@ export PEN_BRIAR_PYTHON=$PWD/.venv-briar/bin/python
 python -m core.cli health --tool briar
 
 # Built-in demo (no external target) — preferred local smoke
-python -m core.cli run --tool briar --target demo --demo --skip-scope-check
+# --skip-scope-check requires an explicit fixture gate:
+PEN_ALLOW_SKIP_SCOPE=1 python -m core.cli run --tool briar --target demo --demo --skip-scope-check
 
 # Authorized URL scan modes: quick | standard | deep
 python -m core.cli run --tool briar --target https://staging.example.com --mode quick

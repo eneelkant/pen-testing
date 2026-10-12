@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from core.execution import CommandRunner
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding, redact_secrets
+from core.paths import confine_path
 from core.results import ExecutionResult
 from integrations.base import AdapterRequest, SecurityAdapter
 
@@ -40,7 +41,16 @@ class GitleaksAdapter(SecurityAdapter):
 
     def run(self, request: AdapterRequest) -> ExecutionResult:
         execution_id = str(uuid4())
-        repo = Path(request.repo_path or request.target)
+        roots = [Path(self.config.work_dir), Path(self.config.reports_dir), Path.cwd()]
+        try:
+            repo = confine_path(request.repo_path or request.target, roots)
+        except PermissionError as exc:
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=str(exc),
+            )
         if not repo.exists():
             return ExecutionResult(
                 tool=self.name,

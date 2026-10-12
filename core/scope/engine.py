@@ -48,7 +48,24 @@ def _asset_matches(candidate: str, pattern: str) -> bool:
     if cand.rstrip("/") == pat.rstrip("/"):
         return True
 
-    # Host-only patterns
+    # Scheme-less patterns that include a path (e.g. staging.example.com/app)
+    # must not authorize the entire host — require host + path-prefix match.
+    if "://" not in pat and "/" in pat.strip().strip("/"):
+        host_part, _, path_part = pat.partition("/")
+        pat_host = host_part.split(":")[0].lower()
+        pat_path = "/" + path_part
+        if "://" in cand:
+            parsed = urlparse(cand)
+            cand_host = (parsed.hostname or "").lower()
+            cand_path = parsed.path or "/"
+            if cand_host and cand_host == pat_host:
+                # Prefix match on path segments: /app matches /app and /app/...
+                prefix = pat_path.rstrip("/") or "/"
+                if cand_path == prefix or cand_path.startswith(prefix + "/"):
+                    return True
+        return False
+
+    # Host-only patterns (no URL scheme and no path component)
     cand_host = _normalize_host(cand)
     pat_host = _normalize_host(pat)
     if cand_host and pat_host and cand_host == pat_host and "://" not in pat:

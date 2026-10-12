@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0a3 — 2026-10-12
+
+### Security
+
+- HeadersAdapter fails closed without a scope engine; http(s)-only fetches; resolve-time block for named-host→non-public DNS
+- `--skip-scope-check` requires `PEN_ALLOW_SKIP_SCOPE=1`; loopback skip uses parsed hostname (not substring)
+- Scheme-less `host/path` scope assets no longer authorize the whole host
+- Redact URL userinfo in findings and free-text fields
+- Confine Gitleaks/Trivy scan paths under work/reports/cwd; Trivy docker uses `--network none`
+- Briar Compose worker: `read_only` + tmpfs
+
+### Added
+
+- `core/net/ssrf.py` and `core/paths.py` helpers
+- Post-merge hardening regression suite (`tests/unit/test_post_merge_hardening.py`)
+
+### Notes
+
+- Assessment: READY FOR CONTROLLED TESTING (not production-ready for unconstrained active scanning)
+- Shannon/Briar egress containment remains an upstream/operator responsibility
+
 ## 0.2.0a2 — 2026-10-12
 
 ### Security

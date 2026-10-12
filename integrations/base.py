@@ -44,9 +44,14 @@ class SecurityAdapter(ABC):
         """Execute the tool (or dry-run) and return normalized results."""
 
     def preflight(self, request: AdapterRequest) -> None:
-        if request.skip_scope_check or not self.requires_active_scope:
+        if not self.requires_active_scope:
+            return
+        if request.skip_scope_check:
+            # Callers must gate this flag (CLI requires PEN_ALLOW_SKIP_SCOPE=1).
             return
         if not self.config.require_scope_for_active:
+            # Config override is intentional but still requires an engine when present.
+            # Missing registry continues to fail closed below when require_scope is true.
             return
         if self.scope_engine is None:
             raise PermissionError("Scope engine is required for active testing")

@@ -42,11 +42,13 @@ def _scope(url: str) -> ScopeEngine:
 
 def test_policy_defaults_require_egress(monkeypatch):
     monkeypatch.delenv("PEN_REQUIRE_EGRESS_POLICY", raising=False)
+    monkeypatch.delenv("PEN_ALLOW_EGRESS_DISABLE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SCOPE_DISABLE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SHANNON_LIVE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
     policy = load_isolation_policy()
     assert policy.require_egress_policy is True
+    assert policy.allow_egress_disable is False
     assert policy.allow_scope_disable is False
     assert policy.allow_shannon_live is False
     assert policy.allow_briar_live is False
@@ -410,7 +412,6 @@ def test_egress_allow_hosts_restricts(monkeypatch):
 
 def test_mcp_cannot_set_skip_scope_for_shannon(tmp_path: Path, monkeypatch):
     from mcp_server import service
-    from mcp_server.config import resolve_platform_config
 
     monkeypatch.setenv("PEN_WORK_DIR", str(tmp_path / "work"))
     monkeypatch.setenv("PEN_REPORTS_DIR", str(tmp_path / "reports"))
@@ -427,3 +428,165 @@ def test_mcp_cannot_set_skip_scope_for_shannon(tmp_path: Path, monkeypatch):
     )
     assert result.get("ok") is False
     assert "authorization" in (result.get("error") or "").lower() or result.get("status") == "blocked"
+
+
+def test_skip_scope_does_not_bypass_egress_dns_gate_shannon(tmp_path: Path, monkeypatch):
+    """Regression: PEN_ALLOW_SKIP_SCOPE must not disable launch-time DNS policy."""
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.setenv("PEN_ALLOW_SKIP_SCOPE", "1")
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, scope_engine=None)
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+            skip_scope_check=True,
+        )
+    )
+    assert result.status == "blocked"
+    assert "non-public" in (result.error or "").lower()
+    adapter.runner.run.assert_not_called()
+
+
+def test_skip_scope_does_not_bypass_egress_dns_gate_briar(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+    monkeypatch.setenv("PEN_ALLOW_SKIP_SCOPE", "1")
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, scope_engine=None)
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(target=url, mode="quick", dry_run=False, skip_scope_check=True)
+    )
+    assert result.status == "blocked"
+    assert "non-public" in (result.error or "").lower()
+    adapter.runner.run.assert_not_called()
+
+
+def test_egress_disable_requires_dual_gate(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.setenv("PEN_REQUIRE_EGRESS_POLICY", "false")
+    monkeypatch.delenv("PEN_ALLOW_EGRESS_DISABLE", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+        )
+    )
+    assert result.status == "blocked"
+    assert "PEN_ALLOW_EGRESS_DISABLE" in (result.error or "")
+    adapter.runner.run.assert_not_called()
+
+
+def test_egress_disable_with_dual_gate_allows_when_live_ack(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.setenv("PEN_REQUIRE_EGRESS_POLICY", "false")
+    monkeypatch.setenv("PEN_ALLOW_EGRESS_DISABLE", "1")
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    runner = MagicMock()
+
+    class R:
+        ok = True
+        timed_out = False
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    runner.run.return_value = R()
+    adapter.runner = runner
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+        )
+    )
+    assert result.status == "succeeded"
+    runner.run.assert_called_once()
+
+
+def test_shannon_live_gate_does_not_enable_briar(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    adapter.runner = MagicMock()
+    result = adapter.run(AdapterRequest(target=url, mode="quick", dry_run=False))
+    assert result.status == "blocked"
+    assert "PEN_ALLOW_BRIAR_LIVE" in (result.error or "")
+    adapter.runner.run.assert_not_called()
+
+
+def test_mcp_demo_does_not_waive_confirm_for_shannon(tmp_path: Path, monkeypatch):
+    from mcp_server import service
+
+    monkeypatch.setenv("PEN_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("PEN_REPORTS_DIR", str(tmp_path / "reports"))
+    (tmp_path / "work").mkdir()
+    (tmp_path / "reports").mkdir()
+    result = service.run_security_assessment(
+        tool="shannon",
+        target="https://staging.example.invalid",
+        dry_run=False,
+        confirm_authorized=False,
+        demo=True,
+        repo_path=str(Path(__file__).resolve().parents[2]),
+    )
+    assert result.get("ok") is False
+    assert "confirm_authorized" in (result.get("error") or "")

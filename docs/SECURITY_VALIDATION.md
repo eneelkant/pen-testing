@@ -1,7 +1,7 @@
 # Security Validation
 
 Verification date: **2026-10-12**  
-Current `main` baseline for this work: **`83f9e02d45689705a46b0e296f8f4b8098b0db6b`** (PR #6 + Dependabot #7–#9).  
+Current `main` baseline for this work: **`93c228bf4a582dd37ad8426a26eb60d794d77778`** (PR #10 merge).  
 See also `docs/SCANNER_ISOLATION.md`.
 
 ## Authorization / scope engine
@@ -31,6 +31,10 @@ See also `docs/SCANNER_ISOLATION.md`.
 | Live Shannon without `PEN_ALLOW_SHANNON_LIVE` | PASS (blocked) | unit tests |
 | Live Briar without `PEN_ALLOW_BRIAR_LIVE` | PASS (blocked) | unit tests |
 | Briar demo without `PEN_ALLOW_BRIAR_LIVE` | PASS (allowed) | unit tests |
+| `--skip-scope-check` + DNS→non-public still blocks launch | PASS (blocked) | unit tests (0.2.0a8) |
+| `PEN_REQUIRE_EGRESS_POLICY=false` without dual gate | PASS (blocked) | unit tests (0.2.0a8) |
+| MCP `demo=true` on Shannon without confirm | PASS (blocked) | unit tests (0.2.0a8) |
+| Shannon live gate does not enable Briar | PASS (blocked) | unit tests (0.2.0a8) |
 | Control network → local fixture | PASS (runtime) | docker verify |
 | In-engine Shannon/Briar connection interception | NOT IMPLEMENTED | documented limitation |
 | DNS rebinding inside Shannon/Briar | NOT IMPLEMENTED | residual — upstream engines |
@@ -68,6 +72,6 @@ See also `docs/SCANNER_ISOLATION.md`.
 ## Residual risks
 
 1. Shannon and Briar may issue requests beyond the initially authorized URL; platform DNS/IP policy does **not** wrap their connections.
-2. Operator overrides (`PEN_REQUIRE_SCOPE=false`, `PEN_ALLOW_SKIP_SCOPE=1`) are powerful — restrict in production-like deployments.
-3. Network egress firewalling remains operator-owned.
+2. Operator overrides (`PEN_REQUIRE_SCOPE=false` + dual gate, `PEN_REQUIRE_EGRESS_POLICY=false` + dual gate, `PEN_ALLOW_SKIP_SCOPE=1`, live gates) are powerful — restrict in production-like deployments. Enabling one live gate does not enable the other.
+3. Network egress firewalling remains operator-owned. Launch-time DNS preflight is not in-engine containment.
 4. AGPL Shannon/Briar redistribution obligations need human legal review.

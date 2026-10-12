@@ -2,7 +2,7 @@
 
 Status: **partial platform enforcement** — READY FOR CONTROLLED TESTING, not full in-engine containment.
 
-Verified on `main` at `83f9e02` (PR #6 isolation runtime + Dependabot #7–#9). This release adds Briar live-gate parity with Shannon.
+Verified on `main` at `93c228b` (PR #10 merge). This release hardens gate independence: scope-skip cannot disable egress, and egress disable needs a dual gate.
 
 ## What each layer protects
 
@@ -30,6 +30,10 @@ Verified on `main` at `83f9e02` (PR #6 isolation runtime + Dependabot #7–#9). 
 | Live Shannon blocked without `PEN_ALLOW_SHANNON_LIVE=1` | Unit tests (PR #6) |
 | Live Briar blocked without `PEN_ALLOW_BRIAR_LIVE=1` | Unit tests (0.2.0a7) |
 | Briar demo / dry-run without live gate | Unit tests (0.2.0a7) |
+| `--skip-scope-check` does **not** skip launch DNS/egress | Unit tests (0.2.0a8) |
+| `PEN_REQUIRE_EGRESS_POLICY=false` without dual gate | Unit tests (0.2.0a8) — blocked |
+| MCP `demo=true` does not waive confirm for Shannon | Unit tests (0.2.0a8) |
+| Shannon live gate does not enable Briar | Unit tests (0.2.0a8) |
 | Shannon/Briar worker containers inherit platform networks | **False / not implemented** |
 
 ## Operator environment
@@ -38,8 +42,9 @@ Verified on `main` at `83f9e02` (PR #6 isolation runtime + Dependabot #7–#9). 
 |---|---|---|
 | `PEN_REQUIRE_SCOPE` | `true` | Require authorization registry |
 | `PEN_ALLOW_SCOPE_DISABLE` | `false` | Second gate to honor `PEN_REQUIRE_SCOPE=false` |
-| `PEN_ALLOW_SKIP_SCOPE` | unset/false | Required for CLI `--skip-scope-check` |
+| `PEN_ALLOW_SKIP_SCOPE` | unset/false | Required for CLI `--skip-scope-check` (scope only; egress still enforced) |
 | `PEN_REQUIRE_EGRESS_POLICY` | `true` | Launch-time destination evaluation for live remote tools |
+| `PEN_ALLOW_EGRESS_DISABLE` | `false` | Second gate to honor `PEN_REQUIRE_EGRESS_POLICY=false` |
 | `PEN_BLOCK_NON_PUBLIC_RESOLVED` | `true` | Deny DNS→non-public for named hosts |
 | `PEN_ALLOW_NON_PUBLIC_LITERALS` | `true` | Allow scoped `127.0.0.1` / RFC1918 literals |
 | `PEN_ALLOW_SHANNON_LIVE` | `false` | Explicit ack that Shannon workers are not network-isolated by this platform |
@@ -59,5 +64,6 @@ Verified on `main` at `83f9e02` (PR #6 isolation runtime + Dependabot #7–#9). 
 - Live destination fails egress policy → **blocked** (subprocess not started)
 - Live Shannon without `PEN_ALLOW_SHANNON_LIVE=1` → **blocked**
 - Live Briar without `PEN_ALLOW_BRIAR_LIVE=1` → **blocked** (demo/dry-run exempt)
+- `PEN_REQUIRE_EGRESS_POLICY=false` without `PEN_ALLOW_EGRESS_DISABLE=1` → **blocked**
 - Shannon without Docker daemon → **blocked**
 - Isolated-network runtime probe reaches external IP → Docker verify **fails**

@@ -24,7 +24,9 @@ class AdapterRequest:
     config_path: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     dry_run: bool = False
-    skip_scope_check: bool = False  # only for local fixtures / unit tests
+    # Skips authorization registry only. Does NOT skip launch-time egress / DNS policy.
+    # Callers must gate this flag (CLI requires PEN_ALLOW_SKIP_SCOPE=1).
+    skip_scope_check: bool = False
 
 
 class SecurityAdapter(ABC):
@@ -70,16 +72,23 @@ class SecurityAdapter(ABC):
         )
 
     def egress_preflight(self, request: AdapterRequest) -> None:
-        """Launch-time destination gate for live remote engines (not in-engine containment)."""
+        """Launch-time destination gate for live remote engines (not in-engine containment).
+
+        Independent of ``skip_scope_check``: skipping the authorization registry must not
+        disable DNS / non-public destination evaluation for Shannon/Briar launches.
+        """
         if not self.requires_egress_policy:
             return
-        if request.dry_run or request.skip_scope_check:
+        if request.dry_run:
             return
         if not (request.target or "").strip():
             raise PermissionError("Target is required for egress policy evaluation")
+        # When scope was skipped, still evaluate resolve-time policy without re-applying
+        # the registry (scope may be None or intentionally bypassed for fixtures).
+        scope_for_egress = None if request.skip_scope_check else self.scope_engine
         assert_live_destination_allowed(
             request.target,
-            scope_engine=self.scope_engine,
+            scope_engine=scope_for_egress,
             test_category=request.test_category,
             dry_run=False,
         )

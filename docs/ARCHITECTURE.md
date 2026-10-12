@@ -9,13 +9,15 @@ Unify authorized white-box (Shannon), black-box (Briar), and complementary scann
 ```mermaid
 flowchart TB
   subgraph clients [AI clients and humans]
-    CURSOR[Cursor / AGENTS.md]
-    CLAUDE[Claude / CLAUDE.md]
-    GEMINI[Gemini / GEMINI.md]
+    CURSOR[Cursor MCP / AGENTS.md]
+    CLAUDE[Claude Desktop MCP]
+    GEMINI[Gemini CLI settings]
+    CHATGPT[ChatGPT remote connector docs only]
     HUMAN[Human operator]
   end
 
   subgraph platform [pen-testing orchestrator Apache-2.0]
+    MCP[mcp_server stdio tools]
     CLI[core.cli]
     CFG[core.config]
     SCOPE[ScopeEngine]
@@ -42,7 +44,10 @@ flowchart TB
   REG[(scopes/registry.yaml)]
   OUT[(reports/out workspaces)]
 
+  clients --> MCP
   clients --> CLI
+  MCP --> SCOPE
+  MCP --> adapters
   CLI --> CFG
   CLI --> SCOPE
   SCOPE --> REG

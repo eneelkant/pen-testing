@@ -4,36 +4,56 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pen-testing-platform"
-version = "0.1.0"
-description = "Modular orchestration platform for authorized security testing (Shannon, Briar, and scanners)."
+version = "0.2.0a1"
+description = "Distributable orchestration + MCP server for authorized AI-assisted security testing."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [{ name = "eneelkant" }]
-keywords = ["security", "penetration-testing", "bug-bounty", "orchestration"]
+keywords = ["security", "penetration-testing", "bug-bounty", "mcp", "orchestration"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Information Technology",
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Topic :: Security",
 ]
 dependencies = [
-  "pyyaml>=6.0",
-  "jsonschema>=4.20",
+  "pyyaml>=6.0,<7",
+  "jsonschema>=4.20,<5",
 ]
 
 [project.optional-dependencies]
+mcp = [
+  "mcp>=2.3.0,<3",
+]
+briar = [
+  "briar-pentest==0.4.62",
+]
 dev = [
-  "pytest>=8.0",
-  "pytest-cov>=5.0",
+  "pytest>=8.0,<10",
+  "pytest-cov>=5.0,<8",
+  "mcp>=2.3.0,<3",
+]
+all = [
+  "pen-testing-platform[mcp,dev]",
 ]
 
 [project.scripts]
 pen-testing = "core.cli:main"
+pen-testing-mcp = "mcp_server.server:main"
+
+[project.urls]
+Homepage = "https://github.com/eneelkant/pen-testing"
+Repository = "https://github.com/eneelkant/pen-testing"
+Issues = "https://github.com/eneelkant/pen-testing/issues"
+Changelog = "https://github.com/eneelkant/pen-testing/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
-include = ["core*", "integrations*", "providers*"]
+include = ["core*", "integrations*", "providers*", "mcp_server*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -44,5 +64,5 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["core", "integrations", "providers"]
+source = ["core", "integrations", "providers", "mcp_server"]
 omit = ["tests/*"]

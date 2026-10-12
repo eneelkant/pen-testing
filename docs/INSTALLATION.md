@@ -1,83 +1,71 @@
 # Installation
 
-Supported: macOS, Linux, Windows via WSL2 (PowerShell scripts included).
+Supported: macOS, Linux, Windows via WSL2 / PowerShell.
 
-## Prerequisites
+## Profiles
 
-| Prerequisite | Why |
-|---|---|
-| Git | Clone repository |
-| Python 3.10+ | Orchestrator |
-| Docker Engine/Desktop + Compose v2 | Shannon workers; recommended isolation |
-| Node.js 18+ | Shannon `npx` launcher |
-| AI provider credentials | Only when running Shannon/Briar agents that need them |
+| Profile | Command | Includes |
+|---|---|---|
+| Base orchestrator | `bash installers/install.sh base` | core CLI, scope, reporting |
+| MCP | `bash installers/install.sh mcp` | base + MCP SDK server |
+| Dev | `bash installers/install.sh dev` | MCP + pytest |
 
-This project does **not** silently install Docker. Official docs: https://docs.docker.com/get-docker/
-
-## Quick start
-
-```bash
-git clone https://github.com/eneelkant/pen-testing.git
-cd pen-testing
-chmod +x scripts/*.sh
-./scripts/setup.sh
-./scripts/doctor.sh
-make smoke
-```
-
-Windows (PowerShell):
-
-```powershell
-git clone https://github.com/eneelkant/pen-testing.git
-cd pen-testing
-./scripts/setup.ps1
-./scripts/doctor.ps1
-```
-
-## Docker-first
-
-```bash
-cp .env.example .env   # add keys only if needed
-docker compose build
-docker compose run --rm orchestrator
-# Briar worker image
-docker compose --profile workers build briar
-# Local headers fixture
-docker compose --profile fixtures up -d fixture-headers
-```
-
-Uninstall/cleanup:
-
-```bash
-docker compose --profile workers --profile fixtures down -v
-docker image rm pen-testing-orchestrator:0.1.0 pen-testing-briar:0.4.62 || true
-```
-
-## Isolated Briar venv
+Optional Briar engine (isolated):
 
 ```bash
 python3 -m venv .venv-briar
 .venv-briar/bin/pip install 'briar-pentest==0.4.62'
 export PEN_BRIAR_PYTHON=$PWD/.venv-briar/bin/python
-python -m core.cli health --tool briar
 ```
 
-## Troubleshooting
+Shannon still requires Docker + Node.js 18+ separately.
 
-| Symptom | Check |
-|---|---|
-| `docker: NOT FOUND` | Install Docker; re-run doctor |
-| Docker installed but daemon errors | Start Docker Desktop / enable service |
-| Shannon health `cli_reachable` false | Node/npx network access to npm registry |
-| Briar `installed` false | Set `PEN_BRIAR_PYTHON` to the venv that has `briar-pentest` |
-| Scope check denies target | Add explicit authorization record; do not disable checks |
-| `python3 -m venv` fails | Install `python3-venv` (Debian/Ubuntu) |
+## One-command setup
 
-## Verified in agent environment (2026-10-12)
+```bash
+git clone https://github.com/eneelkant/pen-testing.git
+cd pen-testing
+chmod +x installers/*.sh scripts/*.sh
+# Non-interactive CI-style:
+PEN_ASSUME_YES=1 bash scripts/setup_all.sh
+```
 
-| Check | Result |
-|---|---|
-| Python 3.12.3 | Passed |
-| Node/npx | Passed; Shannon CLI help for 3.4.0 retrieved |
-| Briar 0.4.62 CLI via pip `--target` | Passed |
-| Docker Engine | **Missing** — compose builds not executed here |
+## Manual MCP verification
+
+```bash
+source .venv/bin/activate
+pen-testing-mcp   # stdio server for Cursor/Claude
+python -c "from mcp_server.server import mcp; print([t.name for t in mcp.list_tools()])"
+python -m core.cli doctor
+```
+
+## Client configuration
+
+See `docs/CLIENT_COMPATIBILITY.md`.
+
+```bash
+python installers/configure_cursor.py --apply
+python installers/configure_claude.py --print-only
+python installers/configure_gemini.py --print-only
+```
+
+Installers create backups before modifying existing MCP configs and only upsert the `pen-testing` server entry.
+
+## Docker
+
+Not installed by these scripts. Official docs: https://docs.docker.com/get-docker/
+
+```bash
+docker compose version
+docker compose build
+docker compose run --rm orchestrator
+```
+
+## Uninstall
+
+```bash
+deactivate || true
+rm -rf .venv .venv-briar
+# Remove MCP entries manually from client configs if applied
+docker compose down -v  # if used
+```

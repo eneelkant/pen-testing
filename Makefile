@@ -1,4 +1,4 @@
-.PHONY: help install doctor smoke test lint compose-build compose-doctor clean
+.PHONY: help install install-mcp doctor smoke test lint compose-build compose-doctor clean
 
 PYTHON ?= python3
 export PYTHONPATH := $(CURDIR)$(if $(PYTHONPATH),:$(PYTHONPATH),)
@@ -6,6 +6,7 @@ export PYTHONPATH := $(CURDIR)$(if $(PYTHONPATH),:$(PYTHONPATH),)
 help:
 	@echo "Targets:"
 	@echo "  install         Install orchestrator package (editable) with dev deps"
+	@echo "  install-mcp     Install base + MCP profile via installer script"
 	@echo "  doctor          Environment diagnostics"
 	@echo "  smoke           Safe local smoke tests (no external attacks)"
 	@echo "  test            Run unit tests"
@@ -14,7 +15,10 @@ help:
 	@echo "  clean           Remove local caches and generated reports"
 
 install:
-	$(PYTHON) -m pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev]" -r requirements/dev.txt
+
+install-mcp:
+	PEN_ASSUME_YES=1 bash installers/install.sh mcp
 
 doctor:
 	$(PYTHON) -m core.cli doctor

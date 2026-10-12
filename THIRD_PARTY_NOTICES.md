@@ -37,6 +37,13 @@ This repository is licensed under Apache-2.0. It integrates external tools by in
 - Engine license: LGPL-2.1
 - Rules: often under Semgrep Rules License (not redistributed here)
 
+## MCP Python SDK
+
+- Package: `mcp`
+- Source: https://github.com/modelcontextprotocol/python-sdk
+- License: MIT
+- Usage: optional extra `[mcp]` for the stdio/HTTP MCP server
+
 ## Python dependencies
 
-Runtime orchestrator dependencies are declared in `pyproject.toml` (PyYAML, jsonschema) and carry their own upstream licenses.
+Runtime orchestrator dependencies are declared in `pyproject.toml` / `requirements/` and carry their own upstream licenses.

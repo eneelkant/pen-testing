@@ -26,15 +26,21 @@ See `docs/ARCHITECTURE.md`. Key packages: `core/`, `integrations/`, `providers/`
 ## Common commands
 
 ```bash
+PEN_ASSUME_YES=1 bash installers/install.sh mcp
 ./scripts/doctor.sh
 ./scripts/smoke.sh
 python -m core.cli health --tool all
 python -m core.cli scope-check --target <url> --category active
 python -m core.cli run --tool headers --target http://127.0.0.1:18080/ --category passive
+pen-testing-mcp   # MCP stdio server
 python -m pytest -q tests/unit
 ```
 
+MCP assessments default to `dry_run=true`. Live runs require `confirm_authorized=true` after `validate_target_scope`.
+
 Active Shannon/Briar scans require human intent, valid scope, and (for Shannon) Docker.
+
+Client setup: `docs/CLIENT_COMPATIBILITY.md`.
 
 ## Development workflow
 

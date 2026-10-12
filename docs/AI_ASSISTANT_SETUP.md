@@ -20,16 +20,18 @@ Client-specific files only point at the shared rules:
 
 ## Suggested local workflow
 
-1. Open this repository in your AI client.
-2. Ensure the client loads `AGENTS.md` / project instructions.
-3. Run `./scripts/doctor.sh` (or `python -m core.cli doctor`).
-4. Configure provider env vars in `.env` only when a tool needs them.
-5. Register authorized targets in `scopes/registry.yaml`.
-6. Prefer `--dry-run` and local fixtures before any active scan.
+1. Install with `PEN_ASSUME_YES=1 bash installers/install.sh mcp`.
+2. Open this repository in your AI client.
+3. Ensure the client loads `AGENTS.md` / project instructions.
+4. Configure MCP using `docs/CLIENT_COMPATIBILITY.md` helpers.
+5. Run `./scripts/doctor.sh` (or `python -m core.cli doctor`).
+6. Configure provider env vars in `.env` only when a tool needs them.
+7. Register authorized targets in `scopes/registry.yaml`.
+8. Prefer dry-run MCP/CLI paths and local fixtures before any active scan.
 
 ## MCP / tool interfaces
 
-If your client supports MCP, expose only local orchestration helpers (doctor, scope-check, report export). Do not expose unbounded shell that can launch active scans without scope checks.
+Use the packaged stdio server (`pen-testing-mcp` / `python -m mcp_server.server`). It exposes only the documented tool set — not arbitrary shell or filesystem access. Live assessments still require scope validation and `confirm_authorized`.
 
 ## Public anonymous read access
 

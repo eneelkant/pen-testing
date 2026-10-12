@@ -12,6 +12,9 @@
 - [docs/TOOL_MATRIX.md](docs/TOOL_MATRIX.md): tool licenses and status
 - [docs/INSTALLATION.md](docs/INSTALLATION.md): setup
 - [docs/AI_ASSISTANT_SETUP.md](docs/AI_ASSISTANT_SETUP.md): multi-client setup
+- [docs/CLIENT_COMPATIBILITY.md](docs/CLIENT_COMPATIBILITY.md): Cursor/Claude/Gemini/ChatGPT matrix
+- [mcp_server/README.md](mcp_server/README.md): MCP tools
+- [CHANGELOG.md](CHANGELOG.md): versions
 
 ## Upstream (external)
 

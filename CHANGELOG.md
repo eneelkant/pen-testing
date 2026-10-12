@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0a4 — 2026-10-12
+
+### Security
+
+- Report exporters refuse final-path symlinks (`safe_write_text` / `O_NOFOLLOW`)
+
+### Documentation
+
+- Reconcile readiness/security docs with PR #3 merge on `main` (`c0bfe27`)
+
 ## 0.2.0a3 — 2026-10-12
 
 ### Security

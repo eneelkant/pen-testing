@@ -228,3 +228,18 @@ def test_cli_skip_scope_with_env_gate(tmp_path: Path, monkeypatch):
         ]
     )
     assert code == 0
+
+
+def test_safe_write_refuses_symlink(tmp_path: Path):
+    from core.paths import safe_write_text
+    from core.reporting.export import export_json
+
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    link = tmp_path / "report.json"
+    link.symlink_to(outside)
+    with pytest.raises(PermissionError, match="symlink"):
+        safe_write_text(link, "{}")
+    with pytest.raises(PermissionError, match="symlink"):
+        export_json([], link)
+    assert outside.read_text(encoding="utf-8") == "secret"

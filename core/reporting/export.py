@@ -8,18 +8,17 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from core.findings import Finding, redact_secrets
+from core.paths import safe_write_text
 
 
 def export_json(findings: Iterable[Finding], path: str | Path, *, metadata: dict[str, Any] | None = None) -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "metadata": redact_secrets(metadata or {}),
         "findings": [redact_secrets(f.to_dict()) for f in findings],
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return path
+    return safe_write_text(path, json.dumps(payload, indent=2))
 
 
 def export_markdown(
@@ -30,7 +29,6 @@ def export_markdown(
     metadata: dict[str, Any] | None = None,
 ) -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     findings = list(findings)
     meta = redact_secrets(metadata or {})
     lines = [
@@ -78,8 +76,7 @@ def export_markdown(
         else:
             lines.append("_Not provided_")
         lines.append("")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
+    return safe_write_text(path, "\n".join(lines) + "\n")
 
 
 _SEVERITY_TO_LEVEL = {
@@ -93,7 +90,6 @@ _SEVERITY_TO_LEVEL = {
 
 def export_sarif(findings: Iterable[Finding], path: str | Path, *, tool_name: str = "pen-testing-platform") -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     results = []
     rules = {}
     for finding in findings:
@@ -133,5 +129,4 @@ def export_sarif(findings: Iterable[Finding], path: str | Path, *, tool_name: st
             }
         ],
     }
-    path.write_text(json.dumps(sarif, indent=2), encoding="utf-8")
-    return path
+    return safe_write_text(path, json.dumps(sarif, indent=2))

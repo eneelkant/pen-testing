@@ -39,7 +39,7 @@ MCP is **implemented and usable** for local stdio diagnostics and dry-run orches
 | `bash scripts/smoke.sh` | PASS |
 | MCP tool discovery (`mcp.list_tools`) | PASS — 9 tools |
 | Docker Engine / Compose runtime (Cursor agent VM) | BLOCKED — `docker: command not found` |
-| Docker Engine / Compose runtime (GitHub Actions `ubuntu-latest`) | Pending / verified via CI job `Docker build and runtime` (`scripts/docker_runtime_verify.sh`) |
+| Docker Engine / Compose runtime (GitHub Actions `ubuntu-latest`) | **PASS** — job `Docker build and runtime` on commit `bb06250` (run `38244472440`); log ends with `Docker runtime verification passed.` |
 | Cursor / Claude / Gemini UI E2E | BLOCKED — clients not installed in agent VM |
 | ChatGPT remote HTTPS connector | BLOCKED / NOT APPLICABLE locally |
 
@@ -77,5 +77,6 @@ MCP is **implemented and usable** for local stdio diagnostics and dry-run orches
 
 1. Shannon/Briar browser/egress not fully contained by scope preflight.
 2. DNS rebinding / private-IP pivot after redirect not fully enforced for upstream engines.
-3. Docker image builds not runtime-verified in this environment.
+3. Agent-local Docker remains unavailable; runtime proof is via GitHub Actions `ubuntu-latest`.
 4. Briar remains upstream Alpha.
+5. Orchestrator container intentionally lacks Docker socket (Shannon worker launch from inside the container remains unavailable by design).

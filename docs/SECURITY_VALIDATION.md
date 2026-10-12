@@ -43,7 +43,8 @@ Verification date: **2026-10-12**
 | Non-root UIDs in compose | PASS (static) |
 | `cap_drop: ALL`, `no-new-privileges` | PASS (static) |
 | No docker.sock on workers | PASS (static) |
-| Runtime build/run | BLOCKED (no Docker Engine) |
+| Runtime build/run (agent VM) | BLOCKED (no Docker Engine) |
+| Runtime build/run (GitHub Actions) | PASS — `Docker build and runtime` on `bb06250` |
 
 ## Residual risks
 

@@ -2,7 +2,9 @@
 
 Audit date: **2026-10-12**  
 Baseline `main` commit: `25fec5093db6b96dea30e4b55e1ff406f0509626` (PR #1 merge)  
-Audit branch head: see final report / latest commit on `cursor/mcp-audit-hardening-39f7`
+Audit branch: `cursor/mcp-audit-hardening-39f7`  
+Audit branch head (initial publish): `78c6b812502772048c80b792c96e4deacf36869d`  
+PR: https://github.com/eneelkant/pen-testing/pull/2 (draft — Docker runtime BLOCKED; do not merge)
 
 ## Summary
 

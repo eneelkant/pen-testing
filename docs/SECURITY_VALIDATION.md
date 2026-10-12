@@ -1,7 +1,8 @@
 # Security Validation
 
 Verification date: **2026-10-12**  
-Validated tree: post-merge hardening on top of `main` `@ b4e4fab` (see PR from `cursor/post-merge-security-audit-39f7`).
+Current validated `main`: **`c0bfe276d4af06960627d8a181676edf75f34458`** (PR #3 merge).  
+PR #3 head: `27d92781103b8413a9e77943c9893b76af254232`.
 
 ## Authorization / scope engine
 
@@ -29,7 +30,9 @@ Validated tree: post-merge hardening on top of `main` `@ b4e4fab` (see PR from `
 | Secret / URL userinfo redaction | PASS | `redact_text` + normalize |
 | Assessment ID path traversal | PASS | UUID-only IDs |
 | Report outdir escape | PASS | confined to reports/work dirs |
+| Report write via final-path symlink | PASS | `safe_write_text` refuses symlinks / uses `O_NOFOLLOW` |
 | Local scanner path escape | PASS | confined under work/reports/cwd |
+| Symlink dir escape via `confine_path` | PASS | resolve() leaves allowed roots → blocked |
 | CLI `--skip-scope-check` without env gate | PASS (rejected) | `PEN_ALLOW_SKIP_SCOPE=1` required |
 | Rate limit enforcement (network) | NOT IMPLEMENTED | registry field recorded only |
 
@@ -52,7 +55,7 @@ Validated tree: post-merge hardening on top of `main` `@ b4e4fab` (see PR from `
 | No docker.sock on workers/orchestrator | PASS (static + by design) |
 | Briar `read_only` + tmpfs | PASS (static) |
 | Runtime build/run (agent VM) | BLOCKED (no Docker Engine) |
-| Runtime build/run (GitHub Actions on `b4e4fab`) | PASS — [run 38245405070](https://github.com/eneelkant/pen-testing/actions/runs/38245405070) |
+| Runtime build/run (GitHub Actions on `c0bfe27`) | PASS — [run 38247150006](https://github.com/eneelkant/pen-testing/actions/runs/38247150006) |
 
 ## Residual risks
 

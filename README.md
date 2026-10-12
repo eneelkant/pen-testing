@@ -12,7 +12,7 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a3` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
+**Version:** `0.2.0a4` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
 
 Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Local Docker may still be unavailable in some agent VMs. Passing CI does **not** mean Shannon/Briar egress is fully contained.
 

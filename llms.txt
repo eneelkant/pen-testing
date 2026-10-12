@@ -1,0 +1,23 @@
+# pen-testing
+
+> Modular orchestration platform for authorized AI-assisted security testing.
+
+## Primary
+
+- [AGENTS.md](AGENTS.md): shared agent rules
+- [README.md](README.md): project overview
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system design
+- [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md): Shannon/Briar/scanners
+- [docs/SOURCE_AUDIT.md](docs/SOURCE_AUDIT.md): verified upstream audit
+- [docs/TOOL_MATRIX.md](docs/TOOL_MATRIX.md): tool licenses and status
+- [docs/INSTALLATION.md](docs/INSTALLATION.md): setup
+- [docs/AI_ASSISTANT_SETUP.md](docs/AI_ASSISTANT_SETUP.md): multi-client setup
+- [docs/CLIENT_COMPATIBILITY.md](docs/CLIENT_COMPATIBILITY.md): Cursor/Claude/Gemini/ChatGPT matrix
+- [mcp_server/README.md](mcp_server/README.md): MCP tools
+- [CHANGELOG.md](CHANGELOG.md): versions
+
+## Upstream (external)
+
+- https://github.com/KeygraphHQ/shannon
+- https://pypi.org/project/briar-pentest/
+- https://github.com/Stiimy/briar

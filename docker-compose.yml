@@ -1,0 +1,85 @@
+# Docker Compose for orchestration and isolated workers.
+# Active testing containers intentionally do NOT mount the Docker socket.
+name: pen-testing
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pen-testing-orchestrator:0.1.0
+    user: "10001:10001"
+    working_dir: /work
+    environment:
+      PEN_WORK_DIR: /work/workspaces
+      PEN_REPORTS_DIR: /work/reports
+      PEN_SCOPES_FILE: /work/scopes/registry.yaml
+      PEN_REQUIRE_SCOPE: "true"
+      # Provider keys: pass through from host env / .env — never bake into image
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+    volumes:
+      - ./scopes:/work/scopes:ro
+      - pen_workspaces:/work/workspaces
+      - pen_reports:/work/reports
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1.0
+    command: ["python", "-m", "core.cli", "doctor"]
+
+  briar:
+    build:
+      context: .
+      dockerfile: docker/briar/Dockerfile
+    image: pen-testing-briar:0.4.62
+    user: "10002:10002"
+    profiles: ["workers"]
+    environment:
+      # Keys optional until a provider is selected
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+    volumes:
+      - pen_reports:/work/reports
+      - pen_workspaces:/work/workspaces
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    cpus: 2.0
+    # Network left default so authorized remote targets can be reached when explicitly run.
+    # Prefer host-level firewall / scope registry controls before launching.
+    command: ["--help"]
+
+  # Intentionally vulnerable local fixture for safe integration tests (no external targets).
+  fixture-headers:
+    image: python:3.12-slim-bookworm
+    profiles: ["fixtures"]
+    user: "10001:10001"
+    working_dir: /app
+    volumes:
+      - ./tests/fixtures/headers_server.py:/app/headers_server.py:ro
+    command: ["python", "/app/headers_server.py", "8080"]
+    ports:
+      - "18080:8080"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    cpus: 0.5
+
+volumes:
+  pen_workspaces:
+  pen_reports:

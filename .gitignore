@@ -1,0 +1,50 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+**/api_keys*
+
+# Workspaces and scan artifacts (may contain sensitive findings)
+workspaces/
+.artifacts/
+reports/out/
+reports/generated/
+**/findings-private/
+*.sarif
+!tests/fixtures/**/*.sarif
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Shannon local
+node_modules/
+.shannon/
+.shannon-workspace/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Briar local config may hold keys
+.briar.env
+briar.env
+
+# Docker
+*.log

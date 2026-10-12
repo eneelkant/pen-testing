@@ -1,0 +1,27 @@
+authorizations:
+  - program_name: example-bounty-program
+    program_url: https://example.com/security
+    target_id: staging-web
+    asset_type: url
+    scope_source: program-policy
+    policy_reference: https://example.com/security#scope
+    allowed_assets:
+      - https://staging.example.com
+      - https://staging.example.com/
+    excluded_assets:
+      - https://staging.example.com/logout
+      - https://payments.example.com
+    allowed_test_categories:
+      - passive
+      - active
+      - dast
+    prohibited_actions:
+      - dos
+      - social_engineering
+      - data_destruction
+    rate_limit_rps: 2
+    authorization_start: "2026-01-01T00:00:00+00:00"
+    authorization_expiry: "2026-12-31T23:59:59+00:00"
+    environment: staging
+    notes: Replace with a real program after human verification of current rules.
+    last_verified_at: "2026-10-12T00:00:00+00:00"

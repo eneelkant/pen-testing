@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Compileall
+        run: python -m compileall core integrations providers mcp_server installers
+
+      - name: Unit tests
+        run: python -m pytest -q tests/unit
+
+      - name: MCP tool surface
+        run: |
+          python - <<'PY'
+          import asyncio
+          from mcp_server.server import mcp
+          result = mcp.list_tools()
+          tools = asyncio.run(result) if asyncio.iscoroutine(result) else result
+          names = sorted(t.name for t in tools)
+          required = {
+              "platform_status","check_dependencies","validate_target_scope",
+              "list_integrations","run_local_diagnostics","run_security_assessment",
+              "get_assessment_status","list_findings","export_report",
+          }
+          missing = sorted(required - set(names))
+          assert not missing, missing
+          print("mcp_tools_ok", names)
+          PY
+
+      - name: Smoke (no external targets)
+        run: bash scripts/smoke.sh
+
+      - name: Validate compose file
+        run: |
+          if command -v docker >/dev/null 2>&1; then
+            docker compose config -q
+          else
+            echo "Docker not available on runner tool cache path; skipping compose config"
+            # GitHub-hosted runners include Docker — this branch is defensive for forks
+            docker version
+            docker compose config -q
+          fi
+
+  secret-scan:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        run: |
+          docker run --rm -v "$PWD:/src:ro" zricethezav/gitleaks:v8.21.2 detect --source=/src --no-git --verbose
+
+  dependency-audit:
+    name: Dependency metadata check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Show locked intent
+        run: |
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          data = tomllib.loads(Path("pyproject.toml").read_text())
+          deps = data["project"]["dependencies"]
+          print("runtime deps:")
+          for d in deps:
+              print(" -", d)
+          assert "pyyaml" in " ".join(deps).lower()
+          PY

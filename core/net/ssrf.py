@@ -38,8 +38,12 @@ def is_loopback_hostname(host: str | None) -> bool:
 
 
 def is_non_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """True for loopback, private, link-local, multicast, reserved, unspecified."""
-    return bool(
+    """True for loopback, private, link-local, multicast, reserved, unspecified.
+
+    Also treats IETF documentation/benchmark ranges as non-public for SSRF policy
+    (e.g. 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24).
+    """
+    if bool(
         ip.is_private
         or ip.is_loopback
         or ip.is_link_local
@@ -47,7 +51,21 @@ def is_non_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         or ip.is_reserved
         or ip.is_unspecified
         or (getattr(ip, "is_site_local", False))
-    )
+    ):
+        return True
+    # Documentation / test nets (may or may not be covered by is_reserved depending on Python).
+    try:
+        for net in (
+            "192.0.2.0/24",
+            "198.51.100.0/24",
+            "203.0.113.0/24",
+            "2001:db8::/32",
+        ):
+            if ip in ipaddress.ip_network(net):
+                return True
+    except ValueError:
+        pass
+    return False
 
 
 def _hostname_is_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:

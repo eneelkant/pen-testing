@@ -1,8 +1,8 @@
 # Security Validation
 
 Verification date: **2026-10-12**  
-Current validated `main`: **`c0bfe276d4af06960627d8a181676edf75f34458`** (PR #3 merge).  
-PR #3 head: `27d92781103b8413a9e77943c9893b76af254232`.
+Current `main` at isolation work start: **`9bd2663fe74216fbd16b034be70a154a8dc49a3c`** (PR #4 merge).  
+See also `docs/SCANNER_ISOLATION.md`.
 
 ## Authorization / scope engine
 
@@ -24,7 +24,11 @@ PR #3 head: `27d92781103b8413a9e77943c9893b76af254232`.
 | Private IP auto-authorization (`10.0.0.1`) | PASS (not authorized) | scope deny |
 | Headers `file://` | PASS (blocked) | http(s)-only |
 | Headers skip-scope substring bypass | PASS (blocked) | hostname parse |
-| Headers named-host → non-public DNS | PASS (blocked) | `validate_resolved_target` |
+| Headers named-host → non-public DNS | PASS (blocked) | `validate_resolved_target` / isolation egress |
+| Shannon/Briar launch-time DNS→non-public | PASS (blocked before subprocess) | `tests/unit/test_scanner_isolation.py` |
+| `PEN_REQUIRE_SCOPE=false` without dual gate | PASS (blocked) | `PEN_ALLOW_SCOPE_DISABLE` required |
+| Compose Briar default network `internal: true` | PASS (static + docker verify) | `pen-scanner-isolated` |
+| In-engine Shannon/Briar connection interception | NOT IMPLEMENTED | documented limitation |
 | DNS rebinding inside Shannon/Briar | NOT IMPLEMENTED | residual — upstream engines |
 | Upstream browser navigation containment | FAIL / not claimed | documented limitation |
 | Secret / URL userinfo redaction | PASS | `redact_text` + normalize |

@@ -38,6 +38,17 @@ jobs:
       - name: Unit tests
         run: python -m pytest -q tests/unit
 
+      - name: Scanner isolation tests (must not be skipped)
+        run: |
+          set -euo pipefail
+          test -f tests/unit/test_scanner_isolation.py
+          OUT="$(python -m pytest -q tests/unit/test_scanner_isolation.py)"
+          echo "$OUT"
+          echo "$OUT" | grep -E '^[0-9]+ passed' >/dev/null
+          # Fail if the module collects fewer than 10 tests (skipped/emptied).
+          COUNT="$(python -m pytest tests/unit/test_scanner_isolation.py --collect-only -q | grep -c '::test_')"
+          test "$COUNT" -ge 10
+
       - name: MCP tool surface
         run: |
           python - <<'PY'

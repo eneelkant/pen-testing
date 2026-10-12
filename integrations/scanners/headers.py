@@ -10,9 +10,9 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding
+from core.isolation import validate_redirect_destination
 from core.net import is_loopback_hostname, redact_url_userinfo, require_http_url, validate_resolved_target
 from core.results import ExecutionResult
-from core.scope import validate_redirect_stays_in_scope
 from integrations.base import AdapterRequest, SecurityAdapter
 
 RECOMMENDED_HEADERS = {
@@ -52,6 +52,7 @@ class HeadersAdapter(SecurityAdapter):
     name = "headers"
     version_pin = "0.1.0"
     requires_active_scope = True  # still requires authorization for remote targets
+    requires_egress_policy = True
 
     def healthcheck(self) -> dict[str, Any]:
         return {"tool": self.name, "healthy": True, "mode": "passive-http-get-no-follow"}
@@ -99,6 +100,24 @@ class HeadersAdapter(SecurityAdapter):
                 metadata={"dry_run": True, "target": safe_target},
             )
 
+        if not loopback_skip:
+            try:
+                self.egress_preflight(
+                    AdapterRequest(
+                        target=request.target,
+                        test_category=request.test_category,
+                        dry_run=False,
+                        skip_scope_check=False,
+                    )
+                )
+            except PermissionError as exc:
+                return ExecutionResult(
+                    tool=self.name,
+                    execution_id=execution_id,
+                    status="blocked",
+                    error=str(exc),
+                )
+
         try:
             validate_resolved_target(request.target, allow_non_public_literal=True)
         except PermissionError as exc:
@@ -128,7 +147,12 @@ class HeadersAdapter(SecurityAdapter):
             )
 
         if 300 <= int(status_code) < 400:
-            ok, detail = validate_redirect_stays_in_scope(request.target, headers.get("location"))
+            ok, detail = validate_redirect_destination(
+                request.target,
+                headers.get("location"),
+                scope_engine=None if loopback_skip else self.scope_engine,
+                test_category=request.test_category or "passive",
+            )
             if not ok:
                 return ExecutionResult(
                     tool=self.name,

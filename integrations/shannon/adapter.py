@@ -19,6 +19,7 @@ class ShannonAdapter(SecurityAdapter):
     name = "shannon"
     version_pin = "3.4.0"
     requires_active_scope = True
+    requires_egress_policy = True
 
     def __init__(self, *args, runner: CommandRunner | None = None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -134,6 +135,19 @@ class ShannonAdapter(SecurityAdapter):
                 execution_id=execution_id,
                 status="blocked",
                 error="Shannon requires a working Docker daemon for worker containers",
+                metadata={"health": health},
+            )
+
+        # Launch-time destination gate (does not contain Shannon's own workers after start).
+        try:
+            self.egress_preflight(request)
+        except PermissionError as exc:
+            audit_event("shannon.blocked", reason=str(exc), target=request.target)
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=str(exc),
                 metadata={"health": health},
             )
 

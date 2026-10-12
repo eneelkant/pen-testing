@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0a5 — 2026-10-12
+
+### Security
+
+- Launch-time egress policy for live Shannon/Briar/Headers (`core/isolation/`)
+- Dual-gate for disabling scope: `PEN_REQUIRE_SCOPE=false` requires `PEN_ALLOW_SCOPE_DISABLE=1`
+- Compose: `pen-scanner-isolated` (`internal: true`) for default Briar workers; `briar-live` profile for explicit egress
+- Docker runtime verify asserts isolation networks, no `docker.sock`, and runs isolation unit tests
+- Headers redirects re-checked with resolve-time non-public policy
+
+### Documentation
+
+- `docs/SCANNER_ISOLATION.md` maps which controls apply to which engines
+
+### Notes
+
+- Does **not** claim in-engine Shannon/Briar DNS/redirect containment after subprocess start
+
 ## 0.2.0a4 — 2026-10-12
 
 ### Security

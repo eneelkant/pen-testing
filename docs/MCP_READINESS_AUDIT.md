@@ -3,10 +3,10 @@
 ## Current repository status (reconciled)
 
 Verification date: **2026-10-12**  
-Current `main` SHA: **`c0bfe276d4af06960627d8a181676edf75f34458`**  
-PR #3 merge commit: **`c0bfe276d4af06960627d8a181676edf75f34458`** (merged 2026-10-12)  
-PR #3 head commit: `27d92781103b8413a9e77943c9893b76af254232`  
-Earlier merge (PR #2): `b4e4fab6329abce2e1f686e9d6b1704bd1166fd1` (historical)
+Current `main` SHA at PR #5 start: **`9bd2663fe74216fbd16b034be70a154a8dc49a3c`** (PR #4 merge)  
+PR #4 merge: `9bd2663` — docs reconcile + symlink-safe exports (`0.2.0a4`)  
+PR #3 merge: `c0bfe276d4af06960627d8a181676edf75f34458`  
+PR #2 merge: `b4e4fab6329abce2e1f686e9d6b1704bd1166fd1` (historical)
 
 | Check | Result |
 |---|---|

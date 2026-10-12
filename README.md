@@ -12,9 +12,9 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a4` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
+**Version:** `0.2.0a5` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
 
-Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Local Docker may still be unavailable in some agent VMs. Passing CI does **not** mean Shannon/Briar egress is fully contained.
+Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Local Docker may still be unavailable in some agent VMs. Launch-time egress policy applies before Shannon/Briar start; **in-engine** DNS/redirect containment is **not** claimed — see [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md).
 
 ## Quick install (MCP profile)
 
@@ -78,6 +78,7 @@ Install Docker yourself if needed: https://docs.docker.com/get-docker/
 | [`docs/MCP_READINESS_AUDIT.md`](docs/MCP_READINESS_AUDIT.md) | MCP readiness audit |
 | [`docs/MCP_TOOL_TEST_MATRIX.md`](docs/MCP_TOOL_TEST_MATRIX.md) | MCP tool coverage |
 | [`docs/SECURITY_VALIDATION.md`](docs/SECURITY_VALIDATION.md) | Scope / authorization tests |
+| [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md) | Shannon/Briar/Headers isolation map |
 | [`docs/CLIENT_COMPATIBILITY.md`](docs/CLIENT_COMPATIBILITY.md) | Cursor / Claude / Gemini / ChatGPT |
 | [`docs/SOURCE_AUDIT.md`](docs/SOURCE_AUDIT.md) | Upstream audit |
 | [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md) | Releases |

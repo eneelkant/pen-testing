@@ -20,6 +20,7 @@ class BriarAdapter(SecurityAdapter):
     name = "briar"
     version_pin = "0.4.62"
     requires_active_scope = True
+    requires_egress_policy = True
 
     def __init__(self, *args, runner: CommandRunner | None = None, python_bin: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -120,6 +121,19 @@ class BriarAdapter(SecurityAdapter):
                 error="Briar is not healthy: " + "; ".join(health.get("errors", [])),
                 metadata={"health": health},
             )
+
+        if not is_demo:
+            try:
+                self.egress_preflight(request)
+            except PermissionError as exc:
+                audit_event("briar.blocked", reason=str(exc), target=request.target)
+                return ExecutionResult(
+                    tool=self.name,
+                    execution_id=execution_id,
+                    status="blocked",
+                    error=str(exc),
+                    metadata={"health": health},
+                )
 
         cmd = self._build_command(request, out_dir, json_out, demo=is_demo)
         audit_event("briar.start", execution_id=execution_id, demo=is_demo, mode=request.mode)

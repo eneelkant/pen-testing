@@ -51,9 +51,51 @@ log "== briar isolated worker smoke (no external egress network) =="
 docker compose --profile workers run --rm --no-deps briar
 
 log "== inspect briar container mounts for docker.sock =="
-# Create a short-lived container inspect via compose config labels already checked;
-# additionally ensure image has no privileged defaults by running help successfully.
 docker compose --profile workers run --rm --no-deps briar --help >/dev/null
+
+log "== runtime connectivity: isolated network must not reach external IP =="
+# Create the isolated network by instantiating the briar service, then probe it.
+docker compose --profile workers create briar >/dev/null
+ISO_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-scanner-isolated$' | head -n1 || true)"
+test -n "$ISO_NET" || die "could not locate pen-scanner-isolated docker network"
+# Probe uses the same Python base image already pulled for builds; no third-party scan.
+# Expect connection failure (egress blocked by internal:true).
+set +e
+PROBE_OUT="$(docker run --rm --network "$ISO_NET" python:3.12-slim-bookworm \
+  python -c 'import socket,sys
+try:
+    socket.create_connection(("1.1.1.1", 443), timeout=3)
+    print("UNEXPECTED_CONNECT")
+    sys.exit(0)
+except OSError as exc:
+    print("ISOLATED_BLOCKED", type(exc).__name__)
+    sys.exit(1)
+' 2>&1)"
+PROBE_RC=$?
+set -e
+echo "$PROBE_OUT"
+# Success for isolation means the connect failed (non-zero) and did not print UNEXPECTED_CONNECT.
+echo "$PROBE_OUT" | grep -q 'UNEXPECTED_CONNECT' && die "isolated network unexpectedly reached 1.1.1.1:443"
+test "$PROBE_RC" -ne 0 || die "isolated network probe unexpectedly succeeded"
+echo "$PROBE_OUT" | grep -q 'ISOLATED_BLOCKED' || die "isolated probe did not report ISOLATED_BLOCKED"
+
+log "== runtime connectivity: control network can reach local fixture =="
+docker compose --profile fixtures up -d fixture-headers
+# Wait briefly for fixture readiness
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if docker compose --profile fixtures exec -T fixture-headers python -c 'import socket; s=socket.create_connection(("127.0.0.1",8080),2); s.close()' 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+CTRL_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-control$' | head -n1 || true)"
+test -n "$CTRL_NET" || die "could not locate pen-control docker network"
+docker run --rm --network "$CTRL_NET" python:3.12-slim-bookworm \
+  python -c 'import socket,sys
+s=socket.create_connection(("fixture-headers",8080), timeout=5)
+s.close()
+print("CONTROL_REACHES_FIXTURE")
+' | grep -q 'CONTROL_REACHES_FIXTURE' || die "control network could not reach fixture-headers"
 
 log "== host smoke script (no external targets) =="
 bash scripts/smoke.sh

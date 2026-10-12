@@ -151,6 +151,24 @@ class ShannonAdapter(SecurityAdapter):
                 metadata={"health": health},
             )
 
+        from core.isolation import load_isolation_policy
+
+        if not load_isolation_policy().allow_shannon_live:
+            msg = (
+                "Live Shannon runs require PEN_ALLOW_SHANNON_LIVE=1. "
+                "Shannon Temporal/Docker workers are not attached to platform "
+                "Compose isolation networks; launch-time DNS preflight alone is not "
+                "in-engine containment. Prefer dry_run=true or host firewall controls."
+            )
+            audit_event("shannon.blocked", reason=msg, target=request.target)
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=msg,
+                metadata={"health": health, "isolation": "shannon_live_gate"},
+            )
+
         cmd = self._build_start_command(request, out_dir)
         audit_event("shannon.start", execution_id=execution_id, command=cmd[:6])
         timeout = request.timeout_seconds or self.config.default_timeout_seconds

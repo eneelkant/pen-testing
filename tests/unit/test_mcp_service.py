@@ -41,22 +41,52 @@ def test_assessment_requires_confirm_for_live():
 def test_dry_run_assessment_and_export(tmp_path, monkeypatch):
     monkeypatch.setenv("PEN_REPORTS_DIR", str(tmp_path / "reports"))
     monkeypatch.setenv("PEN_WORK_DIR", str(tmp_path / "work"))
+    # Authorized fixture URL so dry-run is not scope-blocked.
     result = service.run_security_assessment(
-        tool="shannon",
-        target="https://staging.example.invalid",
-        repo_path=str(Path(__file__).resolve().parents[2]),
+        tool="headers",
+        target="http://127.0.0.1:18080/",
+        category="passive",
         dry_run=True,
     )
     assert result.get("assessment_id")
     status = service.get_assessment_status(result["assessment_id"])
     assert status["ok"] is True
-    exported = service.export_report(result["assessment_id"], outdir=str(tmp_path / "out"))
-    assert exported["ok"] is True
+    exported = service.export_report(
+        result["assessment_id"], outdir=str(tmp_path / "reports" / "export-out")
+    )
+    assert exported["ok"] is True, exported
     assert Path(exported["markdown"]).exists()
 
 
 def test_missing_assessment():
-    assert service.get_assessment_status("does-not-exist")["ok"] is False
+    assert service.get_assessment_status("00000000-0000-4000-8000-000000000000")["ok"] is False
+
+
+def test_assessment_id_rejects_path_traversal():
+    result = service.get_assessment_status("../../etc/passwd")
+    assert result["ok"] is False
+    assert "UUID" in result["error"]
+
+
+def test_export_outdir_confined(tmp_path, monkeypatch):
+    monkeypatch.setenv("PEN_REPORTS_DIR", str(tmp_path / "reports"))
+    monkeypatch.setenv("PEN_WORK_DIR", str(tmp_path / "work"))
+    created = service.run_security_assessment(
+        tool="shannon",
+        target="https://staging.example.invalid",
+        repo_path=str(Path(__file__).resolve().parents[2]),
+        dry_run=True,
+    )
+    aid = created["assessment_id"]
+    bad = service.export_report(aid, outdir="/tmp/pen-testing-escape")
+    assert bad["ok"] is False
+    assert "inside reports_dir" in bad["error"]
+
+
+def test_invalid_url_rejected():
+    result = service.validate_target_scope("not-a-url", "active")
+    assert result["allowed"] is False
+    assert "http" in result["reason"].lower()
 
 
 def test_config_backup_preserves_unrelated(tmp_path):

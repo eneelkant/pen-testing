@@ -12,7 +12,7 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a1` (alpha — Docker runtime verification required before calling a deploy “fully validated”).
+**Version:** `0.2.0a2` (alpha — Docker runtime verification required before calling a deploy “fully validated”).
 
 ## Quick install (MCP profile)
 
@@ -71,6 +71,10 @@ Install Docker yourself: https://docs.docker.com/get-docker/
 |---|---|
 | [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Install profiles |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Design |
+| [`docs/MCP_READINESS_AUDIT.md`](docs/MCP_READINESS_AUDIT.md) | MCP readiness audit |
+| [`docs/MCP_TOOL_TEST_MATRIX.md`](docs/MCP_TOOL_TEST_MATRIX.md) | MCP tool coverage |
+| [`docs/SECURITY_VALIDATION.md`](docs/SECURITY_VALIDATION.md) | Scope / authorization tests |
+| [`docs/CLIENT_COMPATIBILITY.md`](docs/CLIENT_COMPATIBILITY.md) | Cursor / Claude / Gemini / ChatGPT |
 | [`docs/SOURCE_AUDIT.md`](docs/SOURCE_AUDIT.md) | Upstream audit |
 | [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md) | Releases |
 | [`CHANGELOG.md`](CHANGELOG.md) | Versions |

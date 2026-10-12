@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0a2 — 2026-10-12
+
+### Security
+
+- MCP `export_report` outdir confined to `reports_dir` / `work_dir`
+- Assessment IDs required to be UUIDs (blocks path-like IDs)
+- Scope validation requires absolute http(s) URLs with hostnames (non-path tools)
+- Assessment `timeout_seconds` bounded to 1..86400
+- Logger forced to stderr with `propagate=False` for stdio MCP safety
+
+### Added
+
+- MCP readiness audit, tool test matrix, and security validation docs
+- MCP tool-call regression suite (`tests/unit/test_mcp_tool_calls.py`)
+
+### Notes
+
+- Docker Compose runtime verification remains required before “fully validated”
+- AI client E2E UI connections remain environment-dependent
+
 ## 0.2.0a1 — 2026-10-12
 
 ### Added

@@ -2,14 +2,14 @@
 
 Verification date: **2026-10-12**. Client products change frequently — re-check official docs before production use.
 
-| Client | Integration mode | Config artifact | Automated installer | Status |
-|---|---|---|---|---|
-| **Cursor** | Local MCP stdio | `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` | `installers/configure_cursor.py` | Supported (documented) |
-| **Claude Desktop** | Local MCP stdio | `claude_desktop_config.json` | `installers/configure_claude.py` | Supported (documented) |
-| **Claude web** | N/A for local stdio | — | — | Not applicable — use Desktop/API hosts with MCP |
-| **Gemini CLI / local tooling** | Client-specific MCP settings | Often `~/.gemini/settings.json` (varies) | `installers/configure_gemini.py` print + optional apply | Partial — verify your Gemini build |
-| **Gemini web** | No local stdio MCP | — | — | Unsupported for this local server |
-| **ChatGPT** | Remote connector / developer MCP (plan-dependent) | HTTPS endpoint + auth | Manual — see `examples/chatgpt_remote_mcp.example.env` | Documented only; not auto-deployed |
+| Client | Integration mode | Config artifact | Automated installer | Config verified | E2E connection |
+|---|---|---|---|---|---|
+| **Cursor** | Local MCP stdio | `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` | `installers/configure_cursor.py` | PASS | BLOCKED (no Cursor Desktop in CI/agent) |
+| **Claude Desktop** | Local MCP stdio | `claude_desktop_config.json` | `installers/configure_claude.py` | PASS | BLOCKED (app not installed) |
+| **Claude web** | N/A for local stdio | — | — | NOT APPLICABLE | NOT APPLICABLE |
+| **Gemini CLI / local tooling** | Client-specific MCP settings | Often `~/.gemini/settings.json` (varies) | `installers/configure_gemini.py` print + optional apply | PASS (print) | BLOCKED / Partial — verify your Gemini build |
+| **Gemini web** | No local stdio MCP | — | — | NOT APPLICABLE | Unsupported |
+| **ChatGPT** | Remote connector / developer MCP (plan-dependent) | HTTPS endpoint + auth | Manual — see `examples/chatgpt_remote_mcp.example.env` | PASS (docs/example only) | BLOCKED — no public HTTPS deploy |
 
 Shared rules: **`AGENTS.md`**. Setup narrative: **`docs/AI_ASSISTANT_SETUP.md`**.
 

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from urllib.parse import urlparse
+from uuid import UUID, uuid4
 
 from core.config import PlatformConfig
 from core.diagnostics import collect_diagnostics
@@ -27,10 +29,57 @@ from providers import list_provider_status
 ACTIVE_TOOLS = {"shannon", "briar", "headers"}
 LOCAL_PATH_TOOLS = {"gitleaks", "trivy"}
 ALLOWED_TOOLS = ACTIVE_TOOLS | LOCAL_PATH_TOOLS
+_ASSESSMENT_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_assessment_id(assessment_id: str) -> str | None:
+    if not assessment_id or not _ASSESSMENT_ID_RE.match(assessment_id.strip()):
+        return None
+    try:
+        return str(UUID(assessment_id.strip()))
+    except ValueError:
+        return None
+
+
+def _safe_outdir(cfg: PlatformConfig, outdir: str | None, assessment_id: str) -> Path | dict[str, Any]:
+    """Confine report exports under reports_dir / work_dir."""
+    reports_root = Path(cfg.reports_dir).resolve()
+    work_root = Path(cfg.work_dir).resolve()
+    if outdir is None:
+        dest = reports_root / f"export-{assessment_id}"
+    else:
+        dest = Path(outdir).expanduser().resolve()
+    allowed_roots = (reports_root, work_root)
+    if not any(dest == root or root in dest.parents for root in allowed_roots):
+        return {
+            "ok": False,
+            "error": f"outdir must be inside reports_dir ({reports_root}) or work_dir ({work_root})",
+        }
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
+
+
+def _looks_like_url_or_path(target: str, tool: str | None = None) -> tuple[bool, str]:
+    text = (target or "").strip()
+    if not text:
+        return False, "Target is empty"
+    # Local scanners may accept filesystem paths.
+    if tool in LOCAL_PATH_TOOLS:
+        if text.startswith(("http://", "https://")):
+            parsed = urlparse(text)
+            if not parsed.hostname:
+                return False, "URL target is missing a hostname"
+        return True, "ok"
+    parsed = urlparse(text)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False, "Target must be an absolute http(s) URL with a hostname"
+    return True, "ok"
 
 
 def _adapters(cfg: PlatformConfig, scope: ScopeEngine | None) -> dict[str, Any]:
@@ -48,7 +97,7 @@ def platform_status() -> dict[str, Any]:
     diag = collect_diagnostics(cfg)
     return {
         "ok": True,
-        "platform_version": "0.2.0a1",
+        "platform_version": "0.2.0a2",
         "python": sys.version.split()[0],
         "system": platform.system(),
         "machine": platform.machine(),
@@ -100,6 +149,17 @@ def check_dependencies() -> dict[str, Any]:
 
 
 def validate_target_scope(target: str, category: str = "active") -> dict[str, Any]:
+    ok, reason = _looks_like_url_or_path(target)
+    if not ok:
+        return {
+            "allowed": False,
+            "reason": reason,
+            "target": target,
+            "category": category,
+            "policy_reference": "",
+            "decided_at": _utcnow(),
+            "matched_record": None,
+        }
     cfg = resolve_platform_config()
     scopes = Path(cfg.scopes_file)
     if not scopes.exists():
@@ -108,6 +168,9 @@ def validate_target_scope(target: str, category: str = "active") -> dict[str, An
             "reason": f"Authorization registry not found: {scopes}",
             "target": target,
             "category": category,
+            "policy_reference": "",
+            "decided_at": _utcnow(),
+            "matched_record": None,
         }
     engine = ScopeEngine.from_file(scopes)
     decision = engine.evaluate(target, test_category=category)
@@ -185,6 +248,13 @@ def run_security_assessment(
             "error": "Non-dry-run assessments require confirm_authorized=true after a successful scope check.",
         }
 
+    ok_target, target_reason = _looks_like_url_or_path(target, tool=tool)
+    if not ok_target:
+        return {"ok": False, "error": target_reason}
+
+    if timeout_seconds is not None and (timeout_seconds < 1 or timeout_seconds > 86_400):
+        return {"ok": False, "error": "timeout_seconds must be between 1 and 86400"}
+
     cfg = resolve_platform_config()
     scope = None
     if Path(cfg.scopes_file).exists():
@@ -193,6 +263,8 @@ def run_security_assessment(
     assessment_id = str(uuid4())
     adapters = _adapters(cfg, scope)
     adapter = adapters[tool]
+    # Confine generated artifacts under reports_dir.
+    out_dir = Path(cfg.reports_dir).resolve() / f"mcp-{assessment_id}"
     request = AdapterRequest(
         target=target,
         test_category=category,
@@ -202,7 +274,7 @@ def run_security_assessment(
         timeout_seconds=timeout_seconds,
         skip_scope_check=bool(demo and tool == "briar"),
         extra={"demo": demo},
-        output_dir=str(Path(cfg.reports_dir) / f"mcp-{assessment_id}"),
+        output_dir=str(out_dir),
     )
 
     # Preflight scope for active/remote tools unless dry_run already handled inside adapter
@@ -259,12 +331,15 @@ def run_security_assessment(
 
 
 def get_assessment_status(assessment_id: str) -> dict[str, Any]:
-    record = _load_assessment(assessment_id)
+    safe_id = _safe_assessment_id(assessment_id)
+    if not safe_id:
+        return {"ok": False, "error": "assessment_id must be a UUID"}
+    record = _load_assessment(safe_id)
     if not record:
-        return {"ok": False, "error": f"Assessment not found: {assessment_id}"}
+        return {"ok": False, "error": f"Assessment not found: {safe_id}"}
     return {
         "ok": True,
-        "assessment_id": assessment_id,
+        "assessment_id": safe_id,
         "status": record.get("status"),
         "tool": record.get("tool"),
         "target": record.get("target"),
@@ -278,31 +353,38 @@ def get_assessment_status(assessment_id: str) -> dict[str, Any]:
 
 
 def list_findings(assessment_id: str) -> dict[str, Any]:
-    record = _load_assessment(assessment_id)
+    safe_id = _safe_assessment_id(assessment_id)
+    if not safe_id:
+        return {"ok": False, "error": "assessment_id must be a UUID"}
+    record = _load_assessment(safe_id)
     if not record:
-        return {"ok": False, "error": f"Assessment not found: {assessment_id}"}
+        return {"ok": False, "error": f"Assessment not found: {safe_id}"}
     return {
         "ok": True,
-        "assessment_id": assessment_id,
+        "assessment_id": safe_id,
         "status": record.get("status"),
         "findings": record.get("findings") or [],
     }
 
 
 def export_report(assessment_id: str, outdir: str | None = None) -> dict[str, Any]:
-    record = _load_assessment(assessment_id)
+    safe_id = _safe_assessment_id(assessment_id)
+    if not safe_id:
+        return {"ok": False, "error": "assessment_id must be a UUID"}
+    record = _load_assessment(safe_id)
     if not record:
-        return {"ok": False, "error": f"Assessment not found: {assessment_id}"}
+        return {"ok": False, "error": f"Assessment not found: {safe_id}"}
     cfg = resolve_platform_config()
-    dest = Path(outdir) if outdir else Path(cfg.reports_dir) / f"export-{assessment_id}"
-    dest.mkdir(parents=True, exist_ok=True)
+    dest = _safe_outdir(cfg, outdir, safe_id)
+    if isinstance(dest, dict):
+        return dest
     findings = [Finding.from_dict(f) for f in record.get("findings") or []]
-    md = export_markdown(findings, dest / "report.md", metadata={"assessment_id": assessment_id})
-    js = export_json(findings, dest / "report.json", metadata={"assessment_id": assessment_id})
+    md = export_markdown(findings, dest / "report.md", metadata={"assessment_id": safe_id})
+    js = export_json(findings, dest / "report.json", metadata={"assessment_id": safe_id})
     sarif = export_sarif(findings, dest / "report.sarif")
     return {
         "ok": True,
-        "assessment_id": assessment_id,
+        "assessment_id": safe_id,
         "markdown": str(md),
         "json": str(js),
         "sarif": str(sarif),

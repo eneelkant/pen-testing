@@ -1,6 +1,6 @@
 # Release Process
 
-Semantic versioning. Current distributable line: **0.2.0a1** (alpha — Docker runtime verification may be incomplete).
+Semantic versioning. Current distributable line: **0.2.0a2** (alpha — Docker runtime verification may be incomplete).
 
 ## Compatibility policy
 

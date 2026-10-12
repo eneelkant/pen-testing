@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0a7 — 2026-10-12
+
+### Security
+
+- Live Briar requires explicit `PEN_ALLOW_BRIAR_LIVE=1` (host CLI is not on platform Compose isolation networks)
+- CI concurrency no longer cancels in-flight runs on `main` (preserves post-merge Docker isolation verification)
+- Docker runtime verify echoes control-network fixture probe output and fails closed if the fixture never becomes ready
+
+### Documentation
+
+- Reconcile isolation/security docs with `main` after PR #6–#9; document Briar live gate parity with Shannon
+
 ## 0.2.0a6 — 2026-10-12
 
 ### Security

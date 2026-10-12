@@ -135,6 +135,25 @@ class BriarAdapter(SecurityAdapter):
                     metadata={"health": health},
                 )
 
+            from core.isolation import load_isolation_policy
+
+            if not load_isolation_policy().allow_briar_live:
+                msg = (
+                    "Live Briar runs require PEN_ALLOW_BRIAR_LIVE=1. "
+                    "Host-invoked Briar is not attached to platform Compose isolation "
+                    "networks; launch-time DNS preflight alone is not in-engine "
+                    "containment. Prefer dry_run=true, briar demo, or Compose "
+                    "`live-workers` with host firewall controls."
+                )
+                audit_event("briar.blocked", reason=msg, target=request.target)
+                return ExecutionResult(
+                    tool=self.name,
+                    execution_id=execution_id,
+                    status="blocked",
+                    error=msg,
+                    metadata={"health": health, "isolation": "briar_live_gate"},
+                )
+
         cmd = self._build_command(request, out_dir, json_out, demo=is_demo)
         audit_event("briar.start", execution_id=execution_id, demo=is_demo, mode=request.mode)
         timeout = request.timeout_seconds or self.config.default_timeout_seconds

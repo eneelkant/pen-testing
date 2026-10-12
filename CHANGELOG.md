@@ -14,10 +14,11 @@
 
 - MCP readiness audit, tool test matrix, and security validation docs
 - MCP tool-call regression suite (`tests/unit/test_mcp_tool_calls.py`)
+- GitHub Actions `docker-runtime` job + `scripts/docker_runtime_verify.sh` (Engine/Compose build, orchestrator doctor, host smoke)
 
 ### Notes
 
-- Docker Compose runtime verification remains required before “fully validated”
+- Local Cursor agent VMs may lack Docker; runtime verification is performed on `ubuntu-latest` GitHub-hosted runners
 - AI client E2E UI connections remain environment-dependent
 
 ## 0.2.0a1 — 2026-10-12

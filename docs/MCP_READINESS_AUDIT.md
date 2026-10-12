@@ -38,7 +38,8 @@ MCP is **implemented and usable** for local stdio diagnostics and dry-run orches
 | `python3 -m pytest -q tests/unit` | PASS — **63 passed** |
 | `bash scripts/smoke.sh` | PASS |
 | MCP tool discovery (`mcp.list_tools`) | PASS — 9 tools |
-| Docker Engine / Compose runtime | BLOCKED — `docker: command not found` |
+| Docker Engine / Compose runtime (Cursor agent VM) | BLOCKED — `docker: command not found` |
+| Docker Engine / Compose runtime (GitHub Actions `ubuntu-latest`) | Pending / verified via CI job `Docker build and runtime` (`scripts/docker_runtime_verify.sh`) |
 | Cursor / Claude / Gemini UI E2E | BLOCKED — clients not installed in agent VM |
 | ChatGPT remote HTTPS connector | BLOCKED / NOT APPLICABLE locally |
 

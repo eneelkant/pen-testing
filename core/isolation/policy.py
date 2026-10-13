@@ -30,9 +30,13 @@ class IsolationPolicy:
     # Shannon workers are NOT attached to platform Compose networks; live runs need
     # an explicit operator acknowledgement beyond launch-time DNS preflight.
     allow_shannon_live: bool = False
-    # Host-invoked Briar CLI is NOT placed on Compose isolation networks; live runs
-    # need an explicit operator acknowledgement beyond launch-time DNS preflight.
+    # Live Briar requires this gate in addition to an execution mode that can
+    # place the process on a platform network (compose) or an explicit host-net ack.
     allow_briar_live: bool = False
+    # Briar execution: compose (default, platform networks) or host (uncontained).
+    briar_exec_mode: str = "compose"
+    # Host-network Briar (PEN_BRIAR_EXEC=host) needs this second acknowledgement.
+    allow_briar_host_net: bool = False
     # Optional explicit host allowlist (comma-separated). Empty = rely on scope registry.
     egress_allow_hosts: tuple[str, ...] = ()
 
@@ -43,12 +47,20 @@ class IsolationPolicy:
 
 
 def load_isolation_policy() -> IsolationPolicy:
+    from core.isolation.briar_exec import resolve_briar_exec_mode
+
     allow_hosts_raw = os.environ.get("PEN_EGRESS_ALLOW_HOSTS", "") or ""
     hosts = tuple(
         h.strip().lower().rstrip(".")
         for h in allow_hosts_raw.split(",")
         if h.strip()
     )
+    try:
+        briar_mode = resolve_briar_exec_mode()
+    except ValueError:
+        # Fail closed to compose (safer default) if the env value is garbage; adapters
+        # also validate and surface a clear error on live runs.
+        briar_mode = "compose"
     return IsolationPolicy(
         require_egress_policy=_truthy("PEN_REQUIRE_EGRESS_POLICY", True),
         allow_egress_disable=_truthy("PEN_ALLOW_EGRESS_DISABLE", False),
@@ -57,5 +69,7 @@ def load_isolation_policy() -> IsolationPolicy:
         allow_scope_disable=_truthy("PEN_ALLOW_SCOPE_DISABLE", False),
         allow_shannon_live=_truthy("PEN_ALLOW_SHANNON_LIVE", False),
         allow_briar_live=_truthy("PEN_ALLOW_BRIAR_LIVE", False),
+        briar_exec_mode=briar_mode,
+        allow_briar_host_net=_truthy("PEN_ALLOW_BRIAR_HOST_NET", False),
         egress_allow_hosts=hosts,
     )

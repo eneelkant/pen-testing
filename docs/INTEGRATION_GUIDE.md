@@ -59,8 +59,12 @@ export PEN_BRIAR_PYTHON=$PWD/.venv-briar/bin/python
 python -m core.cli health --tool briar
 
 # Built-in demo (no external target) — preferred local smoke
-# --skip-scope-check requires an explicit fixture gate (scope only; egress still enforced):
-PEN_ALLOW_SKIP_SCOPE=1 python -m core.cli run --tool briar --target demo --demo --skip-scope-check
+# Briar defaults to Compose networks (PEN_BRIAR_EXEC=compose). Demo example on host CLI:
+PEN_BRIAR_EXEC=host PEN_ALLOW_SKIP_SCOPE=1 \
+  python -m core.cli run --tool briar --target demo --demo --skip-scope-check
+# Live Briar (compose): PEN_ALLOW_BRIAR_LIVE=1 PEN_COMPOSE_DIR=$PWD …
+# Live Briar (host net): also set PEN_ALLOW_BRIAR_HOST_NET=1 (fail-closed otherwise)
+
 
 # Authorized URL scan modes: quick | standard | deep
 python -m core.cli run --tool briar --target https://staging.example.com --mode quick

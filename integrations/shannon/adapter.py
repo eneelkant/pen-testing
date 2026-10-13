@@ -170,6 +170,25 @@ class ShannonAdapter(SecurityAdapter):
                 metadata={"health": health, "isolation": "shannon_live_gate"},
             )
 
+        validate_model = bool(request.extra.get("validate_model"))
+        if not validate_model and not policy.allow_shannon_full_pipeline:
+            msg = (
+                "Full Shannon pentest pipeline is disabled by default "
+                "(PEN_ALLOW_SHANNON_FULL_PIPELINE unset). Platform CI only validates "
+                "the --validate-model path with a local mock LLM. Use "
+                "extra.validate_model=true for model validation, or set "
+                "PEN_ALLOW_SHANNON_FULL_PIPELINE=1 in an authorized lab after "
+                "reviewing docs/SHANNON_E2E.md limitations."
+            )
+            audit_event("shannon.blocked", reason=msg, target=request.target)
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=msg,
+                metadata={"health": health, "isolation": "shannon_full_pipeline_gate"},
+            )
+
         env_extra: dict[str, str] = {}
         network_mode = "controlled"
         if policy.allow_shannon_uncontained_net:

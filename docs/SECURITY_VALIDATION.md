@@ -67,6 +67,9 @@ See also `docs/SCANNER_ISOLATION.md`.
 | Shannon E2E redirect follow / DNS blocked | PASS (runtime) | `SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED`, `SHANNON_E2E_DNS_OR_CONNECT_BLOCKED` |
 | Shannon E2E restart retention | PASS (runtime) | `SHANNON_E2E_RESTART_PROHIBITED_BLOCKED` |
 | Temporal host reconnect after Validation COMPLETED | FIXED | dual-home Temporal; reconnect failure now fails E2E |
+| Proxied destination port allowlist (default 80/443) | PASS (unit + runtime) | `PEN_PROXY_ALLOW_PORTS`, `PROXY_DENIES_DISALLOWED_PORT` |
+| Metadata / IMDS resolve via proxy | PASS (unit) | `169.254.169.254` / `fd00:ec2::254` denied |
+| Full Shannon exploit pipeline without ack | PASS (blocked) | `PEN_ALLOW_SHANNON_FULL_PIPELINE` default false |
 | Full Shannon exploit pipeline + production LLM | NOT RUN in CI | intentional — mock + `--validate-model` only |
 | Integration `test_docker_prerequisite_detection` skip locally | INTENTIONAL | skips only when Docker binary absent; runs in GHA docker-runtime |
 | DNS rebinding inside upstream browsers | NOT IMPLEMENTED | residual |

@@ -9,6 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN useradd --create-home --uid 10003 proxyuser
 WORKDIR /app
+# Shared stdlib-only policy (keep in sync with core/isolation/destination_policy.py).
+COPY core/isolation/destination_policy.py /app/destination_policy.py
 COPY docker/egress-gateway/proxy_main.py /app/proxy_main.py
 USER proxyuser
 EXPOSE 3128

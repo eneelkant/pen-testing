@@ -21,6 +21,14 @@ from .network_assert import (
     required_scanner_networks,
     resolve_project_network_name,
 )
+from .destination_policy import (
+    decide_proxy_destination,
+    is_prohibited_resolved_ip,
+    load_allow_hosts_from_env,
+    load_allow_ports_from_env,
+    parse_allow_hosts,
+    parse_allow_ports,
+)
 
 __all__ = [
     "DestinationDecision",
@@ -30,10 +38,16 @@ __all__ = [
     "assert_network_internal",
     "build_compose_briar_command",
     "compose_networks_must_be_internal",
+    "decide_proxy_destination",
     "evaluate_destination",
     "find_compose_dir",
     "inspect_network",
+    "is_prohibited_resolved_ip",
+    "load_allow_hosts_from_env",
+    "load_allow_ports_from_env",
     "load_isolation_policy",
+    "parse_allow_hosts",
+    "parse_allow_ports",
     "required_scanner_networks",
     "resolve_briar_exec_mode",
     "resolve_project_network_name",

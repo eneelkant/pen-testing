@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from uuid import uuid4
 
 from core.execution import CommandRunner
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding, redact_secrets
+from core.isolation import load_isolation_policy
 from core.logging import audit_event
 from core.results import ExecutionResult
 from integrations.base import AdapterRequest, SecurityAdapter
@@ -151,16 +153,13 @@ class ShannonAdapter(SecurityAdapter):
                 metadata={"health": health},
             )
 
-        from core.isolation import load_isolation_policy
-
-        if not load_isolation_policy().allow_shannon_live:
+        policy = load_isolation_policy()
+        if not policy.allow_shannon_live:
             msg = (
                 "Live Shannon runs require PEN_ALLOW_SHANNON_LIVE=1. "
-                "Shannon's npx CLI spawns Temporal/worker containers on upstream "
-                "`shannon-net` (hardcoded); this platform cannot attach those workers "
-                "to pen-scanner-* without upstream support. Launch-time DNS preflight "
-                "is not worker-level containment. Prefer dry_run=true or host firewall "
-                "controls until a worker network hook exists."
+                "Shannon's npx CLI spawns Temporal/worker containers on "
+                "`shannon-net` (hardcoded upstream). Prefer dry_run=true, or enable "
+                "controlled network prepare (default) / explicit uncontained ack."
             )
             audit_event("shannon.blocked", reason=msg, target=request.target)
             return ExecutionResult(
@@ -171,10 +170,51 @@ class ShannonAdapter(SecurityAdapter):
                 metadata={"health": health, "isolation": "shannon_live_gate"},
             )
 
+        env_extra: dict[str, str] = {}
+        network_mode = "controlled"
+        if policy.allow_shannon_uncontained_net:
+            network_mode = "uncontained"
+            audit_event(
+                "shannon.uncontained_net",
+                execution_id=execution_id,
+                reason="PEN_ALLOW_SHANNON_UNCONTAINED_NET=1",
+            )
+        else:
+            prepare = self._prepare_controlled_network()
+            if not prepare.get("ok"):
+                msg = (
+                    "Shannon controlled network prepare failed: "
+                    + str(prepare.get("error") or "unknown")
+                    + ". Fix Docker/network prerequisites, or set "
+                    "PEN_ALLOW_SHANNON_UNCONTAINED_NET=1 to acknowledge uncontained "
+                    "upstream shannon-net egress (not recommended)."
+                )
+                audit_event("shannon.blocked", reason=msg, target=request.target)
+                return ExecutionResult(
+                    tool=self.name,
+                    execution_id=execution_id,
+                    status="blocked",
+                    error=msg,
+                    metadata={
+                        "health": health,
+                        "isolation": "shannon_controlled_net",
+                        "prepare": prepare,
+                    },
+                )
+            wrap_dir = prepare.get("wrap_dir")
+            if wrap_dir:
+                env_extra["PATH"] = f"{wrap_dir}:{os.environ.get('PATH', '')}"
+                env_extra["PEN_REAL_DOCKER"] = prepare.get("real_docker") or "/usr/bin/docker"
+
         cmd = self._build_start_command(request, out_dir)
-        audit_event("shannon.start", execution_id=execution_id, command=cmd[:6])
+        audit_event(
+            "shannon.start",
+            execution_id=execution_id,
+            command=cmd[:6],
+            network_mode=network_mode,
+        )
         timeout = request.timeout_seconds or self.config.default_timeout_seconds
-        result = self.runner.run(cmd, timeout=timeout, log_path=log_path)
+        result = self.runner.run(cmd, timeout=timeout, log_path=log_path, env=env_extra or None)
         findings = self._collect_findings(out_dir, execution_id, request.target)
         status = "succeeded" if result.ok else ("timed_out" if result.timed_out else "failed")
         return ExecutionResult(
@@ -185,8 +225,37 @@ class ShannonAdapter(SecurityAdapter):
             artifacts={"output_dir": str(out_dir), "log": str(log_path)},
             logs=[result.stdout[-2000:], result.stderr[-2000:]],
             error=None if result.ok else (result.stderr or "Shannon exited non-zero"),
-            metadata={"returncode": result.returncode, "health": health},
+            metadata={
+                "returncode": result.returncode,
+                "health": health,
+                "network_mode": network_mode,
+            },
         )
+
+    def _prepare_controlled_network(self) -> dict[str, Any]:
+        """Run scripts/shannon_net_prepare.sh and stage docker wrap on PATH."""
+        root = Path(__file__).resolve().parents[2]
+        script = root / "scripts" / "shannon_net_prepare.sh"
+        wrap = root / "scripts" / "shannon-docker-wrap"
+        if not script.is_file():
+            return {"ok": False, "error": f"missing {script}"}
+        if not wrap.is_file():
+            return {"ok": False, "error": f"missing {wrap}"}
+        prep = self.runner.run(["bash", str(script)], timeout=180)
+        if not prep.ok:
+            return {
+                "ok": False,
+                "error": (prep.stderr or prep.stdout or "prepare failed")[:800],
+                "returncode": prep.returncode,
+            }
+        real_docker = shutil.which("docker") or "/usr/bin/docker"
+        wrap_dir = root / "scripts"
+        return {
+            "ok": True,
+            "wrap_dir": str(wrap_dir),
+            "real_docker": real_docker,
+            "prepare_stdout": (prep.stdout or "")[-500:],
+        }
 
     def _build_start_command(self, request: AdapterRequest, out_dir: Path) -> list[str]:
         cmd = [

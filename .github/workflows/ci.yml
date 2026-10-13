@@ -117,7 +117,9 @@ jobs:
       - name: Cleanup compose resources
         if: always()
         run: |
-          docker compose --profile workers --profile fixtures down -v --remove-orphans || true
+          docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans || true
+          docker rm -f pen-shannon-egress-gateway || true
+          docker network rm shannon-net pen-shannon-egress || true
 
   secret-scan:
     name: Secret scanning (gitleaks)

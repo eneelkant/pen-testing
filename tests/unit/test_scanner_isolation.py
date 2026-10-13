@@ -45,6 +45,7 @@ def test_policy_defaults_require_egress(monkeypatch):
     monkeypatch.delenv("PEN_ALLOW_EGRESS_DISABLE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SCOPE_DISABLE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SHANNON_LIVE", raising=False)
+    monkeypatch.delenv("PEN_ALLOW_SHANNON_UNCONTAINED_NET", raising=False)
     monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_BRIAR_HOST_NET", raising=False)
     monkeypatch.delenv("PEN_BRIAR_EXEC", raising=False)
@@ -53,6 +54,7 @@ def test_policy_defaults_require_egress(monkeypatch):
     assert policy.allow_egress_disable is False
     assert policy.allow_scope_disable is False
     assert policy.allow_shannon_live is False
+    assert policy.allow_shannon_uncontained_net is False
     assert policy.allow_briar_live is False
     assert policy.briar_exec_mode == "compose"
     assert policy.allow_briar_host_net is False
@@ -244,6 +246,8 @@ def test_live_shannon_requires_explicit_allow_even_when_dns_ok(tmp_path: Path, m
 
 def test_live_shannon_launches_only_with_allow_and_public_dns(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    # Unit tests do not run Docker prepare; exercise uncontained dual-gate path.
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_UNCONTAINED_NET", "1")
 
     def fake_getaddrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
@@ -277,7 +281,90 @@ def test_live_shannon_launches_only_with_allow_and_public_dns(tmp_path: Path, mo
         )
     )
     assert result.status == "succeeded"
+    assert (result.metadata or {}).get("network_mode") == "uncontained"
     runner.run.assert_called_once()
+
+
+def test_live_shannon_controlled_prepare_failure_blocks(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.delenv("PEN_ALLOW_SHANNON_UNCONTAINED_NET", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    adapter._prepare_controlled_network = lambda: {"ok": False, "error": "docker missing"}  # type: ignore
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+        )
+    )
+    assert result.status == "blocked"
+    assert "controlled network" in (result.error or "").lower() or "PEN_ALLOW_SHANNON_UNCONTAINED_NET" in (
+        result.error or ""
+    )
+    assert (result.metadata or {}).get("isolation") == "shannon_controlled_net"
+    adapter.runner.run.assert_not_called()
+
+
+def test_live_shannon_controlled_prepare_success_uses_wrap_path(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.delenv("PEN_ALLOW_SHANNON_UNCONTAINED_NET", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    adapter._prepare_controlled_network = lambda: {  # type: ignore
+        "ok": True,
+        "wrap_dir": str(tmp_path / "wrap"),
+        "real_docker": "/usr/bin/docker",
+    }
+    (tmp_path / "wrap").mkdir()
+    runner = MagicMock()
+
+    class R:
+        ok = True
+        timed_out = False
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    runner.run.return_value = R()
+    adapter.runner = runner
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+        )
+    )
+    assert result.status == "succeeded"
+    assert (result.metadata or {}).get("network_mode") == "controlled"
+    kwargs = runner.run.call_args.kwargs
+    assert "PATH" in (kwargs.get("env") or {})
+    assert str(tmp_path / "wrap") in kwargs["env"]["PATH"]
 
 
 def _healthy_briar() -> dict:
@@ -599,6 +686,7 @@ def test_egress_disable_requires_dual_gate(tmp_path: Path, monkeypatch):
 
 def test_egress_disable_with_dual_gate_allows_when_live_ack(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_UNCONTAINED_NET", "1")
     monkeypatch.setenv("PEN_REQUIRE_EGRESS_POLICY", "false")
     monkeypatch.setenv("PEN_ALLOW_EGRESS_DISABLE", "1")
 

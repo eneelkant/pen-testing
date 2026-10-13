@@ -40,10 +40,15 @@ See also `docs/SCANNER_ISOLATION.md`.
 | Compose Briar dry-run plans `docker compose … briar-live` | PASS | unit + docker verify |
 | Actual Briar worker on `pen-scanner-isolated` blocks egress | PASS (runtime) | `BRIAR_WORKER_ISOLATED_BLOCKED` |
 | Actual Briar-live worker reaches local fixture | PASS (runtime) | `BRIAR_LIVE_REACHES_FIXTURE` |
+| Briar-live direct internet blocked (internal net) | PASS (runtime) | `BRIAR_LIVE_DIRECT_EGRESS_BLOCKED` |
+| Egress gateway denies unlisted CONNECT host | PASS (runtime) | `PROXY_DENIES_UNLISTED_HOST` |
+| Shannon controlled net stand-in isolated | PASS (runtime) | `SHANNON_NET_ISOLATED_BLOCKED` |
+| Shannon controlled net reaches gateway | PASS (runtime) | `SHANNON_NET_REACHES_GATEWAY` |
+| Shannon live without controlled prepare / uncontained ack | PASS (blocked) | unit tests |
 | Control network → local fixture | PASS (runtime) | docker verify |
-| Shannon worker on `pen-scanner-*` | NOT IMPLEMENTED | upstream `shannon-net` |
-| In-engine Shannon/Briar connection interception | NOT IMPLEMENTED | documented limitation |
-| DNS rebinding inside Shannon/Briar | NOT IMPLEMENTED | residual — upstream engines |
+| Transparent proxy / browser ignoring HTTP_PROXY | NOT IMPLEMENTED | residual |
+| Full Shannon LLM scan E2E in CI | NOT RUN | keys/time — prepare+stand-in instead |
+| DNS rebinding inside upstream browsers | NOT IMPLEMENTED | residual |
 | Upstream browser navigation containment | FAIL / not claimed | documented limitation |
 | Secret / URL userinfo redaction | PASS | `redact_text` + normalize |
 | Assessment ID path traversal | PASS | UUID-only IDs |

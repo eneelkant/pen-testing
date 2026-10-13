@@ -88,3 +88,41 @@ def required_scanner_networks() -> tuple[str, ...]:
         os.environ.get("PEN_SCANNER_ISOLATED_NET", "pen-scanner-isolated"),
         os.environ.get("PEN_SCANNER_LIVE_NET", "pen-scanner-live"),
     )
+
+
+def resolve_project_network_name(
+    *,
+    project_name: str,
+    network_key: str,
+    listed_names: list[str],
+) -> str:
+    """Pick the Compose-project network name; never prefer an unrelated suffix match.
+
+    Prefer, in order:
+    1. Exact `{project}_{network_key}` when present in listed_names
+    2. Exact `network_key` (explicit compose `name:`)
+    3. A single listed name that ends with `_{network_key}` or equals `network_key`
+
+    Multiple ambiguous suffix matches without a project-prefixed hit fail closed.
+    """
+    project = (project_name or "").strip()
+    key = (network_key or "").strip()
+    if not key:
+        raise PermissionError("network key required for isolation assert")
+    names = [n.strip() for n in listed_names if n and n.strip()]
+    preferred = f"{project}_{key}" if project else ""
+    if preferred and preferred in names:
+        return preferred
+    if key in names:
+        return key
+    suffix_hits = [n for n in names if n == key or n.endswith(f"_{key}")]
+    if len(suffix_hits) == 1:
+        return suffix_hits[0]
+    if not suffix_hits:
+        raise PermissionError(
+            f"Docker network for compose key {key!r} (project {project!r}) not found"
+        )
+    raise PermissionError(
+        f"Ambiguous Docker networks for {key!r}: {suffix_hits!r}. "
+        "Refusing to assert isolation against an unrelated network (fail closed)."
+    )

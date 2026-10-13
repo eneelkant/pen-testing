@@ -16,6 +16,7 @@ from core.isolation import (
     build_compose_briar_command,
     find_compose_dir,
     load_isolation_policy,
+    resolve_project_network_name,
     resolve_briar_exec_mode,
     rewrite_paths_for_compose,
 )
@@ -277,14 +278,14 @@ class BriarAdapter(SecurityAdapter):
                 # Network-level fail-closed: pen-scanner-live must be internal.
                 # HTTP_PROXY is convenience only and must not be the sole boundary.
                 try:
-                    net_name = "pen-scanner-live"
-                    # Ensure the compose project has created the network.
-                    self.runner.run(
+                    net_key = "pen-scanner-live"
+                    compose_dir = str(find_compose_dir())
+                    created = self.runner.run(
                         [
                             "docker",
                             "compose",
                             "--project-directory",
-                            str(find_compose_dir()),
+                            compose_dir,
                             "--profile",
                             "live-workers",
                             "create",
@@ -292,19 +293,65 @@ class BriarAdapter(SecurityAdapter):
                         ],
                         timeout=120,
                     )
-                    # Resolve project-prefixed network name.
+                    if not getattr(created, "ok", False):
+                        raise RuntimeError(
+                            "docker compose create briar-live failed: "
+                            + ((created.stderr or created.stdout or "")[:400])
+                        )
+                    # Resolve Compose project name so we assert *this* project's network,
+                    # not an unrelated host network that merely shares a name suffix.
+                    cfg = self.runner.run(
+                        [
+                            "docker",
+                            "compose",
+                            "--project-directory",
+                            compose_dir,
+                            "--profile",
+                            "live-workers",
+                            "config",
+                            "--format",
+                            "json",
+                        ],
+                        timeout=60,
+                    )
+                    if not getattr(cfg, "ok", False):
+                        raise RuntimeError("docker compose config failed while verifying isolation")
+                    try:
+                        project_name = str(json.loads(cfg.stdout or "{}").get("name") or "pen-testing")
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError(f"compose config JSON invalid: {exc}") from exc
                     ls = self.runner.run(
-                        ["docker", "network", "ls", "--format", "{{.Name}}"],
+                        [
+                            "docker",
+                            "network",
+                            "ls",
+                            "--filter",
+                            f"label=com.docker.compose.project={project_name}",
+                            "--filter",
+                            f"label=com.docker.compose.network={net_key}",
+                            "--format",
+                            "{{.Name}}",
+                        ],
                         timeout=30,
                     )
-                    candidates = [
-                        line.strip()
-                        for line in (ls.stdout or "").splitlines()
-                        if line.strip().endswith("pen-scanner-live") or line.strip() == "pen-scanner-live"
-                    ]
-                    if not candidates:
-                        raise PermissionError("pen-scanner-live docker network not found after compose create")
-                    assert_network_internal(candidates[0])
+                    listed = [line.strip() for line in (ls.stdout or "").splitlines() if line.strip()]
+                    if not listed:
+                        # Fallback: unfiltered names (older engines / label gaps).
+                        ls_all = self.runner.run(
+                            ["docker", "network", "ls", "--format", "{{.Name}}"],
+                            timeout=30,
+                        )
+                        listed = [
+                            line.strip()
+                            for line in (ls_all.stdout or "").splitlines()
+                            if line.strip()
+                        ]
+                    resolved = resolve_project_network_name(
+                        project_name=project_name,
+                        network_key=net_key,
+                        listed_names=listed,
+                    )
+                    assert_network_internal(resolved)
                 except PermissionError as exc:
                     audit_event("briar.blocked", reason=str(exc), target=request.target)
                     return ExecutionResult(

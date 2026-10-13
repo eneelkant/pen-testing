@@ -5,7 +5,7 @@
 ### Security
 
 - Network-level isolation assertions: scanner nets must be Docker `Internal=true`; fail closed if not
-- Briar compose live path verifies `pen-scanner-live` is internal before launch (HTTP_PROXY is convenience only)
+- Briar compose live path verifies the **Compose project** `pen-scanner-live` network is internal before launch (HTTP_PROXY is convenience only; refuses ambiguous host network name matches)
 - Runtime proofs with proxy env explicitly unset: `BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED`, `SHANNON_NET_NOPROXY_DIRECT_BLOCKED`
 - Briar worker cannot reach control-plane / `docker.sock`: `BRIAR_WORKER_NO_CONTROL_PLANE`, `BRIAR_WORKER_NO_DOCKER_SOCK`
 - Restart retention: `BRIAR_LIVE_RESTART_DIRECT_BLOCKED`

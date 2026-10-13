@@ -19,6 +19,7 @@ from .network_assert import (
     compose_networks_must_be_internal,
     inspect_network,
     required_scanner_networks,
+    resolve_project_network_name,
 )
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "load_isolation_policy",
     "required_scanner_networks",
     "resolve_briar_exec_mode",
+    "resolve_project_network_name",
     "rewrite_paths_for_compose",
     "validate_redirect_destination",
 ]

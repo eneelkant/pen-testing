@@ -14,6 +14,7 @@ docker info >/dev/null || die "docker daemon not usable"
 NET_NAME="${PEN_SHANNON_NET_NAME:-shannon-net}"
 GW_NAME="${PEN_SHANNON_GATEWAY_NAME:-pen-shannon-egress-gateway}"
 EGRESS_NET="${PEN_SHANNON_EGRESS_NET:-pen-shannon-egress}"
+HOST_NET="${PEN_SHANNON_HOST_NET:-pen-shannon-host}"
 
 if docker network inspect "$NET_NAME" >/dev/null 2>&1; then
   INTERNAL="$(docker network inspect -f '{{.Internal}}' "$NET_NAME")"
@@ -22,7 +23,9 @@ if docker network inspect "$NET_NAME" >/dev/null 2>&1; then
     die "network $NET_NAME exists but is not internal (Internal=$INTERNAL). Refusing uncontrolled shannon-net. Set PEN_ALLOW_SHANNON_UNCONTAINED_NET=1 to bypass controlled mode, or remove the network."
   fi
   if [[ "$MANAGED" != "1" ]]; then
-    log "WARN: $NET_NAME is internal but missing pen.managed=1 label; continuing"
+    # Compose override injection requires pen.managed=1 — fail closed rather than
+    # launching Temporal against an unlabeled same-named network.
+    die "network $NET_NAME is internal but missing pen.managed=1. Remove it or recreate via shannon_net_prepare.sh."
   fi
 else
   log "== create internal $NET_NAME =="
@@ -32,6 +35,18 @@ fi
 if ! docker network inspect "$EGRESS_NET" >/dev/null 2>&1; then
   log "== create egress $EGRESS_NET =="
   docker network create --label pen.managed=1 --label pen.role=shannon-egress "$EGRESS_NET"
+fi
+
+# Non-internal host-access net for Temporal published ports (CLI ↔ 127.0.0.1:7233).
+# Must NOT be attached to Shannon workers.
+if docker network inspect "$HOST_NET" >/dev/null 2>&1; then
+  HOST_INTERNAL="$(docker network inspect -f '{{.Internal}}' "$HOST_NET")"
+  if [[ "$HOST_INTERNAL" == "true" ]]; then
+    die "network $HOST_NET must not be internal (host Temporal port publish)"
+  fi
+else
+  log "== create host-access $HOST_NET (non-internal; Temporal only) =="
+  docker network create --label pen.managed=1 --label pen.role=shannon-host "$HOST_NET"
 fi
 
 log "== build egress gateway image =="

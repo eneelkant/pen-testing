@@ -126,7 +126,7 @@ jobs:
           docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans || true
           docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal || true
           docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f || true
-          docker network rm shannon-net pen-shannon-egress || true
+          docker network rm shannon-net pen-shannon-egress pen-shannon-host || true
 
   secret-scan:
     name: Secret scanning (gitleaks)

@@ -59,11 +59,16 @@ See also `docs/SCANNER_ISOLATION.md`.
 | Control network → local fixture | PASS (runtime) | docker verify |
 | Transparent proxy as sole boundary | NOT RELIED ON | Internal nets are the boundary |
 | Shannon docker wrap named `docker` | PASS | `SHANNON_E2E_DOCKER_WRAP_ACTIVE` + unit |
-| Shannon Temporal + worker `--validate-model` (local mock LLM) | PASS (runtime E2E) | `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
+| Shannon Temporal + worker `--validate-model` (local mock LLM) | PASS (runtime E2E) | `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` (CLI exit 0) |
+| Temporal host gRPC after validate-model | PASS (runtime) | dual-home + `SHANNON_E2E_TEMPORAL_HOST_READY_AFTER` |
+| Worker not on host/egress nets | PASS (runtime) | `SHANNON_E2E_WORKER_NET_ISOLATED` |
+| LLM mock served completions | PASS (runtime) | `SHANNON_E2E_LLM_MOCK_SERVED` |
 | Shannon E2E fixture reachable / prohibited blocked | PASS (runtime) | `SHANNON_E2E_FIXTURE_*`, `SHANNON_E2E_PROHIBITED_BLOCKED` |
 | Shannon E2E redirect follow / DNS blocked | PASS (runtime) | `SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED`, `SHANNON_E2E_DNS_OR_CONNECT_BLOCKED` |
 | Shannon E2E restart retention | PASS (runtime) | `SHANNON_E2E_RESTART_PROHIBITED_BLOCKED` |
+| Temporal host reconnect after Validation COMPLETED | FIXED | dual-home Temporal; reconnect failure now fails E2E |
 | Full Shannon exploit pipeline + production LLM | NOT RUN in CI | intentional — mock + `--validate-model` only |
+| Integration `test_docker_prerequisite_detection` skip locally | INTENTIONAL | skips only when Docker binary absent; runs in GHA docker-runtime |
 | DNS rebinding inside upstream browsers | NOT IMPLEMENTED | residual |
 | Upstream browser navigation containment | FAIL / not claimed | documented limitation |
 | Secret / URL userinfo redaction | PASS | `redact_text` + normalize |

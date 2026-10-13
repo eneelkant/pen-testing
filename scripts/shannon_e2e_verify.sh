@@ -32,11 +32,9 @@ cleanup() {
   docker rm -f "$FIXTURE_NAME" "$LLM_NAME" "$REDIR_NAME" >/dev/null 2>&1 || true
   # Do not remove shannon-net here when called from docker_runtime_verify (shared cleanup).
   if [[ "${PEN_SHANNON_E2E_CLEAN_NET:-0}" == "1" ]]; then
-    docker rm -f pen-shannon-egress-gateway >/dev/null 2>&1 || true
-    docker network rm shannon-net pen-shannon-egress >/dev/null 2>&1 || true
-    # Upstream Temporal may leave containers/volumes; best-effort.
-    docker rm -f shannon-temporal >/dev/null 2>&1 || true
+    docker rm -f pen-shannon-egress-gateway shannon-temporal >/dev/null 2>&1 || true
     docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f >/dev/null 2>&1 || true
+    docker network rm shannon-net pen-shannon-egress pen-shannon-host >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -281,24 +279,28 @@ result = adapter.run(
 )
 print("SHANNON_E2E_ADAPTER_STATUS", result.status)
 print("SHANNON_E2E_NETWORK_MODE", (result.metadata or {}).get("network_mode"))
+if (result.metadata or {}).get("network_mode") != "controlled":
+    print("SHANNON_E2E_UNEXPECTED_NETWORK_MODE")
+    sys.exit(2)
 if result.error:
     print("SHANNON_E2E_ADAPTER_ERROR", (result.error or "")[:1200])
 combined = "\n".join([*(result.logs or []), result.error or "", result.status or ""])
 for line in (result.logs or []):
     if line:
         print(line[-2500:])
-# Upstream may print Validation COMPLETED then fail reconnecting to Temporal on
-# 127.0.0.1 after the worker already finished (internal-net port publish flake).
-validation_ok = (
+validation_completed = (
     "Validation COMPLETED" in combined
     and "Status:      completed" in combined
     and "Preflight (LLM credentials, target URL) — OK" in combined
 )
-if validation_ok:
+reconnect_error = "Could not read the scan outcome from Temporal" in combined
+if validation_completed:
     print("SHANNON_E2E_VALIDATION_COMPLETED")
-if "Could not read the scan outcome from Temporal" in combined and validation_ok:
-    print("SHANNON_E2E_TEMPORAL_HOST_RECONNECT_FLAKE")
-ok = result.status == "succeeded" or validation_ok
+if reconnect_error:
+    # Dual-home Temporal should prevent this; do NOT treat as success.
+    print("SHANNON_E2E_TEMPORAL_HOST_RECONNECT_FAILURE")
+# Require a clean CLI success. Validation strings alone are insufficient.
+ok = result.status == "succeeded" and not reconnect_error
 sys.exit(0 if ok else 1)
 PY
 ADAPTER_RC=$?
@@ -309,10 +311,32 @@ TEMPORAL_STATE="$(docker inspect -f '{{.State.Status}}' shannon-temporal 2>/dev/
 echo "SHANNON_E2E_TEMPORAL_STATE $TEMPORAL_STATE"
 WORKER_IDS="$(docker ps -aq --filter name=shannon-worker- || true)"
 echo "SHANNON_E2E_WORKER_CONTAINERS ${WORKER_IDS:-none}"
-# Prefer keep-container leftovers; also dump mock logs for AGENT_EXECUTION_FAILED diagnosis.
+
+# Regression: host Temporal gRPC must remain reachable after the run (dual-home proof).
+log "== temporal host endpoint readiness (post-run regression) =="
+bash scripts/shannon_temporal_host_ready.sh
+echo "SHANNON_E2E_TEMPORAL_HOST_READY_AFTER"
+
+# Worker must be on shannon-net only — never pen-shannon-host / pen-shannon-egress.
+if [[ -n "${WORKER_IDS}" && "${WORKER_IDS}" != "none" ]]; then
+  for wid in $WORKER_IDS; do
+    WNETS="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$wid" 2>/dev/null || true)"
+    echo "SHANNON_E2E_WORKER_NETWORKS id=$wid nets=$WNETS"
+    echo "$WNETS" | grep -Eq 'shannon-net' || die "worker $wid not on shannon-net"
+    echo "$WNETS" | grep -Eq 'pen-shannon-host|pen-shannon-egress|pen-control' && \
+      die "worker $wid attached to prohibited network"
+  done
+  echo "SHANNON_E2E_WORKER_NET_ISOLATED"
+fi
+
+# Mock LLM must have served at least one completion (real Temporal path used the mock).
+MOCK_LOGS="$(docker logs "$LLM_NAME" 2>&1 || true)"
+echo "$MOCK_LOGS" | grep -q 'POST /v1/chat/completions' || die "LLM mock received no chat completions"
+echo "SHANNON_E2E_LLM_MOCK_SERVED"
+
 if [[ "$ADAPTER_RC" -ne 0 ]]; then
   echo "SHANNON_E2E_LLM_MOCK_LOGS_BEGIN"
-  docker logs "$LLM_NAME" 2>&1 | tail -n 80 || true
+  echo "$MOCK_LOGS" | tail -n 80 || true
   echo "SHANNON_E2E_LLM_MOCK_LOGS_END"
   echo "SHANNON_E2E_TEMPORAL_LOGS_BEGIN"
   docker logs shannon-temporal 2>&1 | tail -n 40 || true
@@ -322,10 +346,7 @@ fi
 if [[ "$TEMPORAL_STATE" == "running" ]]; then
   echo "SHANNON_E2E_TEMPORAL_RUNNING"
 else
-  # validate-model may tear down quickly; accept exited if logs prove it started.
-  if docker logs shannon-temporal 2>&1 | head -n 5 | grep -qi .; then
-    echo "SHANNON_E2E_TEMPORAL_LOGS_PRESENT"
-  fi
+  die "shannon-temporal not running after validate-model (state=$TEMPORAL_STATE)"
 fi
 
 # During/after assessment: probe from a real Shannon worker image on shannon-net.

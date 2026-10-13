@@ -17,7 +17,7 @@ cleanup() {
   docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans >/dev/null 2>&1 || true
   docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal >/dev/null 2>&1 || true
   docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f >/dev/null 2>&1 || true
-  docker network rm shannon-net pen-shannon-egress >/dev/null 2>&1 || true
+  docker network rm shannon-net pen-shannon-egress pen-shannon-host >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -326,7 +326,7 @@ PEN_SHANNON_E2E_CLEAN_NET=0 bash scripts/shannon_e2e_verify.sh
 # Cleanup shannon artifacts so later host smoke starts clean.
 docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal >/dev/null 2>&1 || true
 docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f >/dev/null 2>&1 || true
-docker network rm shannon-net pen-shannon-egress >/dev/null 2>&1 || true
+docker network rm shannon-net pen-shannon-egress pen-shannon-host >/dev/null 2>&1 || true
 
 log "== runtime: adapter dry-run plans compose argv (worker path) =="
 export PEN_COMPOSE_DIR="$ROOT"

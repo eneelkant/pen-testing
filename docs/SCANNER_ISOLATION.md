@@ -43,7 +43,8 @@ Task queues are per-scan (`shannon-<hex>`). Workflow type: `pentestPipelineWorkf
 | Default Briar workers | `pen-scanner-isolated` | **yes** | `briar` |
 | Live Briar workers | `pen-scanner-live` | **yes** | `briar-live`, fixture-headers, gateway |
 | Gateway egress leg | `pen-egress` | no | `egress-gateway` only |
-| Shannon controlled | `shannon-net` (managed) | **yes** | Temporal, Shannon workers, gateway, E2E fixtures |
+| Shannon workers / fixtures | `shannon-net` (managed) | **yes** | Temporal, Shannon workers, gateway, E2E fixtures |
+| Shannon Temporal host access | `pen-shannon-host` | **no** | Temporal only (CLI ↔ `127.0.0.1:7233`) |
 | Shannon gateway leg | `pen-shannon-egress` | no | Shannon egress gateway only |
 
 **Security boundary:** Docker `Internal=true`. `HTTP_PROXY` is convenience only.
@@ -56,7 +57,9 @@ Task queues are per-scan (`shannon-<hex>`). Workflow type: `pentestPipelineWorkf
 | Briar compose / Internal nets | Worker | Runtime markers (`BRIAR_*`) |
 | Shannon prepare (stand-in + real image probes) | Network | `SHANNON_NET_*`, `SHANNON_REAL_WORKER_*` |
 | Shannon docker wrap named `docker` | PATH shim | `SHANNON_E2E_DOCKER_WRAP_ACTIVE` + unit |
-| Shannon Temporal + worker `--validate-model` | Real upstream path | `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
+| Shannon Temporal + worker `--validate-model` | Real upstream path | `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` (CLI exit 0) |
+| Temporal host gRPC after run | Dual-home Temporal | `SHANNON_E2E_TEMPORAL_HOST_READY_AFTER` |
+| Worker not on host/egress nets | Runtime inspect | `SHANNON_E2E_WORKER_NET_ISOLATED` |
 | Fixture reachable / prohibited blocked (proxy unset) | Network during E2E | `SHANNON_E2E_FIXTURE_*`, `SHANNON_E2E_PROHIBITED_BLOCKED` |
 | Redirect follow to 1.1.1.1 blocked | Network | `SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED` |
 | DNS/external connect blocked | Network | `SHANNON_E2E_DNS_OR_CONNECT_BLOCKED` |

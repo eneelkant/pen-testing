@@ -1,7 +1,24 @@
 # Compose override for controlled Shannon runs.
-# Platform pre-creates shannon-net as --internal; Shannon's bundled compose expects
-# to own that name. Mark it external so Temporal joins the managed network.
+#
+# Platform pre-creates shannon-net as --internal (worker isolation boundary).
+# Shannon's bundled compose expects to own that name — mark it external.
+#
+# Temporal is dual-homed:
+#   - shannon-net (internal): workers reach Temporal via DNS
+#   - pen-shannon-host (non-internal): host CLI reliably reaches published
+#     127.0.0.1:7233/8233 (Internal-only nets make host port publish flaky)
+#
+# Workers remain attached ONLY to shannon-net (upstream --network shannon-net).
 networks:
   default:
     name: shannon-net
     external: true
+  shannon-host:
+    name: pen-shannon-host
+    external: true
+
+services:
+  temporal:
+    networks:
+      - default
+      - shannon-host

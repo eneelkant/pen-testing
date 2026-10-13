@@ -39,6 +39,11 @@ REAL_DOCKER="$(resolve_real_docker || true)"
 PROXY_URL="${PEN_SHANNON_HTTP_PROXY:-http://egress-gateway:3128}"
 # On-net fixtures / Temporal / mock LLM must bypass the explicit CONNECT proxy.
 NO_PROXY_VAL="${PEN_SHANNON_NO_PROXY:-egress-gateway,shannon-temporal,fixture-shannon,shannon-llm-mock,shannon-redirect,localhost,127.0.0.1,::1}"
+NET_NAME="${PEN_SHANNON_NET_NAME:-shannon-net}"
+COMPOSE_OVERRIDE="${PEN_SHANNON_COMPOSE_OVERRIDE:-}"
+if [[ -z "$COMPOSE_OVERRIDE" ]]; then
+  COMPOSE_OVERRIDE="$(cd "$(dirname "$SELF")/.." && pwd)/scripts/shannon-compose-external-net.yml"
+fi
 
 if [[ "${1:-}" == "run" ]]; then
   shift
@@ -50,6 +55,32 @@ if [[ "${1:-}" == "run" ]]; then
     -e "NO_PROXY=$NO_PROXY_VAL" \
     -e "no_proxy=$NO_PROXY_VAL" \
     "$@"
+fi
+
+# When platform-managed shannon-net exists, inject external:true override so
+# Shannon's bundled compose can attach Temporal without recreating the network.
+if [[ "${1:-}" == "compose" ]]; then
+  shift
+  if [[ -f "$COMPOSE_OVERRIDE" ]] \
+    && "$REAL_DOCKER" network inspect "$NET_NAME" >/dev/null 2>&1; then
+    managed="$("$REAL_DOCKER" network inspect -f '{{index .Labels "pen.managed"}}' "$NET_NAME" 2>/dev/null || true)"
+    if [[ "$managed" == "1" ]]; then
+      args=()
+      inserted=0
+      for a in "$@"; do
+        if [[ "$inserted" -eq 0 && "$a" =~ ^(up|down|ps|logs|stop|start|restart|pull|build|run|exec|config|create|rm|kill)$ ]]; then
+          args+=(-f "$COMPOSE_OVERRIDE")
+          inserted=1
+        fi
+        args+=("$a")
+      done
+      if [[ "$inserted" -eq 0 ]]; then
+        args+=(-f "$COMPOSE_OVERRIDE")
+      fi
+      exec "$REAL_DOCKER" compose "${args[@]}"
+    fi
+  fi
+  exec "$REAL_DOCKER" compose "$@"
 fi
 
 exec "$REAL_DOCKER" "$@"

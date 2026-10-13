@@ -1,0 +1,7 @@
+# Compose override for controlled Shannon runs.
+# Platform pre-creates shannon-net as --internal; Shannon's bundled compose expects
+# to own that name. Mark it external so Temporal joins the managed network.
+networks:
+  default:
+    name: shannon-net
+    external: true

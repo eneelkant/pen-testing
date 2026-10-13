@@ -271,16 +271,21 @@ result = adapter.run(
         output_dir=str(out),
         dry_run=False,
         timeout_seconds=timeout,
-        extra={"validate_model": True, "models_config": models_config},
+        extra={
+            "validate_model": True,
+            "models_config": models_config,
+            # Retain worker briefly for diagnostics when validation fails.
+            "keep_container": True,
+        },
     )
 )
 print("SHANNON_E2E_ADAPTER_STATUS", result.status)
 print("SHANNON_E2E_NETWORK_MODE", (result.metadata or {}).get("network_mode"))
 if result.error:
-    print("SHANNON_E2E_ADAPTER_ERROR", (result.error or "")[:800])
+    print("SHANNON_E2E_ADAPTER_ERROR", (result.error or "")[:1200])
 for line in (result.logs or []):
     if line:
-        print(line[-1500:])
+        print(line[-2500:])
 sys.exit(0 if result.status == "succeeded" else 1)
 PY
 ADAPTER_RC=$?
@@ -291,6 +296,15 @@ TEMPORAL_STATE="$(docker inspect -f '{{.State.Status}}' shannon-temporal 2>/dev/
 echo "SHANNON_E2E_TEMPORAL_STATE $TEMPORAL_STATE"
 WORKER_IDS="$(docker ps -aq --filter name=shannon-worker- || true)"
 echo "SHANNON_E2E_WORKER_CONTAINERS ${WORKER_IDS:-none}"
+# Prefer keep-container leftovers; also dump mock logs for AGENT_EXECUTION_FAILED diagnosis.
+if [[ "$ADAPTER_RC" -ne 0 ]]; then
+  echo "SHANNON_E2E_LLM_MOCK_LOGS_BEGIN"
+  docker logs "$LLM_NAME" 2>&1 | tail -n 80 || true
+  echo "SHANNON_E2E_LLM_MOCK_LOGS_END"
+  echo "SHANNON_E2E_TEMPORAL_LOGS_BEGIN"
+  docker logs shannon-temporal 2>&1 | tail -n 40 || true
+  echo "SHANNON_E2E_TEMPORAL_LOGS_END"
+fi
 
 if [[ "$TEMPORAL_STATE" == "running" ]]; then
   echo "SHANNON_E2E_TEMPORAL_RUNNING"

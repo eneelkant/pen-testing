@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "shannon-mock": {
+      "baseUrl": "http://shannon-llm-mock:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "test-fixture-key-not-a-secret",
+      "authHeader": true,
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        {
+          "id": "gpt-test",
+          "name": "Shannon local mock",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 8192,
+          "maxTokens": 1024,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}

@@ -75,7 +75,8 @@ jobs:
   docker-runtime:
     name: Docker build and runtime
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Shannon Temporal + worker --validate-model E2E needs headroom beyond Compose probes.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -92,6 +93,11 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      - name: Set up Node.js (Shannon CLI via npx)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
 
       - name: Install package (host smoke)
         run: |
@@ -118,8 +124,9 @@ jobs:
         if: always()
         run: |
           docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans || true
-          docker rm -f pen-shannon-egress-gateway || true
-          docker network rm shannon-net pen-shannon-egress || true
+          docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal || true
+          docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f || true
+          docker network rm shannon-net pen-shannon-egress pen-shannon-host || true
 
   secret-scan:
     name: Secret scanning (gitleaks)

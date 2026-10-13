@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0a12 — 2026-10-13
+
+### Security / testing
+
+- Fix Shannon docker wrap: stage PATH shim named `docker` → `shannon-docker-wrap` (proxy injection actually intercepts `docker run`)
+- Controlled Shannon Temporal + real worker E2E (`scripts/shannon_e2e_verify.sh`):
+  - `npx @keygraph/shannon start --validate-model` against local OpenAI-compatible mock
+  - on-net fixture reachability; prohibited destinations blocked with proxy unset
+  - redirect-follow and DNS/connect blocks; restart retention on real worker image
+- Dual-home Temporal on `pen-shannon-host` so host CLI gRPC to `127.0.0.1:7233` is deterministic; workers stay on internal `shannon-net` only
+- E2E requires CLI success (no Temporal reconnect false-pass); post-run host readiness + worker net + mock-served regressions
+- Wired into `docker_runtime_verify.sh` + CI Node setup; markers prefixed `SHANNON_E2E_*`
+- Local fixtures: `tests/fixtures/llm_mock_server.py`, `redirect_server.py`, `shannon_repo/`, `shannon_models.json`
+
+### Notes
+
+- E2E proves Temporal + worker + network isolation with a **mock LLM**, not a full exploit pipeline or third-party provider
+- Status remains READY FOR CONTROLLED TESTING
+
 ## 0.2.0a11 — 2026-10-13
 
 ### Security

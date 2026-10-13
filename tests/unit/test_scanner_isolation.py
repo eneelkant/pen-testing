@@ -337,12 +337,13 @@ def test_live_shannon_controlled_prepare_success_uses_wrap_path(tmp_path: Path, 
         "errors": [],
         "healthy": True,
     }
+    wrap = tmp_path / "wrap"
+    wrap.mkdir()
     adapter._prepare_controlled_network = lambda: {  # type: ignore
         "ok": True,
-        "wrap_dir": str(tmp_path / "wrap"),
+        "wrap_dir": str(wrap),
         "real_docker": "/usr/bin/docker",
     }
-    (tmp_path / "wrap").mkdir()
     runner = MagicMock()
 
     class R:
@@ -365,7 +366,73 @@ def test_live_shannon_controlled_prepare_success_uses_wrap_path(tmp_path: Path, 
     assert (result.metadata or {}).get("network_mode") == "controlled"
     kwargs = runner.run.call_args.kwargs
     assert "PATH" in (kwargs.get("env") or {})
-    assert str(tmp_path / "wrap") in kwargs["env"]["PATH"]
+    assert str(wrap) in kwargs["env"]["PATH"]
+
+
+def test_prepare_controlled_network_stages_named_docker_shim(tmp_path: Path, monkeypatch):
+    """Regression: wrap must be on PATH as `docker`, not only shannon-docker-wrap."""
+    root = Path(__file__).resolve().parents[2]
+    wrap_script = root / "scripts" / "shannon-docker-wrap"
+    assert wrap_script.is_file()
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, scope_engine=None)
+    runner = MagicMock()
+
+    class R:
+        ok = True
+        timed_out = False
+        returncode = 0
+        stdout = "SHANNON_CONTROLLED_NET_READY\n"
+        stderr = ""
+
+    runner.run.return_value = R()
+    adapter.runner = runner
+    monkeypatch.setattr(
+        "integrations.shannon.adapter.ShannonAdapter._resolve_real_docker_binary",
+        staticmethod(lambda: "/usr/bin/docker"),
+    )
+    result = adapter._prepare_controlled_network()
+    assert result["ok"] is True
+    wrap_dir = Path(result["wrap_dir"])
+    assert wrap_dir.name == ".shannon-docker-bin"
+    docker_shim = wrap_dir / "docker"
+    assert docker_shim.is_symlink()
+    assert docker_shim.resolve() == wrap_script.resolve()
+    assert result["real_docker"] == "/usr/bin/docker"
+
+
+def test_resolve_real_docker_skips_wrap_shim(tmp_path: Path, monkeypatch):
+    wrap_bin = tmp_path / ".shannon-docker-bin"
+    wrap_bin.mkdir()
+    shim = wrap_bin / "docker"
+    shim.symlink_to(Path(__file__).resolve().parents[2] / "scripts" / "shannon-docker-wrap")
+    real = tmp_path / "real-docker"
+    real.write_text("#!/bin/sh\n")
+    real.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{wrap_bin}:{tmp_path}")
+    monkeypatch.setattr("integrations.shannon.adapter.shutil.which", lambda _: str(shim))
+    resolved = ShannonAdapter._resolve_real_docker_binary()
+    assert "shannon-docker-wrap" not in resolved
+    assert resolved in {str(real), "/usr/bin/docker", "/usr/local/bin/docker"}
+
+
+def test_shannon_validate_model_flag_in_start_command(tmp_path: Path):
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, scope_engine=None)
+    models = tmp_path / "models.json"
+    models.write_text("{}", encoding="utf-8")
+    cmd = adapter._build_start_command(
+        AdapterRequest(
+            target="http://10.0.0.5:8080/",
+            repo_path=str(tmp_path),
+            extra={"validate_model": True, "models_config": str(models)},
+        ),
+        tmp_path,
+    )
+    assert "--validate-model" in cmd
+    assert "--models-config" in cmd
+    assert str(models.resolve()) in cmd
+    assert "start" in cmd
 
 
 def _healthy_briar() -> dict:

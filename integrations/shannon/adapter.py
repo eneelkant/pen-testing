@@ -233,7 +233,7 @@ class ShannonAdapter(SecurityAdapter):
         )
 
     def _prepare_controlled_network(self) -> dict[str, Any]:
-        """Run scripts/shannon_net_prepare.sh and stage docker wrap on PATH."""
+        """Run scripts/shannon_net_prepare.sh and stage a PATH `docker` wrap."""
         root = Path(__file__).resolve().parents[2]
         script = root / "scripts" / "shannon_net_prepare.sh"
         wrap = root / "scripts" / "shannon-docker-wrap"
@@ -241,21 +241,70 @@ class ShannonAdapter(SecurityAdapter):
             return {"ok": False, "error": f"missing {script}"}
         if not wrap.is_file():
             return {"ok": False, "error": f"missing {wrap}"}
-        prep = self.runner.run(["bash", str(script)], timeout=180)
+        prep = self.runner.run(["bash", str(script)], timeout=300)
         if not prep.ok:
             return {
                 "ok": False,
                 "error": (prep.stderr or prep.stdout or "prepare failed")[:800],
                 "returncode": prep.returncode,
             }
-        real_docker = shutil.which("docker") or "/usr/bin/docker"
-        wrap_dir = root / "scripts"
+        real_docker = self._resolve_real_docker_binary()
+        # Stage a directory containing an executable named `docker` that points at
+        # shannon-docker-wrap. Prepending scripts/ alone does not intercept `docker`
+        # because the wrap file is named shannon-docker-wrap.
+        wrap_bin = root / "scripts" / ".shannon-docker-bin"
+        try:
+            wrap_bin.mkdir(parents=True, exist_ok=True)
+            docker_shim = wrap_bin / "docker"
+            if docker_shim.is_symlink() or docker_shim.exists():
+                docker_shim.unlink()
+            docker_shim.symlink_to(wrap.resolve())
+        except OSError as exc:
+            return {"ok": False, "error": f"unable to stage docker wrap shim: {exc}"}
         return {
             "ok": True,
-            "wrap_dir": str(wrap_dir),
+            "wrap_dir": str(wrap_bin),
             "real_docker": real_docker,
             "prepare_stdout": (prep.stdout or "")[-500:],
         }
+
+    @staticmethod
+    def _resolve_real_docker_binary() -> str:
+        """Locate the engine docker binary, never the shannon wrap shim."""
+        wrap_marker = "shannon-docker-wrap"
+        candidates: list[str] = []
+        which = shutil.which("docker")
+        if which:
+            candidates.append(which)
+        candidates.extend(["/usr/bin/docker", "/usr/local/bin/docker"])
+        path_env = os.environ.get("PATH") or ""
+        for entry in path_env.split(os.pathsep):
+            if not entry:
+                continue
+            candidates.append(str(Path(entry) / "docker"))
+        seen: set[str] = set()
+        for raw in candidates:
+            if raw in seen:
+                continue
+            seen.add(raw)
+            path = Path(raw)
+            if not path.exists():
+                continue
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if wrap_marker in str(resolved):
+                continue
+            if path.is_symlink():
+                try:
+                    if wrap_marker in str(path.resolve()):
+                        continue
+                except OSError:
+                    continue
+            if os.access(path, os.X_OK):
+                return str(path)
+        return "/usr/bin/docker"
 
     def _build_start_command(self, request: AdapterRequest, out_dir: Path) -> list[str]:
         cmd = [
@@ -282,6 +331,11 @@ class ShannonAdapter(SecurityAdapter):
             cmd.append("--validate-auth")
         if request.extra.get("pipeline_testing"):
             cmd.append("--pipeline-testing")
+        if request.extra.get("keep_container"):
+            cmd.append("--keep-container")
+        models_config = request.extra.get("models_config")
+        if models_config:
+            cmd.extend(["--models-config", str(Path(models_config).resolve())])
         return cmd
 
     def _collect_findings(self, out_dir: Path, execution_id: str, asset: str) -> list:

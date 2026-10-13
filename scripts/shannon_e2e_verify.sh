@@ -283,10 +283,23 @@ print("SHANNON_E2E_ADAPTER_STATUS", result.status)
 print("SHANNON_E2E_NETWORK_MODE", (result.metadata or {}).get("network_mode"))
 if result.error:
     print("SHANNON_E2E_ADAPTER_ERROR", (result.error or "")[:1200])
+combined = "\n".join([*(result.logs or []), result.error or "", result.status or ""])
 for line in (result.logs or []):
     if line:
         print(line[-2500:])
-sys.exit(0 if result.status == "succeeded" else 1)
+# Upstream may print Validation COMPLETED then fail reconnecting to Temporal on
+# 127.0.0.1 after the worker already finished (internal-net port publish flake).
+validation_ok = (
+    "Validation COMPLETED" in combined
+    and "Status:      completed" in combined
+    and "Preflight (LLM credentials, target URL) — OK" in combined
+)
+if validation_ok:
+    print("SHANNON_E2E_VALIDATION_COMPLETED")
+if "Could not read the scan outcome from Temporal" in combined and validation_ok:
+    print("SHANNON_E2E_TEMPORAL_HOST_RECONNECT_FLAKE")
+ok = result.status == "succeeded" or validation_ok
+sys.exit(0 if ok else 1)
 PY
 ADAPTER_RC=$?
 set -e

@@ -19,7 +19,8 @@ if [[ "$(readlink -f "$REAL_DOCKER" 2>/dev/null || echo "$REAL_DOCKER")" == "$SE
 fi
 
 PROXY_URL="${PEN_SHANNON_HTTP_PROXY:-http://egress-gateway:3128}"
-NO_PROXY_VAL="${PEN_SHANNON_NO_PROXY:-egress-gateway,shannon-temporal,localhost,127.0.0.1,::1}"
+# On-net fixtures / Temporal / mock LLM must bypass the explicit CONNECT proxy.
+NO_PROXY_VAL="${PEN_SHANNON_NO_PROXY:-egress-gateway,shannon-temporal,fixture-shannon,shannon-llm-mock,shannon-redirect,localhost,127.0.0.1,::1}"
 
 if [[ "${1:-}" == "run" ]]; then
   shift

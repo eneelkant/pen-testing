@@ -15,7 +15,8 @@ cleanup() {
   fi
   log "== cleanup: compose down (workers + live-workers + fixtures) =="
   docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans >/dev/null 2>&1 || true
-  docker rm -f pen-shannon-egress-gateway >/dev/null 2>&1 || true
+  docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal >/dev/null 2>&1 || true
+  docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f >/dev/null 2>&1 || true
   docker network rm shannon-net pen-shannon-egress >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -315,11 +316,16 @@ else:
     raise SystemExit("expected PermissionError for non-internal compose net")
 PY
 
-log "== runtime: Shannon controlled network prepare (worker stand-in) =="
-bash scripts/shannon_net_prepare.sh
-# Cleanup shannon prepare artifacts so later jobs start clean.
-docker rm -f pen-shannon-egress-gateway >/dev/null 2>&1 || true
-# Keep shannon-net for inspect assertion then remove managed nets.
+log "== runtime: Shannon controlled prepare + Temporal/worker E2E (local fixtures) =="
+# shannon_e2e_verify.sh runs prepare (stand-in + real-image network probes) then the
+# real upstream path: npx start --validate-model → Temporal + keygraph/shannon worker
+# against a local OpenAI-compatible mock (no public targets / no external LLM keys).
+command -v npx >/dev/null 2>&1 || die "npx required for Shannon E2E"
+command -v node >/dev/null 2>&1 || die "node required for Shannon E2E"
+PEN_SHANNON_E2E_CLEAN_NET=0 bash scripts/shannon_e2e_verify.sh
+# Cleanup shannon artifacts so later host smoke starts clean.
+docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal >/dev/null 2>&1 || true
+docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f >/dev/null 2>&1 || true
 docker network rm shannon-net pen-shannon-egress >/dev/null 2>&1 || true
 
 log "== runtime: adapter dry-run plans compose argv (worker path) =="

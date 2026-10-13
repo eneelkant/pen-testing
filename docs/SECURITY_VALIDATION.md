@@ -58,7 +58,12 @@ See also `docs/SCANNER_ISOLATION.md`.
 | Shannon live without controlled prepare / uncontained ack | PASS (blocked) | unit tests |
 | Control network → local fixture | PASS (runtime) | docker verify |
 | Transparent proxy as sole boundary | NOT RELIED ON | Internal nets are the boundary |
-| Full Shannon LLM scan E2E in CI | NOT RUN | keys/time — prepare + stand-in + real-image net probes |
+| Shannon docker wrap named `docker` | PASS | `SHANNON_E2E_DOCKER_WRAP_ACTIVE` + unit |
+| Shannon Temporal + worker `--validate-model` (local mock LLM) | PASS (runtime E2E) | `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
+| Shannon E2E fixture reachable / prohibited blocked | PASS (runtime) | `SHANNON_E2E_FIXTURE_*`, `SHANNON_E2E_PROHIBITED_BLOCKED` |
+| Shannon E2E redirect follow / DNS blocked | PASS (runtime) | `SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED`, `SHANNON_E2E_DNS_OR_CONNECT_BLOCKED` |
+| Shannon E2E restart retention | PASS (runtime) | `SHANNON_E2E_RESTART_PROHIBITED_BLOCKED` |
+| Full Shannon exploit pipeline + production LLM | NOT RUN in CI | intentional — mock + `--validate-model` only |
 | DNS rebinding inside upstream browsers | NOT IMPLEMENTED | residual |
 | Upstream browser navigation containment | FAIL / not claimed | documented limitation |
 | Secret / URL userinfo redaction | PASS | `redact_text` + normalize |

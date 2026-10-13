@@ -233,7 +233,7 @@ class ShannonAdapter(SecurityAdapter):
         )
 
     def _prepare_controlled_network(self) -> dict[str, Any]:
-        """Run scripts/shannon_net_prepare.sh and stage docker wrap on PATH."""
+        """Run scripts/shannon_net_prepare.sh and stage a PATH `docker` wrap."""
         root = Path(__file__).resolve().parents[2]
         script = root / "scripts" / "shannon_net_prepare.sh"
         wrap = root / "scripts" / "shannon-docker-wrap"
@@ -241,7 +241,7 @@ class ShannonAdapter(SecurityAdapter):
             return {"ok": False, "error": f"missing {script}"}
         if not wrap.is_file():
             return {"ok": False, "error": f"missing {wrap}"}
-        prep = self.runner.run(["bash", str(script)], timeout=180)
+        prep = self.runner.run(["bash", str(script)], timeout=300)
         if not prep.ok:
             return {
                 "ok": False,
@@ -249,10 +249,21 @@ class ShannonAdapter(SecurityAdapter):
                 "returncode": prep.returncode,
             }
         real_docker = shutil.which("docker") or "/usr/bin/docker"
-        wrap_dir = root / "scripts"
+        # Stage a directory containing an executable named `docker` that points at
+        # shannon-docker-wrap. Prepending scripts/ alone does not intercept `docker`
+        # because the wrap file is named shannon-docker-wrap.
+        wrap_bin = root / "scripts" / ".shannon-docker-bin"
+        try:
+            wrap_bin.mkdir(parents=True, exist_ok=True)
+            docker_shim = wrap_bin / "docker"
+            if docker_shim.is_symlink() or docker_shim.exists():
+                docker_shim.unlink()
+            docker_shim.symlink_to(wrap.resolve())
+        except OSError as exc:
+            return {"ok": False, "error": f"unable to stage docker wrap shim: {exc}"}
         return {
             "ok": True,
-            "wrap_dir": str(wrap_dir),
+            "wrap_dir": str(wrap_bin),
             "real_docker": real_docker,
             "prepare_stdout": (prep.stdout or "")[-500:],
         }

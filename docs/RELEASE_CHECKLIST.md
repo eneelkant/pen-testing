@@ -26,6 +26,11 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
   - `SHANNON_NET_REACHES_GATEWAY` (stand-in)
   - `SHANNON_REAL_WORKER_DIRECT_BLOCKED` (real upstream image)
   - `SHANNON_REAL_WORKER_RESTART_BLOCKED` (real upstream image)
+  - `SHANNON_E2E_DOCKER_WRAP_ACTIVE`
+  - `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` (Temporal + real worker + local mock)
+  - `SHANNON_E2E_FIXTURE_REACHABLE` / `SHANNON_E2E_PROHIBITED_BLOCKED`
+  - `SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED` / `SHANNON_E2E_DNS_OR_CONNECT_BLOCKED`
+  - `SHANNON_E2E_RESTART_PROHIBITED_BLOCKED`
   - `MISSING_INTERNAL_CONFIG_BLOCKS`
 - [ ] No `docker.sock` in Compose render
 - [ ] Report path confinement + symlink-safe writes still pass

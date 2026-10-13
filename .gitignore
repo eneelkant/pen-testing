@@ -35,6 +35,7 @@ htmlcov/
 node_modules/
 .shannon/
 .shannon-workspace/
+scripts/.shannon-docker-bin/
 
 # IDE / OS
 .idea/

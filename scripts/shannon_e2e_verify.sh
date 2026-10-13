@@ -216,11 +216,15 @@ export PEN_REQUIRE_EGRESS_POLICY=true
 unset PEN_ALLOW_EGRESS_DISABLE || true
 export PEN_REQUIRE_SCOPE=true
 unset PEN_ALLOW_SCOPE_DISABLE || true
-export SHANNON_AI_MODEL="openai:gpt-test"
-export SHANNON_AI_BASE_URL="http://shannon-llm-mock:8080/v1"
+# Custom pi catalogue entry (tests/fixtures/shannon_models.json) — not a cloud provider.
+export SHANNON_AI_MODEL="shannon-mock:gpt-test"
 export SHANNON_AI_API_KEY="test-fixture-key-not-a-secret"
-export OPENAI_API_KEY="test-fixture-key-not-a-secret"
+unset SHANNON_AI_BASE_URL || true
+unset OPENAI_API_KEY || true
+unset ANTHROPIC_API_KEY || true
 export PEN_SHANNON_NO_PROXY="egress-gateway,shannon-temporal,fixture-shannon,shannon-llm-mock,shannon-redirect,${FIXTURE_IP},localhost,127.0.0.1,::1"
+MODELS_CONFIG="$ROOT/tests/fixtures/shannon_models.json"
+test -f "$MODELS_CONFIG" || die "missing $MODELS_CONFIG"
 
 # Adapter stages its own wrap shim and must see the real engine docker via
 # PEN_REAL_DOCKER / PATH resolution — keep WRAP_BIN on PATH but pin real binary.
@@ -229,7 +233,7 @@ export PEN_REAL_DOCKER
 
 set +e
 TARGET_URL="$TARGET_URL" REPO_DIR="$REPO_DIR" OUT_DIR="$OUT_DIR" E2E_TIMEOUT="$E2E_TIMEOUT" \
-PEN_REAL_DOCKER="$PEN_REAL_DOCKER" \
+MODELS_CONFIG="$MODELS_CONFIG" PEN_REAL_DOCKER="$PEN_REAL_DOCKER" \
 python3 - <<'PY'
 import os
 import sys
@@ -244,6 +248,7 @@ target = os.environ["TARGET_URL"]
 repo = Path(os.environ["REPO_DIR"])
 out = Path(os.environ["OUT_DIR"])
 timeout = int(os.environ["E2E_TIMEOUT"])
+models_config = os.environ["MODELS_CONFIG"]
 scope = ScopeEngine([
     AuthorizationRecord(
         program_name="shannon-e2e",
@@ -266,7 +271,7 @@ result = adapter.run(
         output_dir=str(out),
         dry_run=False,
         timeout_seconds=timeout,
-        extra={"validate_model": True},
+        extra={"validate_model": True, "models_config": models_config},
     )
 )
 print("SHANNON_E2E_ADAPTER_STATUS", result.status)

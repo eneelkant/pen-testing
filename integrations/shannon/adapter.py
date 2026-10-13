@@ -331,6 +331,9 @@ class ShannonAdapter(SecurityAdapter):
             cmd.append("--validate-auth")
         if request.extra.get("pipeline_testing"):
             cmd.append("--pipeline-testing")
+        models_config = request.extra.get("models_config")
+        if models_config:
+            cmd.extend(["--models-config", str(Path(models_config).resolve())])
         return cmd
 
     def _collect_findings(self, out_dir: Path, execution_id: str, asset: str) -> list:

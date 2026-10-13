@@ -419,15 +419,19 @@ def test_resolve_real_docker_skips_wrap_shim(tmp_path: Path, monkeypatch):
 def test_shannon_validate_model_flag_in_start_command(tmp_path: Path):
     cfg = PlatformConfig(reports_dir=tmp_path)
     adapter = ShannonAdapter(cfg, scope_engine=None)
+    models = tmp_path / "models.json"
+    models.write_text("{}", encoding="utf-8")
     cmd = adapter._build_start_command(
         AdapterRequest(
             target="http://10.0.0.5:8080/",
             repo_path=str(tmp_path),
-            extra={"validate_model": True},
+            extra={"validate_model": True, "models_config": str(models)},
         ),
         tmp_path,
     )
     assert "--validate-model" in cmd
+    assert "--models-config" in cmd
+    assert str(models.resolve()) in cmd
     assert "start" in cmd
 
 

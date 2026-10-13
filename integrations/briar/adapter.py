@@ -1,4 +1,4 @@
-"""Briar adapter — invokes briar-pentest CLI in an isolated interpreter/container."""
+"""Briar adapter — prefers Compose network isolation for live scans."""
 
 from __future__ import annotations
 
@@ -11,6 +11,13 @@ from uuid import uuid4
 
 from core.execution import CommandRunner
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding, redact_secrets
+from core.isolation import (
+    build_compose_briar_command,
+    find_compose_dir,
+    load_isolation_policy,
+    resolve_briar_exec_mode,
+    rewrite_paths_for_compose,
+)
 from core.logging import audit_event
 from core.results import ExecutionResult
 from integrations.base import AdapterRequest, SecurityAdapter
@@ -28,16 +35,19 @@ class BriarAdapter(SecurityAdapter):
         self.python_bin = python_bin or os.environ.get("PEN_BRIAR_PYTHON") or sys.executable
         self.package = self.config.briar_package
 
-    def _briar_cmd(self, *args: str) -> list[str]:
-        # Prefer installed console script; fall back to python -m briar
+    def _exec_mode(self) -> str:
+        return load_isolation_policy().briar_exec_mode
+
+    def _host_briar_cmd(self, *args: str) -> list[str]:
         briar = self.runner.which("briar")
         if briar:
             return [briar, *args]
         return [self.python_bin, "-m", "briar", *args]
 
-    def healthcheck(self) -> dict[str, Any]:
+    def _healthcheck_host(self) -> dict[str, Any]:
         status: dict[str, Any] = {
             "tool": self.name,
+            "exec_mode": "host",
             "pinned_package": self.package,
             "python": self.python_bin,
             "installed": False,
@@ -45,7 +55,6 @@ class BriarAdapter(SecurityAdapter):
             "commands": {},
             "errors": [],
         }
-        # Detect package
         detect = self.runner.run(
             [
                 self.python_bin,
@@ -60,17 +69,17 @@ class BriarAdapter(SecurityAdapter):
         else:
             status["errors"].append(
                 f"briar-pentest not installed in {self.python_bin}. "
-                f"Install into an isolated venv: pip install '{self.package}'"
+                f"Install into an isolated venv: pip install '{self.package}' "
+                "or use PEN_BRIAR_EXEC=compose."
             )
 
-        help_res = self.runner.run(self._briar_cmd("--help"), timeout=30)
+        help_res = self.runner.run(self._host_briar_cmd("--help"), timeout=30)
         status["commands"]["help"] = help_res.ok
         if help_res.ok:
             text = (help_res.stdout or "") + (help_res.stderr or "")
             for name in ("setup", "scan", "demo", "serve", "status", "workspaces", "resume"):
                 status["commands"][name] = name in text
-            # Confirm scan flags
-            scan_help = self.runner.run(self._briar_cmd("scan", "--help"), timeout=30)
+            scan_help = self.runner.run(self._host_briar_cmd("scan", "--help"), timeout=30)
             scan_text = (scan_help.stdout or "") + (scan_help.stderr or "")
             status["commands"]["scan_quick"] = "--quick" in scan_text
             status["commands"]["scan_deep"] = "--deep" in scan_text
@@ -81,10 +90,94 @@ class BriarAdapter(SecurityAdapter):
         status["healthy"] = status["installed"] and status["commands"].get("scan", False)
         return status
 
+    def _healthcheck_compose(self) -> dict[str, Any]:
+        status: dict[str, Any] = {
+            "tool": self.name,
+            "exec_mode": "compose",
+            "pinned_package": self.package,
+            "docker": False,
+            "compose_dir": None,
+            "commands": {"scan": True, "demo": True},
+            "errors": [],
+        }
+        docker = self.runner.which("docker")
+        if not docker:
+            status["errors"].append(
+                "docker not found on PATH; Compose Briar execution requires a host Docker CLI "
+                "(orchestrator container intentionally has no docker.sock)."
+            )
+            status["healthy"] = False
+            return status
+        status["docker"] = True
+        try:
+            root = find_compose_dir()
+            status["compose_dir"] = str(root)
+        except FileNotFoundError as exc:
+            status["errors"].append(str(exc))
+            status["healthy"] = False
+            return status
+
+        compose_ver = self.runner.run(["docker", "compose", "version"], timeout=30)
+        if not compose_ver.ok:
+            status["errors"].append("docker compose plugin unavailable")
+            status["healthy"] = False
+            return status
+
+        # Config validation proves the worker services exist without starting a scan.
+        cfg = self.runner.run(
+            [
+                "docker",
+                "compose",
+                "--project-directory",
+                str(root),
+                "--profile",
+                "live-workers",
+                "--profile",
+                "workers",
+                "config",
+                "-q",
+            ],
+            timeout=60,
+        )
+        if not cfg.ok:
+            status["errors"].append(
+                "docker compose config failed for workers/live-workers profiles: "
+                + (cfg.stderr or cfg.stdout or "unknown error")[:400]
+            )
+            status["healthy"] = False
+            return status
+
+        status["healthy"] = True
+        return status
+
+    def healthcheck(self) -> dict[str, Any]:
+        try:
+            mode = resolve_briar_exec_mode()
+        except ValueError as exc:
+            return {
+                "tool": self.name,
+                "healthy": False,
+                "errors": [str(exc)],
+                "commands": {},
+            }
+        if mode == "compose":
+            return self._healthcheck_compose()
+        return self._healthcheck_host()
+
     def run(self, request: AdapterRequest) -> ExecutionResult:
         execution_id = str(uuid4())
-        # Local demo mode does not require external target authorization.
         is_demo = bool(request.extra.get("demo"))
+        try:
+            exec_mode = resolve_briar_exec_mode()
+        except ValueError as exc:
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="blocked",
+                error=str(exc),
+                metadata={"isolation": "briar_exec_mode"},
+            )
+
         if not is_demo:
             try:
                 self.preflight(request)
@@ -104,13 +197,20 @@ class BriarAdapter(SecurityAdapter):
         json_out = out_dir / "findings.json"
 
         if request.dry_run:
-            cmd = self._build_command(request, out_dir, json_out, demo=is_demo)
+            cmd = self._build_command(
+                request, out_dir, json_out, demo=is_demo, exec_mode=exec_mode, live=not is_demo
+            )
             return ExecutionResult(
                 tool=self.name,
                 execution_id=execution_id,
                 status="skipped",
                 artifacts={"planned_command": " ".join(cmd), "output_dir": str(out_dir)},
-                metadata={"health": health, "dry_run": True},
+                metadata={
+                    "health": health,
+                    "dry_run": True,
+                    "exec_mode": exec_mode,
+                    "network": self._network_label(exec_mode, live=not is_demo),
+                },
             )
 
         if not health.get("healthy"):
@@ -119,9 +219,10 @@ class BriarAdapter(SecurityAdapter):
                 execution_id=execution_id,
                 status="failed",
                 error="Briar is not healthy: " + "; ".join(health.get("errors", [])),
-                metadata={"health": health},
+                metadata={"health": health, "exec_mode": exec_mode},
             )
 
+        policy = load_isolation_policy()
         if not is_demo:
             try:
                 self.egress_preflight(request)
@@ -132,18 +233,16 @@ class BriarAdapter(SecurityAdapter):
                     execution_id=execution_id,
                     status="blocked",
                     error=str(exc),
-                    metadata={"health": health},
+                    metadata={"health": health, "exec_mode": exec_mode},
                 )
 
-            from core.isolation import load_isolation_policy
-
-            if not load_isolation_policy().allow_briar_live:
+            if not policy.allow_briar_live:
                 msg = (
                     "Live Briar runs require PEN_ALLOW_BRIAR_LIVE=1. "
-                    "Host-invoked Briar is not attached to platform Compose isolation "
-                    "networks; launch-time DNS preflight alone is not in-engine "
-                    "containment. Prefer dry_run=true, briar demo, or Compose "
-                    "`live-workers` with host firewall controls."
+                    "Prefer PEN_BRIAR_EXEC=compose (default) so the process runs on "
+                    "pen-scanner-live. Host execution additionally requires "
+                    "PEN_ALLOW_BRIAR_HOST_NET=1. Launch-time DNS preflight alone is not "
+                    "in-engine containment."
                 )
                 audit_event("briar.blocked", reason=msg, target=request.target)
                 return ExecutionResult(
@@ -151,11 +250,40 @@ class BriarAdapter(SecurityAdapter):
                     execution_id=execution_id,
                     status="blocked",
                     error=msg,
-                    metadata={"health": health, "isolation": "briar_live_gate"},
+                    metadata={"health": health, "isolation": "briar_live_gate", "exec_mode": exec_mode},
                 )
 
-        cmd = self._build_command(request, out_dir, json_out, demo=is_demo)
-        audit_event("briar.start", execution_id=execution_id, demo=is_demo, mode=request.mode)
+            if exec_mode == "host" and not policy.allow_briar_host_net:
+                msg = (
+                    "PEN_BRIAR_EXEC=host places Briar on the operator host network "
+                    "(no Compose isolation). Set PEN_ALLOW_BRIAR_HOST_NET=1 to acknowledge, "
+                    "or use PEN_BRIAR_EXEC=compose (default) for pen-scanner-live."
+                )
+                audit_event("briar.blocked", reason=msg, target=request.target)
+                return ExecutionResult(
+                    tool=self.name,
+                    execution_id=execution_id,
+                    status="blocked",
+                    error=msg,
+                    metadata={
+                        "health": health,
+                        "isolation": "briar_host_net_gate",
+                        "exec_mode": exec_mode,
+                    },
+                )
+
+        live = not is_demo
+        cmd = self._build_command(
+            request, out_dir, json_out, demo=is_demo, exec_mode=exec_mode, live=live
+        )
+        audit_event(
+            "briar.start",
+            execution_id=execution_id,
+            demo=is_demo,
+            mode=request.mode,
+            exec_mode=exec_mode,
+            network=self._network_label(exec_mode, live=live),
+        )
         timeout = request.timeout_seconds or self.config.default_timeout_seconds
         result = self.runner.run(cmd, timeout=timeout, log_path=log_path)
         findings = self._load_findings(json_out, execution_id, request.target or "demo")
@@ -168,29 +296,61 @@ class BriarAdapter(SecurityAdapter):
             artifacts={"output_dir": str(out_dir), "log": str(log_path), "json": str(json_out)},
             logs=[result.stdout[-2000:], result.stderr[-2000:]],
             error=None if result.ok else (result.stderr or "Briar exited non-zero"),
-            metadata={"returncode": result.returncode, "health": health, "demo": is_demo},
+            metadata={
+                "returncode": result.returncode,
+                "health": health,
+                "demo": is_demo,
+                "exec_mode": exec_mode,
+                "network": self._network_label(exec_mode, live=live),
+            },
         )
 
-    def _build_command(
+    @staticmethod
+    def _network_label(exec_mode: str, *, live: bool) -> str:
+        if exec_mode == "host":
+            return "host"
+        return "pen-scanner-live" if live else "pen-scanner-isolated"
+
+    def _build_inner_args(
         self, request: AdapterRequest, out_dir: Path, json_out: Path, *, demo: bool
     ) -> list[str]:
         if demo:
-            return self._briar_cmd("demo")
+            return ["demo"]
         mode = (request.mode or "standard").lower()
-        cmd = self._briar_cmd("scan", "-u", request.target, "-o", str(out_dir), "--output-json", str(json_out))
+        args = ["scan", "-u", request.target, "-o", str(out_dir), "--output-json", str(json_out)]
         if request.repo_path:
-            cmd.extend(["-r", str(request.repo_path)])
+            args.extend(["-r", str(request.repo_path)])
         if request.config_path:
-            cmd.extend(["-c", str(request.config_path)])
+            args.extend(["-c", str(request.config_path)])
         if mode == "quick":
-            cmd.append("--quick")
+            args.append("--quick")
         elif mode == "deep":
-            cmd.append("--deep")
+            args.append("--deep")
         if request.extra.get("provider"):
-            cmd.extend(["-p", str(request.extra["provider"])])
+            args.extend(["-p", str(request.extra["provider"])])
         if request.extra.get("lang"):
-            cmd.extend(["--lang", str(request.extra["lang"])])
-        return cmd
+            args.extend(["--lang", str(request.extra["lang"])])
+        return args
+
+    def _build_command(
+        self,
+        request: AdapterRequest,
+        out_dir: Path,
+        json_out: Path,
+        *,
+        demo: bool,
+        exec_mode: str,
+        live: bool,
+    ) -> list[str]:
+        inner = self._build_inner_args(request, out_dir, json_out, demo=demo)
+        if exec_mode == "host":
+            return self._host_briar_cmd(*inner)
+        container_args = rewrite_paths_for_compose(inner, out_dir=out_dir, json_out=json_out)
+        return build_compose_briar_command(
+            briar_args=container_args,
+            out_dir=out_dir,
+            live=live and not demo,
+        )
 
     def _load_findings(self, path: Path, execution_id: str, asset: str) -> list:
         if not path.exists():

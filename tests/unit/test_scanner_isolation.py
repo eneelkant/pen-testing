@@ -46,12 +46,16 @@ def test_policy_defaults_require_egress(monkeypatch):
     monkeypatch.delenv("PEN_ALLOW_SCOPE_DISABLE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SHANNON_LIVE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
+    monkeypatch.delenv("PEN_ALLOW_BRIAR_HOST_NET", raising=False)
+    monkeypatch.delenv("PEN_BRIAR_EXEC", raising=False)
     policy = load_isolation_policy()
     assert policy.require_egress_policy is True
     assert policy.allow_egress_disable is False
     assert policy.allow_scope_disable is False
     assert policy.allow_shannon_live is False
     assert policy.allow_briar_live is False
+    assert policy.briar_exec_mode == "compose"
+    assert policy.allow_briar_host_net is False
 
 
 def test_unauthorized_hostname_denied():
@@ -326,8 +330,72 @@ def test_live_briar_requires_explicit_allow_even_when_dns_ok(tmp_path: Path, mon
     adapter.runner.run.assert_not_called()
 
 
-def test_live_briar_launches_only_with_allow_and_public_dns(tmp_path: Path, monkeypatch):
+def test_live_briar_compose_launches_with_allow_and_public_dns(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    monkeypatch.setenv("PEN_COMPOSE_DIR", str(Path(__file__).resolve().parents[2]))
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "healthy": True,
+        "exec_mode": "compose",
+        "errors": [],
+        "commands": {"scan": True},
+    }
+    runner = MagicMock()
+
+    class R:
+        ok = True
+        timed_out = False
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    runner.run.return_value = R()
+    runner.which.return_value = "/usr/bin/docker"
+    adapter.runner = runner
+    result = adapter.run(
+        AdapterRequest(target=url, mode="quick", dry_run=False)
+    )
+    assert result.status == "succeeded"
+    runner.run.assert_called_once()
+    cmd = runner.run.call_args[0][0]
+    assert cmd[:2] == ["docker", "compose"]
+    assert "briar-live" in cmd
+    assert (result.metadata or {}).get("network") == "pen-scanner-live"
+
+
+def test_live_briar_host_requires_host_net_ack(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "host")
+    monkeypatch.delenv("PEN_ALLOW_BRIAR_HOST_NET", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    adapter.runner = MagicMock()
+    result = adapter.run(AdapterRequest(target=url, mode="quick", dry_run=False))
+    assert result.status == "blocked"
+    assert "PEN_ALLOW_BRIAR_HOST_NET" in (result.error or "")
+    assert (result.metadata or {}).get("isolation") == "briar_host_net_gate"
+    adapter.runner.run.assert_not_called()
+
+
+def test_live_briar_host_launches_with_dual_host_acks(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "host")
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_HOST_NET", "1")
 
     def fake_getaddrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
@@ -349,15 +417,16 @@ def test_live_briar_launches_only_with_allow_and_public_dns(tmp_path: Path, monk
     runner.run.return_value = R()
     runner.which.return_value = "/usr/bin/briar"
     adapter.runner = runner
-    result = adapter.run(
-        AdapterRequest(target=url, mode="quick", dry_run=False)
-    )
+    result = adapter.run(AdapterRequest(target=url, mode="quick", dry_run=False))
     assert result.status == "succeeded"
-    runner.run.assert_called_once()
+    cmd = runner.run.call_args[0][0]
+    assert cmd[0] in {"/usr/bin/briar", "briar"} or cmd[0].endswith("python")
+    assert "docker" not in cmd[:2]
 
 
 def test_briar_demo_skips_live_gate(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "host")
     cfg = PlatformConfig(reports_dir=tmp_path)
     adapter = BriarAdapter(cfg, scope_engine=None)
     adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
@@ -378,6 +447,20 @@ def test_briar_demo_skips_live_gate(tmp_path: Path, monkeypatch):
     )
     assert result.status == "succeeded"
     runner.run.assert_called_once()
+
+
+def test_briar_compose_dry_run_plans_docker_compose(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    monkeypatch.setenv("PEN_COMPOSE_DIR", str(Path(__file__).resolve().parents[2]))
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    result = adapter.run(AdapterRequest(target=url, mode="quick", dry_run=True))
+    assert result.status == "skipped"
+    planned = result.artifacts["planned_command"]
+    assert "docker compose" in planned
+    assert "briar-live" in planned
+    assert "/work/out" in planned
 
 
 def test_assert_live_destination_skipped_on_dry_run():

@@ -62,7 +62,8 @@ def test_shannon_requires_repo(tmp_path: Path):
     assert "repo" in (result.error or "").lower()
 
 
-def test_briar_capability_detection_uses_runner():
+def test_briar_capability_detection_uses_runner(monkeypatch):
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "host")
     cfg = PlatformConfig()
     runner = MagicMock()
     runner.which.return_value = "/usr/bin/briar"

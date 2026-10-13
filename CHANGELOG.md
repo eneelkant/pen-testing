@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0a9 — 2026-10-13
+
+### Security
+
+- Briar default execution is Compose (`PEN_BRIAR_EXEC=compose`) on `pen-scanner-live` / `pen-scanner-isolated`
+- Host Briar (`PEN_BRIAR_EXEC=host`) requires `PEN_ALLOW_BRIAR_HOST_NET=1` in addition to `PEN_ALLOW_BRIAR_LIVE=1`
+- Docker runtime verifies the **actual** Briar worker container network membership and egress/fixture reachability
+- Fixture-headers attached to `pen-scanner-live` for authorized compose-path probes
+- Shannon residual clarified: workers remain on upstream `shannon-net` (not platform-attachable without upstream)
+
+### Documentation
+
+- Document enforced vs launch-time controls; Briar compose path vs Shannon uncontained workers
+
 ## 0.2.0a8 — 2026-10-12
 
 ### Security

@@ -1,7 +1,7 @@
 # Security Validation
 
-Verification date: **2026-10-12**  
-Current `main` baseline for this work: **`93c228bf4a582dd37ad8426a26eb60d794d77778`** (PR #10 merge).  
+Verification date: **2026-10-13**  
+Current `main` baseline for this work: verify at branch time (PR #11 merge `022669c` + Dependabot).  
 See also `docs/SCANNER_ISOLATION.md`.
 
 ## Authorization / scope engine
@@ -35,7 +35,13 @@ See also `docs/SCANNER_ISOLATION.md`.
 | `PEN_REQUIRE_EGRESS_POLICY=false` without dual gate | PASS (blocked) | unit tests (0.2.0a8) |
 | MCP `demo=true` on Shannon without confirm | PASS (blocked) | unit tests (0.2.0a8) |
 | Shannon live gate does not enable Briar | PASS (blocked) | unit tests (0.2.0a8) |
+| Briar default exec mode is compose | PASS | unit tests (0.2.0a9) |
+| Host Briar without `PEN_ALLOW_BRIAR_HOST_NET` | PASS (blocked) | unit tests (0.2.0a9) |
+| Compose Briar dry-run plans `docker compose … briar-live` | PASS | unit + docker verify |
+| Actual Briar worker on `pen-scanner-isolated` blocks egress | PASS (runtime) | `BRIAR_WORKER_ISOLATED_BLOCKED` |
+| Actual Briar-live worker reaches local fixture | PASS (runtime) | `BRIAR_LIVE_REACHES_FIXTURE` |
 | Control network → local fixture | PASS (runtime) | docker verify |
+| Shannon worker on `pen-scanner-*` | NOT IMPLEMENTED | upstream `shannon-net` |
 | In-engine Shannon/Briar connection interception | NOT IMPLEMENTED | documented limitation |
 | DNS rebinding inside Shannon/Briar | NOT IMPLEMENTED | residual — upstream engines |
 | Upstream browser navigation containment | FAIL / not claimed | documented limitation |

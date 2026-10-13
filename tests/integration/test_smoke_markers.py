@@ -15,9 +15,10 @@ def test_docker_prerequisite_detection():
 
 
 @pytest.mark.integration
-def test_briar_package_optional():
+def test_briar_package_optional(monkeypatch):
     from integrations.briar import BriarAdapter
 
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "host")
     health = BriarAdapter(load_config()).healthcheck()
     # Pass whether installed or not — assert structure
     assert "installed" in health

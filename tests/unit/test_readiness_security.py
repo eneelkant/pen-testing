@@ -144,7 +144,8 @@ def test_shannon_missing_docker_blocks_live_run(tmp_path: Path):
     assert "docker" in (result.error or "").lower()
 
 
-def test_briar_missing_package_fails_closed(tmp_path: Path):
+def test_briar_missing_package_fails_closed(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "host")
     cfg = PlatformConfig(reports_dir=tmp_path)
     runner = MagicMock()
     runner.which.return_value = None
@@ -153,6 +154,17 @@ def test_briar_missing_package_fails_closed(tmp_path: Path):
     health = adapter.healthcheck()
     assert health["installed"] is False
     assert health["healthy"] is False
+
+
+def test_briar_compose_without_docker_fails_closed(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    runner = MagicMock()
+    runner.which.return_value = None
+    adapter = BriarAdapter(cfg, ScopeEngine([]), runner=runner)
+    health = adapter.healthcheck()
+    assert health["healthy"] is False
+    assert any("docker" in e.lower() for e in health.get("errors", []))
 
 
 def test_command_timeout_marks_result(tmp_path: Path):

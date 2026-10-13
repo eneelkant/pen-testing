@@ -156,9 +156,11 @@ class ShannonAdapter(SecurityAdapter):
         if not load_isolation_policy().allow_shannon_live:
             msg = (
                 "Live Shannon runs require PEN_ALLOW_SHANNON_LIVE=1. "
-                "Shannon Temporal/Docker workers are not attached to platform "
-                "Compose isolation networks; launch-time DNS preflight alone is not "
-                "in-engine containment. Prefer dry_run=true or host firewall controls."
+                "Shannon's npx CLI spawns Temporal/worker containers on upstream "
+                "`shannon-net` (hardcoded); this platform cannot attach those workers "
+                "to pen-scanner-* without upstream support. Launch-time DNS preflight "
+                "is not worker-level containment. Prefer dry_run=true or host firewall "
+                "controls until a worker network hook exists."
             )
             audit_event("shannon.blocked", reason=msg, target=request.target)
             return ExecutionResult(

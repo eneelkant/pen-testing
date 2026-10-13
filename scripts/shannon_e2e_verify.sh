@@ -222,11 +222,14 @@ export SHANNON_AI_API_KEY="test-fixture-key-not-a-secret"
 export OPENAI_API_KEY="test-fixture-key-not-a-secret"
 export PEN_SHANNON_NO_PROXY="egress-gateway,shannon-temporal,fixture-shannon,shannon-llm-mock,shannon-redirect,${FIXTURE_IP},localhost,127.0.0.1,::1"
 
-# Ensure wrap PATH for the adapter subprocess environment.
+# Adapter stages its own wrap shim and must see the real engine docker via
+# PEN_REAL_DOCKER / PATH resolution — keep WRAP_BIN on PATH but pin real binary.
 export PATH="$WRAP_BIN:$PATH"
+export PEN_REAL_DOCKER
 
 set +e
 TARGET_URL="$TARGET_URL" REPO_DIR="$REPO_DIR" OUT_DIR="$OUT_DIR" E2E_TIMEOUT="$E2E_TIMEOUT" \
+PEN_REAL_DOCKER="$PEN_REAL_DOCKER" \
 python3 - <<'PY'
 import os
 import sys

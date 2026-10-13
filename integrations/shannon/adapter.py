@@ -248,7 +248,7 @@ class ShannonAdapter(SecurityAdapter):
                 "error": (prep.stderr or prep.stdout or "prepare failed")[:800],
                 "returncode": prep.returncode,
             }
-        real_docker = shutil.which("docker") or "/usr/bin/docker"
+        real_docker = self._resolve_real_docker_binary()
         # Stage a directory containing an executable named `docker` that points at
         # shannon-docker-wrap. Prepending scripts/ alone does not intercept `docker`
         # because the wrap file is named shannon-docker-wrap.
@@ -267,6 +267,44 @@ class ShannonAdapter(SecurityAdapter):
             "real_docker": real_docker,
             "prepare_stdout": (prep.stdout or "")[-500:],
         }
+
+    @staticmethod
+    def _resolve_real_docker_binary() -> str:
+        """Locate the engine docker binary, never the shannon wrap shim."""
+        wrap_marker = "shannon-docker-wrap"
+        candidates: list[str] = []
+        which = shutil.which("docker")
+        if which:
+            candidates.append(which)
+        candidates.extend(["/usr/bin/docker", "/usr/local/bin/docker"])
+        path_env = os.environ.get("PATH") or ""
+        for entry in path_env.split(os.pathsep):
+            if not entry:
+                continue
+            candidates.append(str(Path(entry) / "docker"))
+        seen: set[str] = set()
+        for raw in candidates:
+            if raw in seen:
+                continue
+            seen.add(raw)
+            path = Path(raw)
+            if not path.exists():
+                continue
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if wrap_marker in str(resolved):
+                continue
+            if path.is_symlink():
+                try:
+                    if wrap_marker in str(path.resolve()):
+                        continue
+                except OSError:
+                    continue
+            if os.access(path, os.X_OK):
+                return str(path)
+        return "/usr/bin/docker"
 
     def _build_start_command(self, request: AdapterRequest, out_dir: Path) -> list[str]:
         cmd = [

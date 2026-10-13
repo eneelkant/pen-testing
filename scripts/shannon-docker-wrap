@@ -3,20 +3,38 @@
 # Injects HTTP(S)_PROXY into `docker run` worker containers on shannon-net.
 set -euo pipefail
 
-REAL_DOCKER="${PEN_REAL_DOCKER:-/usr/bin/docker}"
-if [[ ! -x "$REAL_DOCKER" ]]; then
-  REAL_DOCKER="$(type -P docker || true)"
-fi
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+resolve_real_docker() {
+  local candidate resolved
+  for candidate in "${PEN_REAL_DOCKER:-}" /usr/bin/docker /usr/local/bin/docker; do
+    [[ -n "$candidate" && -x "$candidate" ]] || continue
+    resolved="$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")"
+    [[ "$resolved" == "$SELF" ]] && continue
+    # Skip other PATH shims that ultimately point at this wrap.
+    if [[ -L "$candidate" ]]; then
+      local dest
+      dest="$(readlink -f "$candidate" 2>/dev/null || true)"
+      [[ "$dest" == "$SELF" ]] && continue
+    fi
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  # Last resort: first docker on PATH that is not this script.
+  local p
+  while IFS= read -r p; do
+    [[ -n "$p" && -x "$p" ]] || continue
+    resolved="$(readlink -f "$p" 2>/dev/null || echo "$p")"
+    [[ "$resolved" == "$SELF" ]] && continue
+    printf '%s\n' "$p"
+    return 0
+  done < <(type -aP docker 2>/dev/null || true)
+  return 1
+}
+REAL_DOCKER="$(resolve_real_docker || true)"
 [[ -n "$REAL_DOCKER" && -x "$REAL_DOCKER" ]] || {
-  echo "shannon-docker-wrap: could not locate real docker binary" >&2
+  echo "shannon-docker-wrap: could not locate real docker binary (set PEN_REAL_DOCKER=/usr/bin/docker)" >&2
   exit 127
 }
-# Avoid recursion if PATH points at this wrap.
-SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-if [[ "$(readlink -f "$REAL_DOCKER" 2>/dev/null || echo "$REAL_DOCKER")" == "$SELF" ]]; then
-  echo "shannon-docker-wrap: PEN_REAL_DOCKER must point at the real docker binary" >&2
-  exit 127
-fi
 
 PROXY_URL="${PEN_SHANNON_HTTP_PROXY:-http://egress-gateway:3128}"
 # On-net fixtures / Temporal / mock LLM must bypass the explicit CONNECT proxy.

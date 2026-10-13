@@ -387,7 +387,10 @@ def test_prepare_controlled_network_stages_named_docker_shim(tmp_path: Path, mon
 
     runner.run.return_value = R()
     adapter.runner = runner
-    monkeypatch.setattr("integrations.shannon.adapter.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(
+        "integrations.shannon.adapter.ShannonAdapter._resolve_real_docker_binary",
+        staticmethod(lambda: "/usr/bin/docker"),
+    )
     result = adapter._prepare_controlled_network()
     assert result["ok"] is True
     wrap_dir = Path(result["wrap_dir"])
@@ -396,6 +399,21 @@ def test_prepare_controlled_network_stages_named_docker_shim(tmp_path: Path, mon
     assert docker_shim.is_symlink()
     assert docker_shim.resolve() == wrap_script.resolve()
     assert result["real_docker"] == "/usr/bin/docker"
+
+
+def test_resolve_real_docker_skips_wrap_shim(tmp_path: Path, monkeypatch):
+    wrap_bin = tmp_path / ".shannon-docker-bin"
+    wrap_bin.mkdir()
+    shim = wrap_bin / "docker"
+    shim.symlink_to(Path(__file__).resolve().parents[2] / "scripts" / "shannon-docker-wrap")
+    real = tmp_path / "real-docker"
+    real.write_text("#!/bin/sh\n")
+    real.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{wrap_bin}:{tmp_path}")
+    monkeypatch.setattr("integrations.shannon.adapter.shutil.which", lambda _: str(shim))
+    resolved = ShannonAdapter._resolve_real_docker_binary()
+    assert "shannon-docker-wrap" not in resolved
+    assert resolved in {str(real), "/usr/bin/docker", "/usr/local/bin/docker"}
 
 
 def test_shannon_validate_model_flag_in_start_command(tmp_path: Path):

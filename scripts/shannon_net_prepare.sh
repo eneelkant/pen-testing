@@ -77,5 +77,90 @@ log "== prove shannon-net stand-in can reach egress-gateway =="
 docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
   python -c 'import socket; s=socket.create_connection(("egress-gateway",3128),5); s.close(); print("SHANNON_NET_REACHES_GATEWAY")'
 
+log "== prove direct egress blocked with proxy env explicitly unset =="
+set +e
+NOPROXY_PROBE="$(docker run --rm --network "$NET_NAME" \
+  -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= -e ALL_PROXY= -e all_proxy= \
+  python:3.12-slim-bookworm \
+  python -c 'import os,socket,sys
+for k in list(os.environ):
+  if "proxy" in k.lower():
+    del os.environ[k]
+try:
+  socket.create_connection(("1.1.1.1",443),3); print("UNEXPECTED_CONNECT"); sys.exit(0)
+except OSError as e:
+  print("SHANNON_NET_NOPROXY_DIRECT_BLOCKED", type(e).__name__); sys.exit(1)
+' 2>&1)"
+NOPROXY_RC=$?
+set -e
+echo "$NOPROXY_PROBE"
+echo "$NOPROXY_PROBE" | grep -q UNEXPECTED_CONNECT && die "shannon-net direct egress succeeded with proxy unset"
+test "$NOPROXY_RC" -ne 0 || die "noproxy probe unexpectedly succeeded"
+echo "$NOPROXY_PROBE" | grep -q SHANNON_NET_NOPROXY_DIRECT_BLOCKED || die "missing SHANNON_NET_NOPROXY_DIRECT_BLOCKED"
+
+log "== prove real Shannon worker image on shannon-net (if pullable) =="
+SHANNON_IMAGE="${PEN_SHANNON_WORKER_IMAGE:-keygraph/shannon:3.4.0}"
+if docker pull "$SHANNON_IMAGE" >/tmp/shannon-pull.log 2>&1; then
+  set +e
+  REAL_PROBE="$(docker run --rm --network "$NET_NAME" --entrypoint node \
+    -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
+    "$SHANNON_IMAGE" -e '
+const net = require("net");
+const s = net.connect({host:"1.1.1.1", port:443, timeout:3000}, () => {
+  console.log("UNEXPECTED_CONNECT");
+  process.exit(0);
+});
+s.on("error", (e) => {
+  console.log("SHANNON_REAL_WORKER_DIRECT_BLOCKED", e.code || e.message);
+  process.exit(1);
+});
+setTimeout(() => { console.log("SHANNON_REAL_WORKER_DIRECT_BLOCKED", "TIMEOUT"); process.exit(1); }, 3500);
+' 2>&1)"
+  REAL_RC=$?
+  set -e
+  echo "$REAL_PROBE"
+  echo "$REAL_PROBE" | grep -q UNEXPECTED_CONNECT && die "real Shannon worker reached 1.1.1.1"
+  test "$REAL_RC" -ne 0 || die "real Shannon worker egress probe unexpectedly succeeded"
+  echo "$REAL_PROBE" | grep -q SHANNON_REAL_WORKER_DIRECT_BLOCKED || die "missing SHANNON_REAL_WORKER_DIRECT_BLOCKED"
+
+  log "== prove real Shannon worker restart retains isolation =="
+  # Keep-alive via node (image may lack GNU sleep as ENTRYPOINT).
+  REAL_CID="$(docker run -d --network "$NET_NAME" --entrypoint node "$SHANNON_IMAGE" -e 'setInterval(()=>{},1e3); setTimeout(()=>process.exit(0),60000)')"
+  test -n "$REAL_CID" || die "failed to start real Shannon worker keep-alive"
+  docker restart "$REAL_CID" >/dev/null
+  # Wait for node to be ready after restart.
+  ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if docker exec "$REAL_CID" node -e 'process.exit(0)' >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  test "$ready" -eq 1 || die "restarted Shannon worker not ready"
+  set +e
+  REAL_RESTART="$(docker exec -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= "$REAL_CID" node -e '
+const net = require("net");
+const s = net.connect({host:"1.1.1.1", port:443, timeout:3000}, () => {
+  console.log("UNEXPECTED_CONNECT");
+  process.exit(0);
+});
+s.on("error", (e) => {
+  console.log("SHANNON_REAL_WORKER_RESTART_BLOCKED", e.code || e.message);
+  process.exit(1);
+});
+setTimeout(() => { console.log("SHANNON_REAL_WORKER_RESTART_BLOCKED", "TIMEOUT"); process.exit(1); }, 3500);
+' 2>&1)"
+  REAL_RESTART_RC=$?
+  set -e
+  echo "$REAL_RESTART"
+  docker rm -f "$REAL_CID" >/dev/null 2>&1 || true
+  echo "$REAL_RESTART" | grep -q UNEXPECTED_CONNECT && die "restarted Shannon worker reached 1.1.1.1"
+  test "$REAL_RESTART_RC" -ne 0 || die "restart probe unexpectedly succeeded"
+  echo "$REAL_RESTART" | grep -q SHANNON_REAL_WORKER_RESTART_BLOCKED || die "missing SHANNON_REAL_WORKER_RESTART_BLOCKED"
+else
+  die "unable to pull $SHANNON_IMAGE for real-worker isolation proof (see /tmp/shannon-pull.log)"
+fi
+
 log "Shannon controlled network prepared."
 echo "SHANNON_CONTROLLED_NET_READY name=$NET_NAME gateway=$GW_NAME"

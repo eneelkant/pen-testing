@@ -12,6 +12,7 @@ from uuid import uuid4
 from core.execution import CommandRunner
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding, redact_secrets
 from core.isolation import (
+    assert_network_internal,
     build_compose_briar_command,
     find_compose_dir,
     load_isolation_policy,
@@ -271,6 +272,66 @@ class BriarAdapter(SecurityAdapter):
                         "exec_mode": exec_mode,
                     },
                 )
+
+            if exec_mode == "compose":
+                # Network-level fail-closed: pen-scanner-live must be internal.
+                # HTTP_PROXY is convenience only and must not be the sole boundary.
+                try:
+                    net_name = "pen-scanner-live"
+                    # Ensure the compose project has created the network.
+                    self.runner.run(
+                        [
+                            "docker",
+                            "compose",
+                            "--project-directory",
+                            str(find_compose_dir()),
+                            "--profile",
+                            "live-workers",
+                            "create",
+                            "briar-live",
+                        ],
+                        timeout=120,
+                    )
+                    # Resolve project-prefixed network name.
+                    ls = self.runner.run(
+                        ["docker", "network", "ls", "--format", "{{.Name}}"],
+                        timeout=30,
+                    )
+                    candidates = [
+                        line.strip()
+                        for line in (ls.stdout or "").splitlines()
+                        if line.strip().endswith("pen-scanner-live") or line.strip() == "pen-scanner-live"
+                    ]
+                    if not candidates:
+                        raise PermissionError("pen-scanner-live docker network not found after compose create")
+                    assert_network_internal(candidates[0])
+                except PermissionError as exc:
+                    audit_event("briar.blocked", reason=str(exc), target=request.target)
+                    return ExecutionResult(
+                        tool=self.name,
+                        execution_id=execution_id,
+                        status="blocked",
+                        error=str(exc),
+                        metadata={
+                            "health": health,
+                            "isolation": "briar_network_internal",
+                            "exec_mode": exec_mode,
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001 — fail closed on infra errors
+                    msg = f"Unable to verify Briar network isolation: {exc}"
+                    audit_event("briar.blocked", reason=msg, target=request.target)
+                    return ExecutionResult(
+                        tool=self.name,
+                        execution_id=execution_id,
+                        status="blocked",
+                        error=msg,
+                        metadata={
+                            "health": health,
+                            "isolation": "briar_network_internal",
+                            "exec_mode": exec_mode,
+                        },
+                    )
 
         live = not is_demo
         cmd = self._build_command(

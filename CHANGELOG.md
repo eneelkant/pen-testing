@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0a11 — 2026-10-13
+
+### Security
+
+- Network-level isolation assertions: scanner nets must be Docker `Internal=true`; fail closed if not
+- Briar compose live path verifies `pen-scanner-live` is internal before launch (HTTP_PROXY is convenience only)
+- Runtime proofs with proxy env explicitly unset: `BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED`, `SHANNON_NET_NOPROXY_DIRECT_BLOCKED`
+- Briar worker cannot reach control-plane / `docker.sock`: `BRIAR_WORKER_NO_CONTROL_PLANE`, `BRIAR_WORKER_NO_DOCKER_SOCK`
+- Restart retention: `BRIAR_LIVE_RESTART_DIRECT_BLOCKED`
+- Real Shannon worker image (`keygraph/shannon`) on controlled `shannon-net`: `SHANNON_REAL_WORKER_DIRECT_BLOCKED`, `SHANNON_REAL_WORKER_RESTART_BLOCKED` (distinct from stand-in markers)
+
+### Documentation
+
+- Scanner isolation / security validation updated for network-level (non-proxy) boundary
+
+### Notes
+
+- Full Shannon LLM Temporal E2E scan still not run in CI (keys/time)
+- Transparent browser interception still not claimed
+
 ## 0.2.0a10 — 2026-10-13
 
 ### Security

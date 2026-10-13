@@ -11,12 +11,22 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
 - [ ] Scope-skip does not disable egress
 - [ ] Egress-disable dual-gate enforced
 - [ ] Docker runtime markers present on CI head:
+  - `COMPOSE_NETWORKS_INTERNAL_ASSERTED`
+  - `PEN_SCANNER_ISOLATED_INTERNAL=true` / `PEN_SCANNER_LIVE_INTERNAL=true`
   - `BRIAR_WORKER_ISOLATED_BLOCKED`
+  - `BRIAR_WORKER_NO_CONTROL_PLANE`
+  - `BRIAR_WORKER_NO_DOCKER_SOCK`
   - `BRIAR_LIVE_DIRECT_EGRESS_BLOCKED`
+  - `BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED`
+  - `BRIAR_LIVE_RESTART_DIRECT_BLOCKED`
   - `BRIAR_LIVE_REACHES_FIXTURE`
   - `PROXY_DENIES_UNLISTED_HOST`
-  - `SHANNON_NET_ISOLATED_BLOCKED`
-  - `SHANNON_NET_REACHES_GATEWAY`
+  - `SHANNON_NET_ISOLATED_BLOCKED` (stand-in)
+  - `SHANNON_NET_NOPROXY_DIRECT_BLOCKED` (stand-in)
+  - `SHANNON_NET_REACHES_GATEWAY` (stand-in)
+  - `SHANNON_REAL_WORKER_DIRECT_BLOCKED` (real upstream image)
+  - `SHANNON_REAL_WORKER_RESTART_BLOCKED` (real upstream image)
+  - `MISSING_INTERNAL_CONFIG_BLOCKS`
 - [ ] No `docker.sock` in Compose render
 - [ ] Report path confinement + symlink-safe writes still pass
 

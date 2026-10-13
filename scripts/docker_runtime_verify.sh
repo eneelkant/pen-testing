@@ -41,6 +41,15 @@ if echo "$RENDER" | grep -E '/var/run/docker.sock|docker.sock:'; then
   die "docker.sock mount must not appear in compose render"
 fi
 
+log "== assert compose JSON marks scanner nets internal (fail-closed parser) =="
+docker compose --profile workers --profile live-workers config --format json | python3 -c '
+import json, sys
+from core.isolation import compose_networks_must_be_internal
+cfg = json.load(sys.stdin)
+compose_networks_must_be_internal(cfg, ("pen-scanner-isolated", "pen-scanner-live"))
+print("COMPOSE_NETWORKS_INTERNAL_ASSERTED")
+'
+
 log "== build required project images (orchestrator + briar + egress-gateway) =="
 docker compose --progress=plain build
 docker compose --profile workers --progress=plain build briar
@@ -60,6 +69,9 @@ log "== runtime connectivity: isolated network must not reach external IP =="
 docker compose --profile workers create briar >/dev/null
 ISO_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-scanner-isolated$' | head -n1 || true)"
 test -n "$ISO_NET" || die "could not locate pen-scanner-isolated docker network"
+ISO_INTERNAL="$(docker network inspect -f '{{.Internal}}' "$ISO_NET")"
+test "$ISO_INTERNAL" = "true" || die "pen-scanner-isolated Internal=$ISO_INTERNAL (must be true; HTTP_PROXY is not a boundary)"
+echo "PEN_SCANNER_ISOLATED_INTERNAL=true"
 # Probe uses the same Python base image already pulled for builds; no third-party scan.
 # Expect connection failure (egress blocked by internal:true).
 set +e
@@ -137,10 +149,46 @@ echo "$WORKER_PROBE" | grep -q 'UNEXPECTED_CONNECT' && die "briar worker reached
 test "$WORKER_RC" -ne 0 || die "briar worker egress probe unexpectedly succeeded"
 echo "$WORKER_PROBE" | grep -q 'BRIAR_WORKER_ISOLATED_BLOCKED' || die "missing BRIAR_WORKER_ISOLATED_BLOCKED"
 
+log "== runtime: briar isolated worker cannot reach pen-control / docker.sock =="
+# Re-create short-lived worker for control-plane / host-resource probes.
+ISO_CID2="$(docker compose --profile workers run -d --no-deps --entrypoint sleep briar 45)"
+test -n "$ISO_CID2" || die "failed to start briar worker for control-plane probe"
+set +e
+CTRL_PROBE="$(docker exec "$ISO_CID2" python -c 'import socket,sys
+try:
+  socket.create_connection(("orchestrator",8000),3); print("UNEXPECTED_CONTROL"); sys.exit(0)
+except OSError as e:
+  print("BRIAR_WORKER_NO_CONTROL_PLANE", type(e).__name__); sys.exit(1)
+' 2>&1)"
+CTRL_PROBE_RC=$?
+SOCK_PROBE="$(docker exec "$ISO_CID2" python -c 'import os,sys
+p="/var/run/docker.sock"
+print("DOCKER_SOCK_EXISTS" if os.path.exists(p) else "BRIAR_WORKER_NO_DOCKER_SOCK")
+sys.exit(0 if not os.path.exists(p) else 1)
+' 2>&1)"
+SOCK_RC=$?
+set -e
+echo "$CTRL_PROBE"
+echo "$SOCK_PROBE"
+echo "$CTRL_PROBE" | grep -q UNEXPECTED_CONTROL && {
+  docker rm -f "$ISO_CID2" >/dev/null 2>&1 || true
+  die "briar isolated worker reached orchestrator on pen-control"
+}
+test "$CTRL_PROBE_RC" -ne 0 || die "control-plane probe unexpectedly succeeded"
+echo "$CTRL_PROBE" | grep -q BRIAR_WORKER_NO_CONTROL_PLANE || die "missing BRIAR_WORKER_NO_CONTROL_PLANE"
+test "$SOCK_RC" -eq 0 || die "docker.sock visible inside briar worker"
+echo "$SOCK_PROBE" | grep -q BRIAR_WORKER_NO_DOCKER_SOCK || die "missing BRIAR_WORKER_NO_DOCKER_SOCK"
+docker rm -f "$ISO_CID2" >/dev/null 2>&1 || true
+
 log "== runtime: briar-live on internal pen-scanner-live (fixture ok, direct internet blocked) =="
 # Ensure gateway + fixture are up on pen-scanner-live.
 docker compose --profile live-workers --profile fixtures up -d egress-gateway fixture-headers
-LIVE_CID="$(docker compose --profile live-workers run -d --no-deps --entrypoint sleep briar-live 45)"
+LIVE_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-scanner-live$' | head -n1 || true)"
+test -n "$LIVE_NET" || die "could not locate pen-scanner-live docker network"
+LIVE_INTERNAL="$(docker network inspect -f '{{.Internal}}' "$LIVE_NET")"
+test "$LIVE_INTERNAL" = "true" || die "pen-scanner-live Internal=$LIVE_INTERNAL (must be true; HTTP_PROXY is not a boundary)"
+echo "PEN_SCANNER_LIVE_INTERNAL=true"
+LIVE_CID="$(docker compose --profile live-workers run -d --no-deps --entrypoint sleep briar-live 90)"
 test -n "$LIVE_CID" || die "failed to start briar-live worker for inspect"
 LIVE_NETWORKS="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$LIVE_CID")"
 echo "BRIAR_LIVE_NETWORKS=$LIVE_NETWORKS"
@@ -179,6 +227,59 @@ echo "$LIVE_EGRESS" | grep -q UNEXPECTED_CONNECT && {
 test "$LIVE_EGRESS_RC" -ne 0 || die "briar-live egress probe unexpectedly succeeded"
 echo "$LIVE_EGRESS" | grep -q BRIAR_LIVE_DIRECT_EGRESS_BLOCKED || die "missing BRIAR_LIVE_DIRECT_EGRESS_BLOCKED"
 
+log "== runtime: briar-live direct egress still blocked with proxy env unset =="
+set +e
+NOPROXY_LIVE="$(docker exec -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= -e ALL_PROXY= -e all_proxy= \
+  "$LIVE_CID" python -c 'import os,socket,sys
+for k in list(os.environ):
+  if "proxy" in k.lower():
+    del os.environ[k]
+try:
+  socket.create_connection(("1.1.1.1",443),3); print("UNEXPECTED_CONNECT"); sys.exit(0)
+except OSError as e:
+  print("BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED", type(e).__name__); sys.exit(1)
+' 2>&1)"
+NOPROXY_LIVE_RC=$?
+set -e
+echo "$NOPROXY_LIVE"
+echo "$NOPROXY_LIVE" | grep -q UNEXPECTED_CONNECT && {
+  docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
+  die "briar-live direct egress succeeded with proxy unset"
+}
+test "$NOPROXY_LIVE_RC" -ne 0 || die "briar-live noproxy probe unexpectedly succeeded"
+echo "$NOPROXY_LIVE" | grep -q BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED || die "missing BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED"
+
+log "== runtime: briar-live restart retains isolation =="
+docker restart "$LIVE_CID" >/dev/null
+ready=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if docker exec "$LIVE_CID" python -c 'print(1)' >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+test "$ready" -eq 1 || {
+  docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
+  die "briar-live not ready after restart"
+}
+set +e
+RESTART_EGRESS="$(docker exec -e HTTP_PROXY= -e HTTPS_PROXY= "$LIVE_CID" python -c 'import socket,sys
+try:
+  socket.create_connection(("1.1.1.1",443),3); print("UNEXPECTED_CONNECT"); sys.exit(0)
+except OSError as e:
+  print("BRIAR_LIVE_RESTART_DIRECT_BLOCKED", type(e).__name__); sys.exit(1)
+' 2>&1)"
+RESTART_EGRESS_RC=$?
+set -e
+echo "$RESTART_EGRESS"
+echo "$RESTART_EGRESS" | grep -q UNEXPECTED_CONNECT && {
+  docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
+  die "restarted briar-live reached 1.1.1.1"
+}
+test "$RESTART_EGRESS_RC" -ne 0 || die "briar-live restart egress probe unexpectedly succeeded"
+echo "$RESTART_EGRESS" | grep -q BRIAR_LIVE_RESTART_DIRECT_BLOCKED || die "missing BRIAR_LIVE_RESTART_DIRECT_BLOCKED"
+
 log "== runtime: egress-gateway denies empty allowlist / non-public via CONNECT =="
 # From briar-live, proxy CONNECT to example.invalid should be denied (empty allowlist).
 set +e
@@ -198,6 +299,21 @@ echo "$PROXY_DENY" | grep -Eq 'PROXY_STATUS 403|PROXY_ERROR' || die "proxy did n
 echo "PROXY_DENIES_UNLISTED_HOST"
 
 docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
+
+log "== runtime: missing internal network fails closed (unit-level assert) =="
+python3 - <<'PY'
+from core.isolation import compose_networks_must_be_internal
+try:
+    compose_networks_must_be_internal(
+        {"networks": {"pen-scanner-live": {"driver": "bridge"}}},
+        ("pen-scanner-live",),
+    )
+except PermissionError as exc:
+    assert "internal" in str(exc).lower()
+    print("MISSING_INTERNAL_CONFIG_BLOCKS")
+else:
+    raise SystemExit("expected PermissionError for non-internal compose net")
+PY
 
 log "== runtime: Shannon controlled network prepare (worker stand-in) =="
 bash scripts/shannon_net_prepare.sh

@@ -13,6 +13,7 @@ from core.isolation import (
     assert_live_destination_allowed,
     evaluate_destination,
     load_isolation_policy,
+    resolve_project_network_name,
     validate_redirect_destination,
 )
 from core.isolation.policy import IsolationPolicy
@@ -426,6 +427,10 @@ def test_live_briar_compose_launches_with_allow_and_public_dns(tmp_path: Path, m
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
 
     monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(
+        "integrations.briar.adapter.assert_network_internal",
+        lambda name: None,
+    )
     url = "https://staging.example.invalid"
     cfg = PlatformConfig(reports_dir=tmp_path)
     adapter = BriarAdapter(cfg, _scope(url))
@@ -438,21 +443,29 @@ def test_live_briar_compose_launches_with_allow_and_public_dns(tmp_path: Path, m
     runner = MagicMock()
 
     class R:
-        ok = True
-        timed_out = False
-        returncode = 0
-        stdout = ""
-        stderr = ""
+        def __init__(self, stdout: str = ""):
+            self.ok = True
+            self.timed_out = False
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
 
-    runner.run.return_value = R()
+    def run_side_effect(cmd, **kwargs):
+        if len(cmd) >= 2 and cmd[0] == "docker" and cmd[1] == "compose" and "config" in cmd:
+            return R(stdout='{"name":"pen-testing","networks":{"pen-scanner-live":{"internal":true}}}')
+        if len(cmd) >= 2 and cmd[0] == "docker" and cmd[1] == "network" and "ls" in cmd:
+            return R(stdout="pen-testing_pen-scanner-live\n")
+        return R()
+
+    runner.run.side_effect = run_side_effect
     runner.which.return_value = "/usr/bin/docker"
     adapter.runner = runner
     result = adapter.run(
         AdapterRequest(target=url, mode="quick", dry_run=False)
     )
     assert result.status == "succeeded"
-    runner.run.assert_called_once()
-    cmd = runner.run.call_args[0][0]
+    assert runner.run.call_count >= 4  # create + config + network ls + scan
+    cmd = runner.run.call_args_list[-1][0][0]
     assert cmd[:2] == ["docker", "compose"]
     assert "briar-live" in cmd
     assert (result.metadata or {}).get("network") == "pen-scanner-live"
@@ -761,3 +774,180 @@ def test_mcp_demo_does_not_waive_confirm_for_shannon(tmp_path: Path, monkeypatch
     )
     assert result.get("ok") is False
     assert "confirm_authorized" in (result.get("error") or "")
+
+
+def test_compose_networks_must_be_internal():
+    from core.isolation import compose_networks_must_be_internal
+
+    compose_networks_must_be_internal(
+        {
+            "networks": {
+                "pen-scanner-isolated": {"internal": True},
+                "pen-scanner-live": {"name": "pen-scanner-live", "internal": True},
+            }
+        },
+        ("pen-scanner-isolated", "pen-scanner-live"),
+    )
+    with pytest.raises(PermissionError, match="internal"):
+        compose_networks_must_be_internal(
+            {"networks": {"pen-scanner-live": {"driver": "bridge"}}},
+            ("pen-scanner-live",),
+        )
+    with pytest.raises(PermissionError, match="missing"):
+        compose_networks_must_be_internal({"networks": {}}, ("pen-scanner-live",))
+
+
+def test_resolve_project_network_name_prefers_project_prefix():
+    assert (
+        resolve_project_network_name(
+            project_name="pen-testing",
+            network_key="pen-scanner-live",
+            listed_names=["other_pen-scanner-live", "pen-testing_pen-scanner-live"],
+        )
+        == "pen-testing_pen-scanner-live"
+    )
+    with pytest.raises(PermissionError, match="Ambiguous"):
+        resolve_project_network_name(
+            project_name="missing",
+            network_key="pen-scanner-live",
+            listed_names=["a_pen-scanner-live", "b_pen-scanner-live"],
+        )
+
+
+def test_assert_network_internal_fail_closed(monkeypatch):
+    from core.isolation import NetworkIsolationStatus, assert_network_internal
+    from core.isolation import network_assert as na
+
+    monkeypatch.setattr(
+        na,
+        "inspect_network",
+        lambda name: NetworkIsolationStatus(name, True, False, {}, "network is not internal"),
+    )
+    with pytest.raises(PermissionError, match="not internal"):
+        assert_network_internal("pen-scanner-live")
+
+
+def test_live_briar_blocks_when_network_not_internal(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    monkeypatch.setenv("PEN_COMPOSE_DIR", str(Path(__file__).resolve().parents[2]))
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    def _not_internal(name: str) -> None:
+        raise PermissionError(
+            f"Required isolation network {name!r} is not internal/ready: network is not internal"
+        )
+
+    monkeypatch.setattr(
+        "integrations.briar.adapter.assert_network_internal",
+        _not_internal,
+    )
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    runner = MagicMock()
+
+    class R:
+        def __init__(self, stdout: str = "pen-testing_pen-scanner-live\n"):
+            self.ok = True
+            self.timed_out = False
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run_side_effect(cmd, **kwargs):
+        if len(cmd) >= 2 and cmd[0] == "docker" and cmd[1] == "compose" and "config" in cmd:
+            return R(stdout='{"name":"pen-testing"}')
+        return R()
+
+    runner.run.side_effect = run_side_effect
+    adapter.runner = runner
+    result = adapter.run(AdapterRequest(target=url, mode="quick", dry_run=False))
+    assert result.status == "blocked"
+    assert "internal" in (result.error or "").lower()
+    assert (result.metadata or {}).get("isolation") == "briar_network_internal"
+    # Must not reach the scan launch (create/config/ls only).
+    for call in runner.run.call_args_list:
+        cmd = call[0][0]
+        assert not (len(cmd) >= 2 and cmd[0] == "docker" and cmd[1] == "compose" and "run" in cmd)
+
+
+def test_live_briar_blocks_when_isolation_network_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    monkeypatch.setenv("PEN_COMPOSE_DIR", str(Path(__file__).resolve().parents[2]))
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    runner = MagicMock()
+
+    class R:
+        def __init__(self, stdout: str = "bridge\nnone\n"):
+            self.ok = True
+            self.timed_out = False
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run_side_effect(cmd, **kwargs):
+        if len(cmd) >= 2 and cmd[0] == "docker" and cmd[1] == "compose" and "config" in cmd:
+            return R(stdout='{"name":"pen-testing"}')
+        return R()
+
+    runner.run.side_effect = run_side_effect
+    adapter.runner = runner
+    result = adapter.run(AdapterRequest(target=url, mode="quick", dry_run=False))
+    assert result.status == "blocked"
+    assert "not found" in (result.error or "").lower() or "internal" in (result.error or "").lower()
+    assert (result.metadata or {}).get("isolation") == "briar_network_internal"
+
+
+def test_live_briar_blocks_ambiguous_unrelated_networks(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_BRIAR_LIVE", "1")
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    monkeypatch.setenv("PEN_COMPOSE_DIR", str(Path(__file__).resolve().parents[2]))
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = BriarAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: _healthy_briar()  # type: ignore
+    runner = MagicMock()
+
+    class R:
+        def __init__(self, stdout: str = ""):
+            self.ok = True
+            self.timed_out = False
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run_side_effect(cmd, **kwargs):
+        if len(cmd) >= 2 and cmd[0] == "docker" and cmd[1] == "compose" and "config" in cmd:
+            return R(stdout='{"name":"pen-testing"}')
+        if len(cmd) >= 2 and cmd[0] == "docker" and cmd[1] == "network" and "ls" in cmd:
+            # Label filter empty → fallback list has only decoys (no project prefix).
+            if any(str(a).startswith("label=") for a in cmd):
+                return R(stdout="")
+            return R(stdout="decoy_a_pen-scanner-live\ndecoy_b_pen-scanner-live\n")
+        return R()
+
+    runner.run.side_effect = run_side_effect
+    adapter.runner = runner
+    result = adapter.run(AdapterRequest(target=url, mode="quick", dry_run=False))
+    assert result.status == "blocked"
+    assert "ambiguous" in (result.error or "").lower()
+    assert (result.metadata or {}).get("isolation") == "briar_network_internal"

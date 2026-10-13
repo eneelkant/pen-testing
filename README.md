@@ -12,9 +12,9 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a10` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
+**Version:** `0.2.0a11` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
 
-Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Briar-live uses an **internal** network with destination filtering via `egress-gateway` (deny-by-default allowlist). Shannon live defaults to controlled internal `shannon-net` prepare + Docker wrap; `PEN_ALLOW_SHANNON_UNCONTAINED_NET=1` is required to skip. Launch-time egress is independent of `--skip-scope-check`. Transparent browser interception is **not** claimed — see [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md) and [`docs/LICENSING_REVIEW.md`](docs/LICENSING_REVIEW.md).
+Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Scanner worker nets are Docker **`Internal=true`** (security boundary); `HTTP_PROXY` is convenience only. Briar-live uses destination filtering via `egress-gateway` (deny-by-default allowlist). Shannon live defaults to controlled internal `shannon-net` prepare + Docker wrap; `PEN_ALLOW_SHANNON_UNCONTAINED_NET=1` is required to skip. Launch-time egress is independent of `--skip-scope-check`. See [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md) and [`docs/LICENSING_REVIEW.md`](docs/LICENSING_REVIEW.md).
 
 ## Quick install (MCP profile)
 

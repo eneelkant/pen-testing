@@ -44,10 +44,21 @@ See also `docs/SCANNER_ISOLATION.md`.
 | Egress gateway denies unlisted CONNECT host | PASS (runtime) | `PROXY_DENIES_UNLISTED_HOST` |
 | Shannon controlled net stand-in isolated | PASS (runtime) | `SHANNON_NET_ISOLATED_BLOCKED` |
 | Shannon controlled net reaches gateway | PASS (runtime) | `SHANNON_NET_REACHES_GATEWAY` |
+| Shannon stand-in direct blocked with proxy unset | PASS (runtime) | `SHANNON_NET_NOPROXY_DIRECT_BLOCKED` |
+| Real Shannon worker image direct blocked | PASS (runtime, when image pullable) | `SHANNON_REAL_WORKER_DIRECT_BLOCKED` |
+| Real Shannon worker restart retains isolation | PASS (runtime, when image pullable) | `SHANNON_REAL_WORKER_RESTART_BLOCKED` |
+| Compose JSON requires internal scanner nets | PASS | `COMPOSE_NETWORKS_INTERNAL_ASSERTED` |
+| Runtime Docker Internal=true on scanner nets | PASS (runtime) | `PEN_SCANNER_*_INTERNAL` |
+| Briar-live direct blocked with proxy unset | PASS (runtime) | `BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED` |
+| Briar-live restart retains isolation | PASS (runtime) | `BRIAR_LIVE_RESTART_DIRECT_BLOCKED` |
+| Briar worker ↛ control plane | PASS (runtime) | `BRIAR_WORKER_NO_CONTROL_PLANE` |
+| Briar worker has no docker.sock | PASS (runtime) | `BRIAR_WORKER_NO_DOCKER_SOCK` |
+| Missing internal config blocks | PASS | `MISSING_INTERNAL_CONFIG_BLOCKS` + unit |
+| Briar compose launch fails closed if net not internal | PASS (unit) | `briar_network_internal` |
 | Shannon live without controlled prepare / uncontained ack | PASS (blocked) | unit tests |
 | Control network → local fixture | PASS (runtime) | docker verify |
-| Transparent proxy / browser ignoring HTTP_PROXY | NOT IMPLEMENTED | residual |
-| Full Shannon LLM scan E2E in CI | NOT RUN | keys/time — prepare+stand-in instead |
+| Transparent proxy as sole boundary | NOT RELIED ON | Internal nets are the boundary |
+| Full Shannon LLM scan E2E in CI | NOT RUN | keys/time — prepare + stand-in + real-image net probes |
 | DNS rebinding inside upstream browsers | NOT IMPLEMENTED | residual |
 | Upstream browser navigation containment | FAIL / not claimed | documented limitation |
 | Secret / URL userinfo redaction | PASS | `redact_text` + normalize |

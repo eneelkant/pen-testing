@@ -12,9 +12,11 @@ from uuid import uuid4
 from core.execution import CommandRunner
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding, redact_secrets
 from core.isolation import (
+    assert_network_internal,
     build_compose_briar_command,
     find_compose_dir,
     load_isolation_policy,
+    resolve_project_network_name,
     resolve_briar_exec_mode,
     rewrite_paths_for_compose,
 )
@@ -271,6 +273,112 @@ class BriarAdapter(SecurityAdapter):
                         "exec_mode": exec_mode,
                     },
                 )
+
+            if exec_mode == "compose":
+                # Network-level fail-closed: pen-scanner-live must be internal.
+                # HTTP_PROXY is convenience only and must not be the sole boundary.
+                try:
+                    net_key = "pen-scanner-live"
+                    compose_dir = str(find_compose_dir())
+                    created = self.runner.run(
+                        [
+                            "docker",
+                            "compose",
+                            "--project-directory",
+                            compose_dir,
+                            "--profile",
+                            "live-workers",
+                            "create",
+                            "briar-live",
+                        ],
+                        timeout=120,
+                    )
+                    if not getattr(created, "ok", False):
+                        raise RuntimeError(
+                            "docker compose create briar-live failed: "
+                            + ((created.stderr or created.stdout or "")[:400])
+                        )
+                    # Resolve Compose project name so we assert *this* project's network,
+                    # not an unrelated host network that merely shares a name suffix.
+                    cfg = self.runner.run(
+                        [
+                            "docker",
+                            "compose",
+                            "--project-directory",
+                            compose_dir,
+                            "--profile",
+                            "live-workers",
+                            "config",
+                            "--format",
+                            "json",
+                        ],
+                        timeout=60,
+                    )
+                    if not getattr(cfg, "ok", False):
+                        raise RuntimeError("docker compose config failed while verifying isolation")
+                    try:
+                        project_name = str(json.loads(cfg.stdout or "{}").get("name") or "pen-testing")
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError(f"compose config JSON invalid: {exc}") from exc
+                    ls = self.runner.run(
+                        [
+                            "docker",
+                            "network",
+                            "ls",
+                            "--filter",
+                            f"label=com.docker.compose.project={project_name}",
+                            "--filter",
+                            f"label=com.docker.compose.network={net_key}",
+                            "--format",
+                            "{{.Name}}",
+                        ],
+                        timeout=30,
+                    )
+                    listed = [line.strip() for line in (ls.stdout or "").splitlines() if line.strip()]
+                    if not listed:
+                        # Fallback: unfiltered names (older engines / label gaps).
+                        ls_all = self.runner.run(
+                            ["docker", "network", "ls", "--format", "{{.Name}}"],
+                            timeout=30,
+                        )
+                        listed = [
+                            line.strip()
+                            for line in (ls_all.stdout or "").splitlines()
+                            if line.strip()
+                        ]
+                    resolved = resolve_project_network_name(
+                        project_name=project_name,
+                        network_key=net_key,
+                        listed_names=listed,
+                    )
+                    assert_network_internal(resolved)
+                except PermissionError as exc:
+                    audit_event("briar.blocked", reason=str(exc), target=request.target)
+                    return ExecutionResult(
+                        tool=self.name,
+                        execution_id=execution_id,
+                        status="blocked",
+                        error=str(exc),
+                        metadata={
+                            "health": health,
+                            "isolation": "briar_network_internal",
+                            "exec_mode": exec_mode,
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001 — fail closed on infra errors
+                    msg = f"Unable to verify Briar network isolation: {exc}"
+                    audit_event("briar.blocked", reason=msg, target=request.target)
+                    return ExecutionResult(
+                        tool=self.name,
+                        execution_id=execution_id,
+                        status="blocked",
+                        error=msg,
+                        metadata={
+                            "health": health,
+                            "isolation": "briar_network_internal",
+                            "exec_mode": exec_mode,
+                        },
+                    )
 
         live = not is_demo
         cmd = self._build_command(

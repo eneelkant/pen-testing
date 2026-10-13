@@ -139,7 +139,13 @@ def assert_live_destination_allowed(
     if dry_run:
         return DestinationDecision(True, "dry_run skips live egress enforcement")
     if not policy.require_egress_policy:
-        return DestinationDecision(True, "PEN_REQUIRE_EGRESS_POLICY disabled")
+        # Dual gate: PEN_REQUIRE_EGRESS_POLICY=false alone is insufficient.
+        if not policy.allow_egress_disable:
+            raise PermissionError(
+                "PEN_REQUIRE_EGRESS_POLICY is disabled but PEN_ALLOW_EGRESS_DISABLE is not set; "
+                "refusing to weaken launch-time destination checks (operator dual-gate)."
+            )
+        return DestinationDecision(True, "PEN_REQUIRE_EGRESS_POLICY disabled with dual gate")
     decision = evaluate_destination(
         url,
         policy=policy,

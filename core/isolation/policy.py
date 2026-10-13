@@ -19,6 +19,8 @@ class IsolationPolicy:
 
     # Live remote tools must pass destination evaluation (DNS + non-public policy).
     require_egress_policy: bool = True
+    # Disabling PEN_REQUIRE_EGRESS_POLICY also needs this second gate.
+    allow_egress_disable: bool = False
     # Block named hosts that resolve to non-public addresses (DNS rebinding class).
     block_non_public_resolved: bool = True
     # Allow IP-literal loopback/private only when scope already authorized them.
@@ -49,6 +51,7 @@ def load_isolation_policy() -> IsolationPolicy:
     )
     return IsolationPolicy(
         require_egress_policy=_truthy("PEN_REQUIRE_EGRESS_POLICY", True),
+        allow_egress_disable=_truthy("PEN_ALLOW_EGRESS_DISABLE", False),
         block_non_public_resolved=_truthy("PEN_BLOCK_NON_PUBLIC_RESOLVED", True),
         allow_non_public_literals=_truthy("PEN_ALLOW_NON_PUBLIC_LITERALS", True),
         allow_scope_disable=_truthy("PEN_ALLOW_SCOPE_DISABLE", False),

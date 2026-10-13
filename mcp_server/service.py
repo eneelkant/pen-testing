@@ -106,7 +106,7 @@ def platform_status() -> dict[str, Any]:
     diag = collect_diagnostics(cfg)
     return {
         "ok": True,
-        "platform_version": "0.2.0a7",
+        "platform_version": "0.2.0a8",
         "python": sys.version.split()[0],
         "system": platform.system(),
         "machine": platform.machine(),
@@ -251,7 +251,10 @@ def run_security_assessment(
     if tool not in ALLOWED_TOOLS:
         return {"ok": False, "error": f"Unsupported tool '{tool}'. Allowed: {sorted(ALLOWED_TOOLS)}"}
 
-    if not dry_run and not confirm_authorized and not demo:
+    # demo=true is a Briar-only local smoke path; it must not waive confirm_authorized
+    # for Shannon/headers/other active tools.
+    briar_demo = bool(demo and tool == "briar")
+    if not dry_run and not confirm_authorized and not briar_demo:
         return {
             "ok": False,
             "error": "Non-dry-run assessments require confirm_authorized=true after a successful scope check.",
@@ -290,13 +293,13 @@ def run_security_assessment(
         repo_path=scan_path or repo_path,
         dry_run=dry_run,
         timeout_seconds=timeout_seconds,
-        skip_scope_check=bool(demo and tool == "briar"),
-        extra={"demo": demo},
+        skip_scope_check=briar_demo,
+        extra={"demo": briar_demo},
         output_dir=str(out_dir),
     )
 
     # Preflight scope for active/remote tools unless dry_run already handled inside adapter
-    if tool in ACTIVE_TOOLS and not demo and not dry_run:
+    if tool in ACTIVE_TOOLS and not briar_demo and not dry_run:
         if scope is None:
             return {"ok": False, "error": "Authorization registry required for active assessments"}
         try:
@@ -326,7 +329,7 @@ def run_security_assessment(
         "target": safe_target,
         "category": category,
         "dry_run": dry_run,
-        "demo": demo,
+        "demo": briar_demo,
         "status": result.status,
         "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
         "execution_id": result.execution_id,

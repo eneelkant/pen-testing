@@ -12,9 +12,9 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a7` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
+**Version:** `0.2.0a8` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
 
-Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Local Docker may still be unavailable in some agent VMs. Launch-time egress policy applies before Shannon/Briar start; live Shannon/Briar also require `PEN_ALLOW_SHANNON_LIVE=1` / `PEN_ALLOW_BRIAR_LIVE=1`. **In-engine** DNS/redirect containment is **not** claimed — see [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md).
+Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Local Docker may still be unavailable in some agent VMs. Launch-time egress policy applies before Shannon/Briar start (independent of `--skip-scope-check`); live Shannon/Briar also require `PEN_ALLOW_SHANNON_LIVE=1` / `PEN_ALLOW_BRIAR_LIVE=1`. **In-engine** DNS/redirect containment is **not** claimed — see [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md).
 
 ## Quick install (MCP profile)
 

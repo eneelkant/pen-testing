@@ -3,17 +3,16 @@
 ## Current repository status (reconciled)
 
 Verification date: **2026-10-12**  
-Current `main` SHA: **`83f9e02d45689705a46b0e296f8f4b8098b0db6b`** (PR #6 merge + Dependabot #7–#9)  
+Current `main` SHA: **`93c228bf4a582dd37ad8426a26eb60d794d77778`** (PR #10 merge)  
+PR #10: Briar live gate + main CI concurrency (`0.2.0a7`) — [run 38263097237](https://github.com/eneelkant/pen-testing/actions/runs/38263097237)  
 PR #6: runtime Compose isolation probes + Shannon live gate (`0.2.0a6`)  
-PR #5 merge: `dad086dc328f83250a43e5b8d7b66527cb36d6b5` — launch-time egress isolation (`0.2.0a5`)  
-PR #3 merge: `c0bfe276d4af06960627d8a181676edf75f34458`  
-PR #2 merge: `b4e4fab6329abce2e1f686e9d6b1704bd1166fd1` (historical)
+PR #5 merge: `dad086dc328f83250a43e5b8d7b66527cb36d6b5` — launch-time egress isolation (`0.2.0a5`)
 
 | Check | Result |
 |---|---|
-| GitHub Actions CI on current `main` (`83f9e02`) | **PASS** — Lint/unit, Docker build and runtime (incl. `ISOLATED_BLOCKED`), gitleaks, dependency metadata |
-| Local unit tests on `83f9e02` (agent) | **PASS** — 96 passed (baseline before 0.2.0a7) |
-| `scripts/smoke.sh` on `83f9e02` (agent) | **PASS** |
+| GitHub Actions CI on current `main` (`93c228b`) | **PASS** — Lint/unit (100), Docker (`ISOLATED_BLOCKED` + `CONTROL_REACHES_FIXTURE`), gitleaks, dependency metadata |
+| Local unit tests on `93c228b` (agent) | **PASS** — 100 passed (baseline before 0.2.0a8) |
+| `scripts/smoke.sh` on `93c228b` (agent) | **PASS** |
 | MCP tool discovery | **PASS** — 9 tools |
 | Local Docker Engine (Cursor agent VM) | **BLOCKED** — `docker: command not found` (runtime proof via GitHub Actions) |
 | Cursor / Claude / Gemini UI E2E | **BLOCKED** — clients not installed here |
@@ -21,7 +20,7 @@ PR #2 merge: `b4e4fab6329abce2e1f686e9d6b1704bd1166fd1` (historical)
 
 ### Assessment
 
-**READY FOR CONTROLLED TESTING** — not production-ready for unconstrained active scanning. Scope fail-closed, headers SSRF/redirect controls, launch-time egress, Shannon/Briar live operator gates, and Compose isolated-network runtime probes are present. In-engine Shannon/Briar DNS/redirect containment, Briar Alpha status, and AGPL redistribution review remain residual risks.
+**READY FOR CONTROLLED TESTING** — not production-ready for unconstrained active scanning. Scope fail-closed, headers SSRF/redirect controls, launch-time egress (independent of scope-skip), Shannon/Briar live operator gates, egress dual-gate, and Compose isolated-network runtime probes are present. In-engine Shannon/Briar DNS/redirect containment, Briar Alpha status, and AGPL redistribution review remain residual risks.
 
 ### Security fixes present on `main` (from PR #3)
 

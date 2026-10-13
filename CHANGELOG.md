@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0a8 — 2026-10-12
+
+### Security
+
+- `skip_scope_check` no longer bypasses launch-time DNS/egress policy for Shannon/Briar
+- Disabling `PEN_REQUIRE_EGRESS_POLICY` requires `PEN_ALLOW_EGRESS_DISABLE=1` (dual gate)
+- MCP `demo=true` waives `confirm_authorized` only for Briar demo (not Shannon/headers)
+
+### Documentation
+
+- Document gate independence and residual in-engine isolation gaps after PR #10 merge (`93c228b`)
+
 ## 0.2.0a7 — 2026-10-12
 
 ### Security

@@ -15,6 +15,8 @@ cleanup() {
   fi
   log "== cleanup: compose down (workers + live-workers + fixtures) =="
   docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans >/dev/null 2>&1 || true
+  docker rm -f pen-shannon-egress-gateway >/dev/null 2>&1 || true
+  docker network rm shannon-net pen-shannon-egress >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -39,10 +41,10 @@ if echo "$RENDER" | grep -E '/var/run/docker.sock|docker.sock:'; then
   die "docker.sock mount must not appear in compose render"
 fi
 
-log "== build required project images (orchestrator + briar workers) =="
+log "== build required project images (orchestrator + briar + egress-gateway) =="
 docker compose --progress=plain build
 docker compose --profile workers --progress=plain build briar
-docker compose --profile live-workers --progress=plain build briar-live
+docker compose --profile live-workers --progress=plain build briar-live egress-gateway
 
 log "== orchestrator smoke (compose service: orchestrator) =="
 docker compose run --rm --no-deps orchestrator
@@ -135,16 +137,20 @@ echo "$WORKER_PROBE" | grep -q 'UNEXPECTED_CONNECT' && die "briar worker reached
 test "$WORKER_RC" -ne 0 || die "briar worker egress probe unexpectedly succeeded"
 echo "$WORKER_PROBE" | grep -q 'BRIAR_WORKER_ISOLATED_BLOCKED' || die "missing BRIAR_WORKER_ISOLATED_BLOCKED"
 
-log "== runtime: briar-live worker can reach authorized fixture on pen-scanner-live =="
-LIVE_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-scanner-live$' | head -n1 || true)"
-test -n "$LIVE_NET" || die "could not locate pen-scanner-live docker network"
-LIVE_CID="$(docker compose --profile live-workers run -d --no-deps --entrypoint sleep briar-live 30)"
+log "== runtime: briar-live on internal pen-scanner-live (fixture ok, direct internet blocked) =="
+# Ensure gateway + fixture are up on pen-scanner-live.
+docker compose --profile live-workers --profile fixtures up -d egress-gateway fixture-headers
+LIVE_CID="$(docker compose --profile live-workers run -d --no-deps --entrypoint sleep briar-live 45)"
 test -n "$LIVE_CID" || die "failed to start briar-live worker for inspect"
 LIVE_NETWORKS="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$LIVE_CID")"
 echo "BRIAR_LIVE_NETWORKS=$LIVE_NETWORKS"
 echo "$LIVE_NETWORKS" | grep -Eq 'pen-scanner-live' || {
   docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
   die "briar-live worker not attached to pen-scanner-live"
+}
+echo "$LIVE_NETWORKS" | grep -Eq 'pen-egress|pen-control' && {
+  docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
+  die "briar-live unexpectedly attached to pen-egress/pen-control"
 }
 LIVE_FIX="$(docker exec "$LIVE_CID" python -c 'import socket
 s=socket.create_connection(("fixture-headers",8080), timeout=5)
@@ -156,13 +162,49 @@ echo "$LIVE_FIX" | grep -q 'BRIAR_LIVE_REACHES_FIXTURE' || {
   docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
   die "briar-live worker could not reach fixture-headers"
 }
-# Private/link-local style destinations must still be blocked by policy at launch;
-# at the network layer, prove the live worker is NOT on the isolated-only network.
-echo "$LIVE_NETWORKS" | grep -Eq 'pen-scanner-isolated' && {
+set +e
+LIVE_EGRESS="$(docker exec "$LIVE_CID" python -c 'import socket,sys
+try:
+  socket.create_connection(("1.1.1.1",443),3); print("UNEXPECTED_CONNECT"); sys.exit(0)
+except OSError as e:
+  print("BRIAR_LIVE_DIRECT_EGRESS_BLOCKED", type(e).__name__); sys.exit(1)
+' 2>&1)"
+LIVE_EGRESS_RC=$?
+set -e
+echo "$LIVE_EGRESS"
+echo "$LIVE_EGRESS" | grep -q UNEXPECTED_CONNECT && {
   docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
-  die "briar-live unexpectedly also on pen-scanner-isolated"
+  die "briar-live direct-reached 1.1.1.1 (pen-scanner-live must be internal)"
 }
+test "$LIVE_EGRESS_RC" -ne 0 || die "briar-live egress probe unexpectedly succeeded"
+echo "$LIVE_EGRESS" | grep -q BRIAR_LIVE_DIRECT_EGRESS_BLOCKED || die "missing BRIAR_LIVE_DIRECT_EGRESS_BLOCKED"
+
+log "== runtime: egress-gateway denies empty allowlist / non-public via CONNECT =="
+# From briar-live, proxy CONNECT to example.invalid should be denied (empty allowlist).
+set +e
+PROXY_DENY="$(docker exec "$LIVE_CID" python -c '
+import http.client
+conn = http.client.HTTPConnection("egress-gateway", 3128, timeout=5)
+try:
+  conn.request("CONNECT", "example.invalid:443")
+  resp = conn.getresponse()
+  print("PROXY_STATUS", resp.status, resp.reason)
+except Exception as exc:
+  print("PROXY_ERROR", type(exc).__name__, exc)
+' 2>&1)"
+set -e
+echo "$PROXY_DENY"
+echo "$PROXY_DENY" | grep -Eq 'PROXY_STATUS 403|PROXY_ERROR' || die "proxy did not deny unlisted host"
+echo "PROXY_DENIES_UNLISTED_HOST"
+
 docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
+
+log "== runtime: Shannon controlled network prepare (worker stand-in) =="
+bash scripts/shannon_net_prepare.sh
+# Cleanup shannon prepare artifacts so later jobs start clean.
+docker rm -f pen-shannon-egress-gateway >/dev/null 2>&1 || true
+# Keep shannon-net for inspect assertion then remove managed nets.
+docker network rm shannon-net pen-shannon-egress >/dev/null 2>&1 || true
 
 log "== runtime: adapter dry-run plans compose argv (worker path) =="
 export PEN_COMPOSE_DIR="$ROOT"

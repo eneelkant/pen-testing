@@ -27,9 +27,10 @@ class IsolationPolicy:
     allow_non_public_literals: bool = True
     # Disabling PEN_REQUIRE_SCOPE also needs this second gate.
     allow_scope_disable: bool = False
-    # Shannon workers are NOT attached to platform Compose networks; live runs need
-    # an explicit operator acknowledgement beyond launch-time DNS preflight.
+    # Shannon live runs need this acknowledgement beyond launch-time DNS preflight.
     allow_shannon_live: bool = False
+    # Skip controlled shannon-net prepare (internal + gateway). Dangerous; dual-gate.
+    allow_shannon_uncontained_net: bool = False
     # Live Briar requires this gate in addition to an execution mode that can
     # place the process on a platform network (compose) or an explicit host-net ack.
     allow_briar_live: bool = False
@@ -68,6 +69,7 @@ def load_isolation_policy() -> IsolationPolicy:
         allow_non_public_literals=_truthy("PEN_ALLOW_NON_PUBLIC_LITERALS", True),
         allow_scope_disable=_truthy("PEN_ALLOW_SCOPE_DISABLE", False),
         allow_shannon_live=_truthy("PEN_ALLOW_SHANNON_LIVE", False),
+        allow_shannon_uncontained_net=_truthy("PEN_ALLOW_SHANNON_UNCONTAINED_NET", False),
         allow_briar_live=_truthy("PEN_ALLOW_BRIAR_LIVE", False),
         briar_exec_mode=briar_mode,
         allow_briar_host_net=_truthy("PEN_ALLOW_BRIAR_HOST_NET", False),

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0a10 — 2026-10-13
+
+### Security
+
+- Briar-live network is now **internal**; direct internet blocked; optional egress only via dual-homed `egress-gateway` CONNECT proxy (deny-by-default allowlist)
+- Shannon controlled mode: pre-create internal `shannon-net`, attach gateway, inject proxy via `shannon-docker-wrap`; fail closed unless prepare succeeds or `PEN_ALLOW_SHANNON_UNCONTAINED_NET=1`
+- Runtime proofs: `BRIAR_LIVE_DIRECT_EGRESS_BLOCKED`, `PROXY_DENIES_UNLISTED_HOST`, `SHANNON_NET_ISOLATED_BLOCKED`, `SHANNON_NET_REACHES_GATEWAY`
+
+### Documentation
+
+- `docs/LICENSING_REVIEW.md` (AGPL open questions — not legal clearance)
+- `docs/RELEASE_CHECKLIST.md` for controlled releases
+
+### Notes
+
+- Proxy is not transparent; browsers ignoring `HTTP_PROXY` remain residual
+- AGPL counsel review still required before production-release claims
+
 ## 0.2.0a9 — 2026-10-13
 
 ### Security

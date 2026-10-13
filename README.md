@@ -12,9 +12,9 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a9` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
+**Version:** `0.2.0a10` (alpha — **READY FOR CONTROLLED TESTING**, not production-ready for unconstrained active scanning).
 
-Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Briar defaults to `PEN_BRIAR_EXEC=compose` (process on `pen-scanner-live` / `pen-scanner-isolated`). Host Briar needs `PEN_ALLOW_BRIAR_HOST_NET=1`. Shannon workers remain on upstream `shannon-net` (not platform-attached). Launch-time egress is independent of `--skip-scope-check`. **In-engine** DNS/redirect containment is **not** claimed — see [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md).
+Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`. Briar-live uses an **internal** network with destination filtering via `egress-gateway` (deny-by-default allowlist). Shannon live defaults to controlled internal `shannon-net` prepare + Docker wrap; `PEN_ALLOW_SHANNON_UNCONTAINED_NET=1` is required to skip. Launch-time egress is independent of `--skip-scope-check`. Transparent browser interception is **not** claimed — see [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md) and [`docs/LICENSING_REVIEW.md`](docs/LICENSING_REVIEW.md).
 
 ## Quick install (MCP profile)
 
@@ -79,6 +79,8 @@ Install Docker yourself if needed: https://docs.docker.com/get-docker/
 | [`docs/MCP_TOOL_TEST_MATRIX.md`](docs/MCP_TOOL_TEST_MATRIX.md) | MCP tool coverage |
 | [`docs/SECURITY_VALIDATION.md`](docs/SECURITY_VALIDATION.md) | Scope / authorization tests |
 | [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md) | Shannon/Briar/Headers isolation map |
+| [`docs/LICENSING_REVIEW.md`](docs/LICENSING_REVIEW.md) | AGPL open questions (not clearance) |
+| [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) | Controlled release gates |
 | [`docs/CLIENT_COMPATIBILITY.md`](docs/CLIENT_COMPATIBILITY.md) | Cursor / Claude / Gemini / ChatGPT |
 | [`docs/SOURCE_AUDIT.md`](docs/SOURCE_AUDIT.md) | Upstream audit |
 | [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md) | Releases |

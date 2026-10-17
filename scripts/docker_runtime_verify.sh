@@ -299,6 +299,23 @@ echo "$PROXY_DENY"
 echo "$PROXY_DENY" | grep -Eq 'PROXY_STATUS 403|PROXY_ERROR' || die "proxy did not deny unlisted host"
 echo "PROXY_DENIES_UNLISTED_HOST"
 
+log "== runtime: egress-gateway denies disallowed ports (default 80/443 only) =="
+set +e
+PROXY_PORT_DENY="$(docker exec "$LIVE_CID" python -c '
+import http.client
+conn = http.client.HTTPConnection("egress-gateway", 3128, timeout=5)
+try:
+  conn.request("CONNECT", "example.invalid:22")
+  resp = conn.getresponse()
+  print("PROXY_PORT_STATUS", resp.status, resp.reason)
+except Exception as exc:
+  print("PROXY_PORT_ERROR", type(exc).__name__, exc)
+' 2>&1)"
+set -e
+echo "$PROXY_PORT_DENY"
+echo "$PROXY_PORT_DENY" | grep -Eq 'PROXY_PORT_STATUS 403|PROXY_PORT_ERROR' || die "proxy did not deny disallowed port"
+echo "PROXY_DENIES_DISALLOWED_PORT"
+
 docker rm -f "$LIVE_CID" >/dev/null 2>&1 || true
 
 log "== runtime: missing internal network fails closed (unit-level assert) =="

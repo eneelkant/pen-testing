@@ -1,6 +1,7 @@
 # Scanner Execution Isolation
 
-Status: **partial platform enforcement** — READY FOR CONTROLLED TESTING (not production-ready).
+Status: **partial platform enforcement** — READY FOR CONTROLLED TESTING (not production-ready).  
+See also `docs/NETWORK_ARCHITECTURE.md` for planes, guarantees, and non-claims.
 
 Baseline: `main` after PR #18 (`a4c3bb1`) + this release (`0.2.0a12`).
 
@@ -73,6 +74,8 @@ Task queues are per-scan (`shannon-<hex>`). Workflow type: `pentestPipelineWorkf
 |---|---|---|
 | `PEN_ALLOW_SHANNON_LIVE` | false | Permit live Shannon |
 | `PEN_ALLOW_SHANNON_UNCONTAINED_NET` | false | Skip controlled prepare |
+| `PEN_ALLOW_SHANNON_FULL_PIPELINE` | false | Permit non-`--validate-model` Shannon starts |
+| `PEN_PROXY_ALLOW_PORTS` | `80,443` | Proxied destination ports |
 | `PEN_ALLOW_BRIAR_LIVE` / `PEN_ALLOW_BRIAR_HOST_NET` | false | Briar live / host-net |
 | `PEN_BRIAR_EXEC` | compose | compose vs host |
 | `PEN_PROXY_ALLOW_HOSTS` | empty | Deny-by-default proxied destinations |

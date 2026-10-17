@@ -47,6 +47,7 @@ def test_policy_defaults_require_egress(monkeypatch):
     monkeypatch.delenv("PEN_ALLOW_SCOPE_DISABLE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SHANNON_LIVE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_SHANNON_UNCONTAINED_NET", raising=False)
+    monkeypatch.delenv("PEN_ALLOW_SHANNON_FULL_PIPELINE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_BRIAR_LIVE", raising=False)
     monkeypatch.delenv("PEN_ALLOW_BRIAR_HOST_NET", raising=False)
     monkeypatch.delenv("PEN_BRIAR_EXEC", raising=False)
@@ -56,6 +57,7 @@ def test_policy_defaults_require_egress(monkeypatch):
     assert policy.allow_scope_disable is False
     assert policy.allow_shannon_live is False
     assert policy.allow_shannon_uncontained_net is False
+    assert policy.allow_shannon_full_pipeline is False
     assert policy.allow_briar_live is False
     assert policy.briar_exec_mode == "compose"
     assert policy.allow_briar_host_net is False
@@ -279,6 +281,7 @@ def test_live_shannon_launches_only_with_allow_and_public_dns(tmp_path: Path, mo
             target=url,
             repo_path=str(Path(__file__).resolve().parents[2]),
             dry_run=False,
+            extra={"validate_model": True},
         )
     )
     assert result.status == "succeeded"
@@ -310,6 +313,7 @@ def test_live_shannon_controlled_prepare_failure_blocks(tmp_path: Path, monkeypa
             target=url,
             repo_path=str(Path(__file__).resolve().parents[2]),
             dry_run=False,
+            extra={"validate_model": True},
         )
     )
     assert result.status == "blocked"
@@ -360,6 +364,7 @@ def test_live_shannon_controlled_prepare_success_uses_wrap_path(tmp_path: Path, 
             target=url,
             repo_path=str(Path(__file__).resolve().parents[2]),
             dry_run=False,
+            extra={"validate_model": True},
         )
     )
     assert result.status == "succeeded"
@@ -799,10 +804,44 @@ def test_egress_disable_with_dual_gate_allows_when_live_ack(tmp_path: Path, monk
             target=url,
             repo_path=str(Path(__file__).resolve().parents[2]),
             dry_run=False,
+            extra={"validate_model": True},
         )
     )
     assert result.status == "succeeded"
     runner.run.assert_called_once()
+
+
+def test_shannon_full_pipeline_blocked_without_ack(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_LIVE", "1")
+    monkeypatch.setenv("PEN_ALLOW_SHANNON_UNCONTAINED_NET", "1")
+    monkeypatch.delenv("PEN_ALLOW_SHANNON_FULL_PIPELINE", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url = "https://staging.example.invalid"
+    cfg = PlatformConfig(reports_dir=tmp_path)
+    adapter = ShannonAdapter(cfg, _scope(url))
+    adapter.healthcheck = lambda: {  # type: ignore
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+        "healthy": True,
+    }
+    adapter.runner = MagicMock()
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            dry_run=False,
+            # No validate_model → full pipeline path
+        )
+    )
+    assert result.status == "blocked"
+    assert "PEN_ALLOW_SHANNON_FULL_PIPELINE" in (result.error or "")
+    assert (result.metadata or {}).get("isolation") == "shannon_full_pipeline_gate"
+    adapter.runner.run.assert_not_called()
 
 
 def test_shannon_live_gate_does_not_enable_briar(tmp_path: Path, monkeypatch):

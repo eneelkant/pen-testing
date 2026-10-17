@@ -31,6 +31,9 @@ class IsolationPolicy:
     allow_shannon_live: bool = False
     # Skip controlled shannon-net prepare (internal + gateway). Dangerous; dual-gate.
     allow_shannon_uncontained_net: bool = False
+    # Full Shannon pentest pipeline (not --validate-model). Disabled by default;
+    # CI only exercises model-validation with a local mock LLM.
+    allow_shannon_full_pipeline: bool = False
     # Live Briar requires this gate in addition to an execution mode that can
     # place the process on a platform network (compose) or an explicit host-net ack.
     allow_briar_live: bool = False
@@ -70,6 +73,7 @@ def load_isolation_policy() -> IsolationPolicy:
         allow_scope_disable=_truthy("PEN_ALLOW_SCOPE_DISABLE", False),
         allow_shannon_live=_truthy("PEN_ALLOW_SHANNON_LIVE", False),
         allow_shannon_uncontained_net=_truthy("PEN_ALLOW_SHANNON_UNCONTAINED_NET", False),
+        allow_shannon_full_pipeline=_truthy("PEN_ALLOW_SHANNON_FULL_PIPELINE", False),
         allow_briar_live=_truthy("PEN_ALLOW_BRIAR_LIVE", False),
         briar_exec_mode=briar_mode,
         allow_briar_host_net=_truthy("PEN_ALLOW_BRIAR_HOST_NET", False),

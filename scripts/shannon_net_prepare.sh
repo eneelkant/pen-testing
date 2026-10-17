@@ -57,12 +57,14 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$GW_NAME"; then
 fi
 
 ALLOW="${PEN_PROXY_ALLOW_HOSTS:-}"
+PORTS="${PEN_PROXY_ALLOW_PORTS:-80,443}"
 log "== start egress gateway on $NET_NAME + $EGRESS_NET =="
 docker run -d --name "$GW_NAME" \
   --label pen.managed=1 \
   --network "$NET_NAME" \
   --network-alias egress-gateway \
   -e PEN_PROXY_ALLOW_HOSTS="$ALLOW" \
+  -e PEN_PROXY_ALLOW_PORTS="$PORTS" \
   -e PEN_PROXY_PORT=3128 \
   --read-only --tmpfs /tmp \
   --security-opt no-new-privileges:true \

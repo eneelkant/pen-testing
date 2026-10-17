@@ -5,9 +5,11 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
 ## Security boundaries
 
 - [ ] Live Shannon disabled by default (`PEN_ALLOW_SHANNON_LIVE` unset/false)
+- [ ] Shannon full pipeline disabled by default (`PEN_ALLOW_SHANNON_FULL_PIPELINE` unset/false)
 - [ ] Live Briar disabled by default (`PEN_ALLOW_BRIAR_LIVE` unset/false)
 - [ ] Briar host-net separately gated (`PEN_ALLOW_BRIAR_HOST_NET`)
 - [ ] Shannon uncontained-net separately gated (`PEN_ALLOW_SHANNON_UNCONTAINED_NET`)
+- [ ] Proxy port allowlist defaults to 80/443 (`PEN_PROXY_ALLOW_PORTS`)
 - [ ] Scope-skip does not disable egress
 - [ ] Egress-disable dual-gate enforced
 - [ ] Docker runtime markers present on CI head:
@@ -21,6 +23,7 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
   - `BRIAR_LIVE_RESTART_DIRECT_BLOCKED`
   - `BRIAR_LIVE_REACHES_FIXTURE`
   - `PROXY_DENIES_UNLISTED_HOST`
+  - `PROXY_DENIES_DISALLOWED_PORT`
   - `SHANNON_NET_ISOLATED_BLOCKED` (stand-in)
   - `SHANNON_NET_NOPROXY_DIRECT_BLOCKED` (stand-in)
   - `SHANNON_NET_REACHES_GATEWAY` (stand-in)

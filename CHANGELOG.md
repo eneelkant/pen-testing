@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0a13 — 2026-10-13
+
+### Security
+
+- Shared destination policy (`core/isolation/destination_policy.py`) used by egress gateway: allowlist hosts, resolve-time non-public/metadata deny, default ports 80/443 (`PEN_PROXY_ALLOW_PORTS`)
+- Gateway image copies the stdlib-only policy module; unit tests cover IPv4/IPv6 documentation ranges and IMDS
+- Runtime marker `PROXY_DENIES_DISALLOWED_PORT`
+- Live Shannon full pentest pipeline gated by `PEN_ALLOW_SHANNON_FULL_PIPELINE` (default off); supported path remains `--validate-model` + local mock
+- Documented network planes/guarantees in `docs/NETWORK_ARCHITECTURE.md`
+
+### Notes
+
+- Docker `Internal=true` remains the connection boundary when clients ignore proxies; destination allowlisting applies to proxied flows
+- Status remains READY FOR CONTROLLED TESTING
+
 ## 0.2.0a12 — 2026-10-13
 
 ### Security / testing

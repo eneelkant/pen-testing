@@ -10,6 +10,7 @@ from typing import Any
 
 from core.config import PlatformConfig
 from core.execution import CommandRunner
+from core.ops.retention import parse_retention_days
 from integrations.briar import BriarAdapter
 from integrations.shannon import ShannonAdapter
 from providers import list_provider_status
@@ -66,6 +67,7 @@ def collect_diagnostics(config: PlatformConfig) -> dict[str, Any]:
             "scopes_exists": Path(config.scopes_file).exists(),
         },
         "recommendations": [],
+        "retention": _retention_diagnostic(),
     }
     if not docker:
         result["recommendations"].append(
@@ -88,6 +90,17 @@ def collect_diagnostics(config: PlatformConfig) -> dict[str, Any]:
             f"Create an authorization registry at {config.scopes_file} before active scans."
         )
     return result
+
+
+def _retention_diagnostic() -> dict[str, Any]:
+    import os
+
+    raw = os.environ.get("PEN_ASSESSMENT_RETENTION_DAYS")
+    try:
+        days = parse_retention_days(raw)
+    except ValueError as exc:
+        return {"enabled": False, "error": str(exc)}
+    return {"enabled": days is not None, "days": days, "automatic": False}
 
 
 def run_doctor(config: PlatformConfig) -> int:

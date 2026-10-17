@@ -68,7 +68,7 @@ flowchart TB
 
 | Path | Role |
 |---|---|
-| `core/` | Config, execution, scope, findings, reporting, diagnostics, CLI |
+| `core/` | Config, execution, scope, findings, reporting, diagnostics, retention, SBOM metadata, CLI |
 | `integrations/` | Tool adapters implementing `SecurityAdapter` |
 | `providers/` | AI provider env detection (no secret values logged) |
 | `scopes/` | Authorization registry and examples |

@@ -36,6 +36,10 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
   - `MISSING_INTERNAL_CONFIG_BLOCKS`
 - [ ] No `docker.sock` in Compose render
 - [ ] Report path confinement + symlink-safe writes still pass
+- [ ] Assessment symlink read/write refusal still passes (`tests/unit/test_ops_data_protection.py`)
+- [ ] `pen-testing cleanup` dry-run does not delete; `--apply` does not follow symlinks
+- [ ] `python -m core.supply_chain audit` exit 0 and SBOM contains `pyyaml` and `jsonschema` with no `vulnerabilities` claim
+- [ ] Gitleaks CI still green on the release SHA (do not waive findings)
 
 ## Quality
 

@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.0a14 — 2026-10-17
+
+### Security
+
+- Report and assessment IO refuses symlink path components, including parent directories (`safe_read_text` / `safe_write_text`)
+- Assessment records are redacted before they are stored; corrupt records and symlink reads fail closed
+- CLI `export-report` inputs and outputs must stay under the work dir, reports dir, or current directory
+- Redaction covers GitHub tokens, Slack tokens and webhooks, and `sk-` style keys in addition to existing patterns
+- `pen-testing cleanup` removes expired local `.json` / `.md` / `.sarif` / `.log` files under the assessment and report directories. It is dry-run unless `--apply`. It does not follow or delete symlinks. MCP status checks do not delete artifacts
+
+### Supply chain
+
+- `python -m core.supply_chain audit` checks that runtime dependencies are present in `requirements/base.txt` and reports unpinned requirements without treating that report as a CVE scan
+- `python -m core.supply_chain emit` writes a CycloneDX 1.5 SBOM from declared requirements. The document has no `vulnerabilities` array
+- CI dependency job runs the audit and SBOM checks. Unpinned `rpds-py>=0.30.0` is reported and is not a blocking failure
+
+### Documentation
+
+- `docs/READINESS_SCORECARD.md` records six milestones, incomplete work, and external dependencies
+- `docs/DATA_PROTECTION.md` describes local retention, redaction, and file confinement
+
+### Notes
+
+- Version `0.2.0a13` belongs to open PR #20 (destination policy) and is not included here
+- No live vulnerability database is queried. A green audit is not a claim of zero known CVEs
+- Not production-ready
+
 ## 0.2.0a12 — 2026-10-13
 
 ### Security / testing

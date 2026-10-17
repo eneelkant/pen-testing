@@ -10,11 +10,12 @@ from typing import Any, Literal
 
 from mcp.server import MCPServer
 
+from core import __version__
 from mcp_server import service
 
 mcp = MCPServer(
     name="pen-testing",
-    version="0.2.0a12",
+    version=__version__,
     instructions=(
         "Authorized security-testing orchestration platform. "
         "Always call validate_target_scope before run_security_assessment with dry_run=false. "

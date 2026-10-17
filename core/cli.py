@@ -10,7 +10,11 @@ from pathlib import Path
 
 from core import __version__
 from core.config import load_config
+from core.findings import Finding
+from core.findings.redaction import redact_text
 from core.net import redact_url_userinfo
+from core.ops.retention import cleanup_expired_files, parse_retention_days
+from core.paths import confine_path, safe_read_text
 from core.reporting import export_json, export_markdown, export_sarif, generate_daily_report
 from core.scope import ScopeEngine
 from integrations.briar import BriarAdapter
@@ -66,6 +70,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_daily = sub.add_parser("daily-report", help="Generate a local daily research report stub")
     p_daily.add_argument("--output", default="reports/out/daily-report.md")
+
+    p_cleanup = sub.add_parser(
+        "cleanup",
+        help="Delete expired local assessment and report files (dry-run unless --apply)",
+    )
+    p_cleanup.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually delete candidates. Without this flag, cleanup only reports them.",
+    )
+    p_cleanup.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Override PEN_ASSESSMENT_RETENTION_DAYS for this invocation",
+    )
 
     return parser
 
@@ -152,25 +172,71 @@ def main(argv: list[str] | None = None) -> int:
             out = Path(args.output)
             if out.is_dir() or str(args.output).endswith("/"):
                 out = Path(args.output) / f"{args.tool}-{result.execution_id}.json"
-        export_json(result.findings, out, metadata=result.to_dict())
-        print(json.dumps({"status": result.status, "execution_id": result.execution_id, "report": str(out), "findings": len(result.findings), "error": result.error}, indent=2))
+        try:
+            export_json(result.findings, out, metadata=result.to_dict())
+        except PermissionError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        shown_error = redact_text(result.error) if isinstance(result.error, str) else result.error
+        print(json.dumps({"status": result.status, "execution_id": result.execution_id, "report": str(out), "findings": len(result.findings), "error": shown_error}, indent=2))
         return 0 if result.status in {"succeeded", "skipped"} else 1
 
     if args.command == "export-report":
-        data = json.loads(Path(args.input).read_text(encoding="utf-8"))
-        from core.findings import Finding
-
+        roots = [Path(config.work_dir), Path(config.reports_dir), Path.cwd()]
+        try:
+            source = confine_path(args.input, roots)
+            outdir = confine_path(args.outdir, roots)
+            data = json.loads(safe_read_text(source))
+        except (PermissionError, OSError, json.JSONDecodeError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
         findings_data = data.get("findings", data if isinstance(data, list) else [])
         findings = [Finding.from_dict(x) for x in findings_data]
-        outdir = Path(args.outdir)
         md = export_markdown(findings, outdir / "report.md", metadata=data.get("metadata"))
         js = export_json(findings, outdir / "report.json", metadata=data.get("metadata"))
         sarif = export_sarif(findings, outdir / "report.sarif")
         print(json.dumps({"markdown": str(md), "json": str(js), "sarif": str(sarif)}, indent=2))
         return 0
 
+    if args.command == "cleanup":
+        from datetime import datetime, timezone
+
+        from mcp_server.config import assessments_dir
+
+        try:
+            if args.days is not None and (args.days < 0 or args.days > 3650):
+                raise ValueError(
+                    "PEN_ASSESSMENT_RETENTION_DAYS must be an integer from 0 to 3650, or off"
+                )
+            days = args.days if args.days is not None else parse_retention_days(
+                os.environ.get("PEN_ASSESSMENT_RETENTION_DAYS")
+            )
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        if days is None:
+            print(json.dumps({"ok": True, "enabled": False, "deleted": [], "candidates": []}, indent=2))
+            return 0
+        try:
+            roots = [assessments_dir(config), Path(config.reports_dir)]
+        except PermissionError as exc:
+            print(json.dumps({"ok": False, "errors": [str(exc)]}, indent=2))
+            return 1
+        report = cleanup_expired_files(
+            roots,
+            now=datetime.now(timezone.utc),
+            max_age_days=days,
+            apply=bool(args.apply),
+        )
+        print(json.dumps(report, indent=2))
+        return 0 if report["ok"] else 1
+
     if args.command == "daily-report":
-        path = generate_daily_report(output_path=args.output)
+        try:
+            path = generate_daily_report(output_path=args.output)
+        except PermissionError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps({"report": str(path)}, indent=2))
         return 0
 

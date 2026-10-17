@@ -165,3 +165,21 @@ jobs:
               print(" -", d)
           assert "pyyaml" in " ".join(deps).lower()
           PY
+
+      - name: Dependency metadata audit and SBOM
+        run: |
+          set -euo pipefail
+          python -m core.supply_chain audit
+          python -m core.supply_chain emit --output "$RUNNER_TEMP/sbom.cdx.json"
+          SBOM="$RUNNER_TEMP/sbom.cdx.json" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          doc = json.loads(Path(os.environ["SBOM"]).read_text())
+          assert doc["bomFormat"] == "CycloneDX"
+          assert "vulnerabilities" not in doc, "SBOM must not claim a vulnerability result"
+          names = {item["name"] for item in doc["components"]}
+          missing = {"pyyaml", "jsonschema"} - names
+          assert not missing, missing
+          print("sbom_ok", len(names))
+          PY

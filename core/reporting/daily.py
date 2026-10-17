@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.findings import redact_secrets
+from core.paths import safe_write_text
 
 
 def generate_daily_report(
@@ -24,7 +25,6 @@ def generate_daily_report(
     include_private_details: bool = False,
 ) -> Path:
     output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "report_type": "daily_research",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -100,7 +100,7 @@ def generate_daily_report(
     md_lines.extend([f"- {d}" for d in payload["next_actions"]] or ["- None"])
     md_lines.append("")
 
-    output_path.write_text("\n".join(md_lines), encoding="utf-8")
+    safe_write_text(output_path, "\n".join(md_lines))
     json_path = output_path.with_suffix(".json")
-    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    safe_write_text(json_path, json.dumps(payload, indent=2))
     return output_path

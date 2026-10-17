@@ -1,6 +1,6 @@
 # Release Process
 
-Semantic versioning. Current distributable line: **0.2.0a12** (alpha — Docker runtime verification may be incomplete).
+Semantic versioning. Current distributable line: **0.2.0a14** (alpha — not production-ready). `0.2.0a13` is the unmerged destination-policy pull request and is not part of this line.
 
 ## Compatibility policy
 

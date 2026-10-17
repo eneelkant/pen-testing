@@ -2,7 +2,7 @@
 
 Review date: **2026-10-17**  
 Integrated baseline: `origin/main` `4162e41c5d3b65464c10b3b6386f0afafa1ba5af` (merge of PR #20, package `0.2.0a13`).
-This document is the `0.2.0a14` integration of that baseline. Local commands recorded below were run on this tree before CI on the pushed SHA. CI on that SHA is the release gate.
+This document is the `0.2.0a14` integration of that baseline. Local commands recorded below were run on commit `96dc80960783e6de7fa0a99ea333a8975d9c476a` (parents `794fedb` and `4162e41`) before CI on the pushed SHA. CI on that SHA is the release gate.
 
 **Verdict: not production-ready.** Engineering controls below are partial. Legal clearance and independent security review have not happened. A green unit run is not a production sign-off.
 

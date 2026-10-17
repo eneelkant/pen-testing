@@ -13,12 +13,15 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
+from core import __version__
 from core.config import PlatformConfig
 from core.diagnostics import collect_diagnostics
 from core.findings import Finding
-from core.findings.redaction import redact_text
+from core.findings.redaction import redact_secrets, redact_text
 from core.net import redact_url_userinfo
-from core.paths import confine_path
+from core.ops.retention import parse_retention_days
+from core.scope.rate_limit import acquire_scan_slot, release_scan_slot
+from core.paths import assert_no_symlink_in_chain, confine_path, is_under_roots, safe_read_text, safe_write_text
 from core.reporting import export_json, export_markdown, export_sarif
 from core.results import ExecutionResult
 from core.scope import ScopeEngine
@@ -51,20 +54,25 @@ def _safe_assessment_id(assessment_id: str) -> str | None:
 
 
 def _safe_outdir(cfg: PlatformConfig, outdir: str | None, assessment_id: str) -> Path | dict[str, Any]:
-    """Confine report exports under reports_dir / work_dir."""
-    reports_root = Path(cfg.reports_dir).resolve()
-    work_root = Path(cfg.work_dir).resolve()
-    if outdir is None:
-        dest = reports_root / f"export-{assessment_id}"
-    else:
-        dest = Path(outdir).expanduser().resolve()
-    allowed_roots = (reports_root, work_root)
-    if not any(dest == root or root in dest.parents for root in allowed_roots):
+    """Confine report exports under reports_dir / work_dir without following symlinks."""
+    try:
+        reports_root = assert_no_symlink_in_chain(Path(cfg.reports_dir))
+        work_root = assert_no_symlink_in_chain(Path(cfg.work_dir))
+        if outdir is None:
+            dest = reports_root / f"export-{assessment_id}"
+        else:
+            dest = Path(outdir).expanduser()
+        dest = assert_no_symlink_in_chain(dest)
+    except PermissionError as exc:
+        return {"ok": False, "error": str(exc)}
+    if not is_under_roots(dest, [reports_root, work_root]):
         return {
             "ok": False,
             "error": f"outdir must be inside reports_dir ({reports_root}) or work_dir ({work_root})",
         }
     dest.mkdir(parents=True, exist_ok=True)
+    if dest.is_symlink():
+        return {"ok": False, "error": f"Refusing symlink path component: {dest}"}
     return dest
 
 
@@ -106,13 +114,30 @@ def platform_status() -> dict[str, Any]:
     diag = collect_diagnostics(cfg)
     return {
         "ok": True,
-        "platform_version": "0.2.0a12",
+        "platform_version": __version__,
         "python": sys.version.split()[0],
         "system": platform.system(),
         "machine": platform.machine(),
         "diagnostics": diag,
         "providers": list_provider_status(),
-        "note": "Active scans are never started by status checks.",
+        "retention": _retention_status(),
+        "note": "Active scans are never started by status checks. Status does not delete artifacts.",
+    }
+
+
+def _retention_status() -> dict[str, Any]:
+    import os
+
+    raw = os.environ.get("PEN_ASSESSMENT_RETENTION_DAYS")
+    try:
+        days = parse_retention_days(raw)
+    except ValueError as exc:
+        return {"enabled": False, "error": str(exc)}
+    return {
+        "enabled": days is not None,
+        "days": days,
+        "automatic": False,
+        "note": "Operator CLI `pen-testing cleanup` is dry-run unless --apply is set.",
     }
 
 
@@ -223,16 +248,44 @@ def run_local_diagnostics() -> dict[str, Any]:
 
 def _save_assessment(record: dict[str, Any]) -> Path:
     cfg = resolve_platform_config()
-    path = assessments_dir(cfg) / f"{record['assessment_id']}.json"
-    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    safe_id = _safe_assessment_id(str(record.get("assessment_id", "")))
+    if not safe_id:
+        raise ValueError("assessment_id must be a UUID")
+    record = redact_secrets(dict(record))
+    record["assessment_id"] = safe_id
+    path = assessments_dir(cfg) / f"{safe_id}.json"
+    safe_write_text(path, json.dumps(record, indent=2))
     return path
 
 
 def _load_assessment(assessment_id: str) -> dict[str, Any] | None:
-    path = assessments_dir() / f"{assessment_id}.json"
-    if not path.exists():
+    safe_id = _safe_assessment_id(assessment_id)
+    if not safe_id:
+        raise ValueError("assessment_id must be a UUID")
+    path = assessments_dir() / f"{safe_id}.json"
+    if not path.is_symlink() and not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = safe_read_text(path)
+    except PermissionError:
+        raise
+    except FileNotFoundError:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Assessment record is corrupt") from exc
+    if not isinstance(data, dict):
+        raise ValueError("Assessment record is corrupt")
+    return data
+
+
+def _assessment_error(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, PermissionError):
+        return {"ok": False, "error": "Refusing to access assessment path through a symlink"}
+    if isinstance(exc, ValueError):
+        return {"ok": False, "error": str(exc)}
+    return {"ok": False, "error": "Assessment record could not be read"}
 
 
 def run_security_assessment(
@@ -318,44 +371,73 @@ def run_security_assessment(
                 "created_at": _utcnow(),
                 "findings": [],
             }
-            _save_assessment(record)
-            return {"ok": False, "assessment_id": assessment_id, "status": "blocked", "error": str(exc)}
+            try:
+                _save_assessment(record)
+            except (PermissionError, ValueError) as save_exc:
+                failure = _assessment_error(save_exc)
+                failure.update({"assessment_id": assessment_id, "status": "blocked"})
+                return failure
+            return {
+                "ok": False,
+                "assessment_id": assessment_id,
+                "status": "blocked",
+                "error": redact_text(str(exc)),
+            }
 
-    result: ExecutionResult = adapter.run(request)
-    findings = [f.to_dict() for f in result.findings]
-    record = {
-        "assessment_id": assessment_id,
-        "tool": tool,
-        "target": safe_target,
-        "category": category,
-        "dry_run": dry_run,
-        "demo": briar_demo,
-        "status": result.status,
-        "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
-        "execution_id": result.execution_id,
-        "artifacts": result.artifacts,
-        "metadata": result.metadata,
-        "findings": findings,
-        "created_at": _utcnow(),
-        "updated_at": _utcnow(),
-    }
-    _save_assessment(record)
-    return {
-        "ok": result.status in {"succeeded", "skipped"},
-        "assessment_id": assessment_id,
-        "status": result.status,
-        "error": result.error,
-        "findings_count": len(findings),
-        "dry_run": dry_run,
-        "note": "Upstream engines may navigate beyond the initial URL; scope preflight is not full containment.",
-    }
+    slot = False
+    if not dry_run:
+        try:
+            acquire_scan_slot()
+            slot = True
+        except PermissionError as exc:
+            return {"ok": False, "assessment_id": assessment_id, "error": redact_text(str(exc))}
+    try:
+        result = adapter.run(request)
+        findings = [f.to_dict() for f in result.findings]
+        record = {
+            "assessment_id": assessment_id,
+            "tool": tool,
+            "target": safe_target,
+            "category": category,
+            "dry_run": dry_run,
+            "demo": briar_demo,
+            "status": result.status,
+            "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
+            "execution_id": result.execution_id,
+            "artifacts": result.artifacts,
+            "metadata": result.metadata,
+            "findings": findings,
+            "created_at": _utcnow(),
+            "updated_at": _utcnow(),
+        }
+        try:
+            _save_assessment(record)
+        except (PermissionError, ValueError) as exc:
+            failure = _assessment_error(exc)
+            failure["assessment_id"] = assessment_id
+            return failure
+        return {
+            "ok": result.status in {"succeeded", "skipped"},
+            "assessment_id": assessment_id,
+            "status": result.status,
+            "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
+            "findings_count": len(findings),
+            "dry_run": dry_run,
+            "note": "Upstream engines may navigate beyond the initial URL; scope preflight is not full containment.",
+        }
+    finally:
+        if slot:
+            release_scan_slot()
 
 
 def get_assessment_status(assessment_id: str) -> dict[str, Any]:
     safe_id = _safe_assessment_id(assessment_id)
     if not safe_id:
         return {"ok": False, "error": "assessment_id must be a UUID"}
-    record = _load_assessment(safe_id)
+    try:
+        record = _load_assessment(safe_id)
+    except (PermissionError, ValueError) as exc:
+        return _assessment_error(exc)
     if not record:
         return {"ok": False, "error": f"Assessment not found: {safe_id}"}
     return {
@@ -377,7 +459,10 @@ def list_findings(assessment_id: str) -> dict[str, Any]:
     safe_id = _safe_assessment_id(assessment_id)
     if not safe_id:
         return {"ok": False, "error": "assessment_id must be a UUID"}
-    record = _load_assessment(safe_id)
+    try:
+        record = _load_assessment(safe_id)
+    except (PermissionError, ValueError) as exc:
+        return _assessment_error(exc)
     if not record:
         return {"ok": False, "error": f"Assessment not found: {safe_id}"}
     return {
@@ -392,7 +477,10 @@ def export_report(assessment_id: str, outdir: str | None = None) -> dict[str, An
     safe_id = _safe_assessment_id(assessment_id)
     if not safe_id:
         return {"ok": False, "error": "assessment_id must be a UUID"}
-    record = _load_assessment(safe_id)
+    try:
+        record = _load_assessment(safe_id)
+    except (PermissionError, ValueError) as exc:
+        return _assessment_error(exc)
     if not record:
         return {"ok": False, "error": f"Assessment not found: {safe_id}"}
     cfg = resolve_platform_config()

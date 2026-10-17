@@ -165,3 +165,44 @@ jobs:
               print(" -", d)
           assert "pyyaml" in " ".join(deps).lower()
           PY
+
+      - name: Dependency metadata audit and SBOM
+        run: |
+          set -euo pipefail
+          python -m core.supply_chain audit
+          python -m core.supply_chain emit --output "$RUNNER_TEMP/sbom.cdx.json"
+          SBOM="$RUNNER_TEMP/sbom.cdx.json" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          doc = json.loads(Path(os.environ["SBOM"]).read_text())
+          assert doc["bomFormat"] == "CycloneDX"
+          assert "vulnerabilities" not in doc, "SBOM must not claim a vulnerability result"
+          names = {item["name"] for item in doc["components"]}
+          missing = {"pyyaml", "jsonschema"} - names
+          assert not missing, missing
+          print("sbom_ok", len(names))
+          PY
+
+      - name: OSV vulnerability query
+        run: |
+          set -euo pipefail
+          python -m core.supply_chain vuln --output "$RUNNER_TEMP/osv.json"
+          OSV="$RUNNER_TEMP/osv.json" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(Path(os.environ["OSV"]).read_text())
+          print(
+              "osv_status",
+              report["status"],
+              "blocking",
+              report["blocking_count"],
+              "queried",
+              len(report["queried"]),
+              "at",
+              report["generated_at"],
+          )
+          if report["status"] != "PASS":
+              raise SystemExit(report["status"])
+          PY

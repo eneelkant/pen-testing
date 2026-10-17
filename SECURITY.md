@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 0.1.x | Yes |
+| 0.2.0a14 | Security fixes on the current alpha line |
+| 0.1.x | Historical; no longer the development line |
 
 ## Responsible disclosure
 

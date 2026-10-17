@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from core.config import PlatformConfig, load_config
+from core.paths import assert_no_symlink_in_chain
 
 
 def repo_root() -> Path:
@@ -27,6 +28,8 @@ def resolve_platform_config() -> PlatformConfig:
 
 def assessments_dir(cfg: PlatformConfig | None = None) -> Path:
     cfg = cfg or resolve_platform_config()
-    path = Path(cfg.work_dir) / "assessments"
+    path = assert_no_symlink_in_chain(Path(cfg.work_dir) / "assessments")
     path.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise PermissionError(f"Refusing symlink path component: {path}")
     return path

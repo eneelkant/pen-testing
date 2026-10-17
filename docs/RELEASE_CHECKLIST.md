@@ -1,13 +1,15 @@
 # Controlled release checklist
 
-Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKED` / `N/A`.
+Use before tagging a non-alpha release. Scorecard statuses are `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, and `NOT VERIFIED`.
 
 ## Security boundaries
 
 - [ ] Live Shannon disabled by default (`PEN_ALLOW_SHANNON_LIVE` unset/false)
+- [ ] Shannon full pipeline disabled by default (`PEN_ALLOW_SHANNON_FULL_PIPELINE` unset/false)
 - [ ] Live Briar disabled by default (`PEN_ALLOW_BRIAR_LIVE` unset/false)
 - [ ] Briar host-net separately gated (`PEN_ALLOW_BRIAR_HOST_NET`)
 - [ ] Shannon uncontained-net separately gated (`PEN_ALLOW_SHANNON_UNCONTAINED_NET`)
+- [ ] Proxy port allowlist defaults to 80/443 (`PEN_PROXY_ALLOW_PORTS`)
 - [ ] Scope-skip does not disable egress
 - [ ] Egress-disable dual-gate enforced
 - [ ] Docker runtime markers present on CI head:
@@ -21,6 +23,7 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
   - `BRIAR_LIVE_RESTART_DIRECT_BLOCKED`
   - `BRIAR_LIVE_REACHES_FIXTURE`
   - `PROXY_DENIES_UNLISTED_HOST`
+  - `PROXY_DENIES_DISALLOWED_PORT`
   - `SHANNON_NET_ISOLATED_BLOCKED` (stand-in)
   - `SHANNON_NET_NOPROXY_DIRECT_BLOCKED` (stand-in)
   - `SHANNON_NET_REACHES_GATEWAY` (stand-in)
@@ -39,6 +42,8 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
 - [ ] Assessment symlink read/write refusal still passes (`tests/unit/test_ops_data_protection.py`)
 - [ ] `pen-testing cleanup` dry-run does not delete; `--apply` does not follow symlinks
 - [ ] `python -m core.supply_chain audit` exit 0 and SBOM contains `pyyaml` and `jsonschema` with no `vulnerabilities` claim
+- [ ] `python -m core.supply_chain vuln` recorded for the release SHA (`PASS`, `FAIL`, or `NOT VERIFIED`). A metadata audit is not a CVE result. Blocking findings stay visible
+- [ ] Non-dry-run scans honor `rate_limit_rps` and `PEN_MAX_INFLIGHT_SCANS` in-process
 - [ ] Gitleaks CI still green on the release SHA (do not waive findings)
 
 ## Quality

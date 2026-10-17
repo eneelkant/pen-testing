@@ -17,6 +17,7 @@ from core.ops.retention import cleanup_expired_files, parse_retention_days
 from core.paths import confine_path, safe_read_text
 from core.reporting import export_json, export_markdown, export_sarif, generate_daily_report
 from core.scope import ScopeEngine
+from core.scope.rate_limit import acquire_scan_slot, release_scan_slot
 from integrations.briar import BriarAdapter
 from integrations.scanners import GitleaksAdapter, HeadersAdapter, TrivyAdapter
 from integrations.shannon import ShannonAdapter
@@ -163,7 +164,22 @@ def main(argv: list[str] | None = None) -> int:
             skip_scope_check=bool(args.skip_scope_check and _skip_scope_allowed()),
             extra={"demo": bool(args.demo)},
         )
-        result = adapter.run(request)
+        if args.timeout is not None and (args.timeout < 1 or args.timeout > 86_400):
+            print("ERROR: --timeout must be between 1 and 86400 seconds", file=sys.stderr)
+            return 2
+        slot = False
+        if not args.dry_run:
+            try:
+                acquire_scan_slot()
+                slot = True
+            except PermissionError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
+        try:
+            result = adapter.run(request)
+        finally:
+            if slot:
+                release_scan_slot()
         # Avoid echoing credentials that may appear in URL userinfo.
         if isinstance(result.metadata, dict) and "target" in result.metadata:
             result.metadata["target"] = redact_url_userinfo(str(result.metadata["target"]))

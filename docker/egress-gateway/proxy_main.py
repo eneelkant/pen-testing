@@ -3,12 +3,15 @@
 
 Used by Compose scanner workers that have no direct internet (internal networks).
 This is not a transparent proxy: clients must honor HTTP(S)_PROXY.
-Browsers that ignore proxy settings remain an upstream residual risk.
+Browsers that ignore proxy settings remain an upstream residual risk — Docker
+Internal=true is the connection boundary for those clients.
+
+Destination policy lives in destination_policy.py (copied from
+core/isolation/destination_policy.py at image build).
 """
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import select
 import socket
@@ -16,6 +19,20 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
+
+try:
+    # Container image layout: /app/destination_policy.py (copied at build).
+    from destination_policy import (  # type: ignore[import-not-found]
+        decide_proxy_destination,
+        load_allow_hosts_from_env,
+        load_allow_ports_from_env,
+    )
+except ImportError:  # pragma: no cover - host unit tests
+    from core.isolation.destination_policy import (
+        decide_proxy_destination,
+        load_allow_hosts_from_env,
+        load_allow_ports_from_env,
+    )
 
 
 def _truthy(name: str, default: bool = False) -> bool:
@@ -25,52 +42,14 @@ def _truthy(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes"}
 
 
-def _allow_hosts() -> set[str]:
-    raw = os.environ.get("PEN_PROXY_ALLOW_HOSTS", "") or ""
-    return {h.strip().lower().rstrip(".") for h in raw.split(",") if h.strip()}
-
-
-def _is_non_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    if bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    ):
-        return True
-    for net in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32", "169.254.169.254/32"):
-        if ip in ipaddress.ip_network(net):
-            return True
-    return False
-
-
 def decide_destination(host: str, port: int) -> tuple[bool, str]:
-    host = (host or "").strip().lower().rstrip(".")
-    if not host:
-        return False, "missing host"
-    allows = _allow_hosts()
-    if allows and host not in allows:
-        return False, f"host {host!r} not in PEN_PROXY_ALLOW_HOSTS"
-    # Always resolve and block non-public answers (DNS rebinding class).
-    try:
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        return False, f"DNS failed: {exc}"
-    if not infos:
-        return False, "DNS returned no addresses"
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if _is_non_public(ip):
-            # Allow connecting to other compose service names only when they resolve
-            # to non-public AND host is explicitly allowlisted (fixture/gateway cases
-            # should use NO_PROXY and direct connect, not the proxy).
-            return False, f"resolved to non-public {ip}"
-    if not allows:
-        # Empty allowlist = deny-by-default for proxied internet destinations.
-        return False, "PEN_PROXY_ALLOW_HOSTS is empty (deny by default)"
-    return True, "ok"
+    """Public entry used by unit tests and handlers."""
+    return decide_proxy_destination(
+        host,
+        port,
+        allow_hosts=load_allow_hosts_from_env(),
+        allow_ports=load_allow_ports_from_env(),
+    )
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -167,9 +146,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
 def main() -> int:
     host = os.environ.get("PEN_PROXY_BIND", "0.0.0.0")
     port = int(os.environ.get("PEN_PROXY_PORT", "3128"))
-    if _truthy("PEN_PROXY_REQUIRE_ALLOWLIST", True) and not _allow_hosts():
+    allows = load_allow_hosts_from_env()
+    ports = load_allow_ports_from_env()
+    if _truthy("PEN_PROXY_REQUIRE_ALLOWLIST", True) and not allows:
         # Still start: deny-by-default until allowlist is configured.
-        sys.stderr.write("egress-gateway: PEN_PROXY_ALLOW_HOSTS empty — denying all proxied destinations\n")
+        sys.stderr.write(
+            "egress-gateway: PEN_PROXY_ALLOW_HOSTS empty — denying all proxied destinations\n"
+        )
+    sys.stderr.write(
+        f"egress-gateway: allow_hosts={sorted(allows) or ['<empty>']} "
+        f"allow_ports={sorted(ports)}\n"
+    )
     server = ThreadingHTTPServer((host, port), ProxyHandler)
     sys.stderr.write(f"egress-gateway: listening on {host}:{port}\n")
     thread = threading.Thread(target=server.serve_forever, daemon=True)

@@ -108,6 +108,8 @@ services:
       PEN_PROXY_PORT: "3128"
       # Comma-separated hosts permitted through the proxy (deny-by-default when empty).
       PEN_PROXY_ALLOW_HOSTS: ${PEN_PROXY_ALLOW_HOSTS:-}
+      # Comma-separated destination ports for proxied flows (default 80,443).
+      PEN_PROXY_ALLOW_PORTS: ${PEN_PROXY_ALLOW_PORTS:-80,443}
     read_only: true
     tmpfs:
       - /tmp

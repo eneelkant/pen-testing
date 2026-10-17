@@ -9,23 +9,43 @@
 - CLI `export-report` inputs and outputs must stay under the work dir, reports dir, or current directory
 - Redaction covers GitHub tokens, Slack tokens and webhooks, and `sk-` style keys in addition to existing patterns
 - `pen-testing cleanup` removes expired local `.json` / `.md` / `.sarif` / `.log` files under the assessment and report directories. It is dry-run unless `--apply`. It does not follow or delete symlinks. MCP status checks do not delete artifacts
+- Authorization records with `rate_limit_rps` are enforced on non-dry-run adapter preflight. `PEN_MAX_INFLIGHT_SCANS` bounds concurrent live CLI/MCP scans in this process
 
 ### Supply chain
 
 - `python -m core.supply_chain audit` checks that runtime dependencies are present in `requirements/base.txt` and reports unpinned requirements without treating that report as a CVE scan
 - `python -m core.supply_chain emit` writes a CycloneDX 1.5 SBOM from declared requirements. The document has no `vulnerabilities` array
-- CI dependency job runs the audit and SBOM checks. Unpinned `rpds-py>=0.30.0` is reported and is not a blocking failure
+- `rpds-py` is pinned to `2026.9.1`, the version resolved with `jsonschema==4.26.0` during unit tests
+- Optional OSV query (`python -m core.supply_chain vuln`) records database results separately from the metadata audit
 
 ### Documentation
 
-- `docs/READINESS_SCORECARD.md` records six milestones, incomplete work, and external dependencies
+- `docs/READINESS_SCORECARD.md` records six milestones with PASS / PARTIAL / BLOCKED / FAIL / NOT VERIFIED
 - `docs/DATA_PROTECTION.md` describes local retention, redaction, and file confinement
+- `docs/LICENSING_REVIEW.md` keeps AGPL questions open; counsel review is not complete
 
 ### Notes
 
-- Version `0.2.0a13` belongs to open PR #20 (destination policy) and is not included here
-- No live vulnerability database is queried. A green audit is not a claim of zero known CVEs
+- Includes merged `0.2.0a13` destination policy and Shannon full-pipeline gate. This release does not replace that work
+- A green metadata audit is not a claim of zero known CVEs
+- Pattern redaction does not cover upstream scanner logs written outside this process
+- Encryption at rest, backups, and multi-user authentication are not implemented
 - Not production-ready
+
+## 0.2.0a13 — 2026-10-13
+
+### Security
+
+- Shared destination policy (`core/isolation/destination_policy.py`) used by egress gateway: allowlist hosts, resolve-time non-public/metadata deny, default ports 80/443 (`PEN_PROXY_ALLOW_PORTS`)
+- Gateway image copies the stdlib-only policy module; unit tests cover IPv4/IPv6 documentation ranges and IMDS
+- Runtime marker `PROXY_DENIES_DISALLOWED_PORT`
+- Live Shannon full pentest pipeline gated by `PEN_ALLOW_SHANNON_FULL_PIPELINE` (default off); supported path remains `--validate-model` + local mock
+- Documented network planes/guarantees in `docs/NETWORK_ARCHITECTURE.md`
+
+### Notes
+
+- Docker `Internal=true` remains the connection boundary when clients ignore proxies; destination allowlisting applies to proxied flows
+- Status remains READY FOR CONTROLLED TESTING
 
 ## 0.2.0a12 — 2026-10-13
 

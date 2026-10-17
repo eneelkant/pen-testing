@@ -1,8 +1,9 @@
 # Licensing review notes (Shannon / Briar AGPL)
 
-**Status:** Open questions for qualified legal counsel — **not** legal clearance.  
-**Date:** 2026-10-13  
+**Status:** Qualified counsel review is **pending**. This document is not legal clearance.
+**Date:** 2026-10-17
 **Packages:** `@keygraph/shannon@3.4.0` (AGPL-3.0-only), `briar-pentest==0.4.62` (AGPL-3.0)
+**Also in the runtime path:** Temporal server image used by the Shannon E2E, `keygraph/shannon` worker image, Briar Compose image, `aquasec/trivy`, `zricethezav/gitleaks`. Their licenses are not cleared by this file.
 
 ## How this repository integrates them
 
@@ -22,6 +23,10 @@
 3. Does MCP remote exposure of assessment APIs that trigger AGPL tools constitute “conveying” or a network interaction that triggers AGPL §13 (Affero) obligations?
 4. What notices and source-offer process are required for SaaS vs on-prem operator installs?
 5. Briar’s “Alpha” status: any additional upstream license/terms beyond the PyPI AGPL classifier?
+6. The Shannon path starts a Temporal server container and a `keygraph/shannon` worker. Does distributing or operating that Compose stack require source offers for Temporal's license and for the Shannon image, separately from the orchestrator?
+7. Trivy and Gitleaks images are pulled at scan time. Does the operator's redistribution of a lockfile or Compose file that names those images create a source-offer duty for those images' licenses?
+8. Transitive Python dependencies in `requirements/*.txt` include packages beyond PyYAML and jsonschema (see the generated CycloneDX SBOM). Counsel still needs to review those license identifiers; this repository does not assert that every transitive license is Apache-2.0 compatible.
+9. If an operator exposes the MCP server beyond localhost, do questions 1 and 3 change because a remote user can trigger AGPL tools without receiving the orchestrator source?
 
 ## Operator guidance until counsel advises
 

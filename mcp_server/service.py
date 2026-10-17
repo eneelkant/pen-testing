@@ -20,6 +20,7 @@ from core.findings import Finding
 from core.findings.redaction import redact_secrets, redact_text
 from core.net import redact_url_userinfo
 from core.ops.retention import parse_retention_days
+from core.scope.rate_limit import acquire_scan_slot, release_scan_slot
 from core.paths import assert_no_symlink_in_chain, confine_path, is_under_roots, safe_read_text, safe_write_text
 from core.reporting import export_json, export_markdown, export_sarif
 from core.results import ExecutionResult
@@ -383,39 +384,50 @@ def run_security_assessment(
                 "error": redact_text(str(exc)),
             }
 
-    result: ExecutionResult = adapter.run(request)
-    findings = [f.to_dict() for f in result.findings]
-    record = {
-        "assessment_id": assessment_id,
-        "tool": tool,
-        "target": safe_target,
-        "category": category,
-        "dry_run": dry_run,
-        "demo": briar_demo,
-        "status": result.status,
-        "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
-        "execution_id": result.execution_id,
-        "artifacts": result.artifacts,
-        "metadata": result.metadata,
-        "findings": findings,
-        "created_at": _utcnow(),
-        "updated_at": _utcnow(),
-    }
+    slot = False
+    if not dry_run:
+        try:
+            acquire_scan_slot()
+            slot = True
+        except PermissionError as exc:
+            return {"ok": False, "assessment_id": assessment_id, "error": redact_text(str(exc))}
     try:
-        _save_assessment(record)
-    except (PermissionError, ValueError) as exc:
-        failure = _assessment_error(exc)
-        failure["assessment_id"] = assessment_id
-        return failure
-    return {
-        "ok": result.status in {"succeeded", "skipped"},
-        "assessment_id": assessment_id,
-        "status": result.status,
-        "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
-        "findings_count": len(findings),
-        "dry_run": dry_run,
-        "note": "Upstream engines may navigate beyond the initial URL; scope preflight is not full containment.",
-    }
+        result = adapter.run(request)
+        findings = [f.to_dict() for f in result.findings]
+        record = {
+            "assessment_id": assessment_id,
+            "tool": tool,
+            "target": safe_target,
+            "category": category,
+            "dry_run": dry_run,
+            "demo": briar_demo,
+            "status": result.status,
+            "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
+            "execution_id": result.execution_id,
+            "artifacts": result.artifacts,
+            "metadata": result.metadata,
+            "findings": findings,
+            "created_at": _utcnow(),
+            "updated_at": _utcnow(),
+        }
+        try:
+            _save_assessment(record)
+        except (PermissionError, ValueError) as exc:
+            failure = _assessment_error(exc)
+            failure["assessment_id"] = assessment_id
+            return failure
+        return {
+            "ok": result.status in {"succeeded", "skipped"},
+            "assessment_id": assessment_id,
+            "status": result.status,
+            "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
+            "findings_count": len(findings),
+            "dry_run": dry_run,
+            "note": "Upstream engines may navigate beyond the initial URL; scope preflight is not full containment.",
+        }
+    finally:
+        if slot:
+            release_scan_slot()
 
 
 def get_assessment_status(assessment_id: str) -> dict[str, Any]:

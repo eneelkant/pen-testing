@@ -120,6 +120,36 @@ def runtime_dependency_names(root: Path) -> list[tuple[str, str]]:
     return parsed
 
 
+def validate_sbom_document(document: dict) -> list[str]:
+    """Check the CycloneDX subset this repository emits.
+
+    This is not a certification against the full CycloneDX JSON Schema. It
+    rejects documents that claim a vulnerability set they did not generate.
+    """
+    errors: list[str] = []
+    if document.get("bomFormat") != "CycloneDX":
+        errors.append("bomFormat must be CycloneDX")
+    if document.get("specVersion") != "1.5":
+        errors.append("specVersion must be 1.5")
+    if "vulnerabilities" in document:
+        errors.append("metadata SBOM must not include a vulnerabilities array")
+    meta = document.get("metadata")
+    if not isinstance(meta, dict) or not isinstance(meta.get("component"), dict):
+        errors.append("metadata.component is required")
+    components = document.get("components")
+    if not isinstance(components, list) or not components:
+        errors.append("components must be a non-empty list")
+        return errors
+    for component in components:
+        name = component.get("name")
+        if component.get("type") != "library" or not name or not component.get("purl"):
+            errors.append(f"invalid component: {name or component}")
+        purl = str(component.get("purl") or "")
+        if component.get("version") and "@" not in purl:
+            errors.append(f"exact version missing from purl: {name}")
+    return errors
+
+
 def build_sbom(root: Path, *, timestamp: str | None = None) -> dict:
     """Return a CycloneDX 1.5 document for declared requirements.
 

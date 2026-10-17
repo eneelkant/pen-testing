@@ -265,17 +265,19 @@ def test_repo_dependency_audit_and_sbom_have_no_cve_claim():
     assert report["ok"] is True, report
     assert report["note"].startswith("Metadata audit only")
     unpinned = [item["name"] for item in report["findings"] if item["kind"] == "unpinned"]
-    assert unpinned == ["rpds-py"]
-    assert all(item["blocking"] is False for item in report["findings"] if item["kind"] == "unpinned")
+    assert unpinned == []
     document = build_sbom(root, timestamp="2026-10-17T00:00:00+00:00")
+    from core.supply_chain.sbom import validate_sbom_document
+
+    assert validate_sbom_document(document) == []
     assert document["bomFormat"] == "CycloneDX"
     assert "vulnerabilities" not in document
     names = {item["name"]: item for item in document["components"]}
     assert names["pyyaml"]["version"] == "6.0.3"
     assert names["pyyaml"]["purl"] == "pkg:pypi/pyyaml@6.0.3"
     assert names["jsonschema"]["version"] == "4.26.0"
-    assert "version" not in names["rpds-py"]
-    assert names["rpds-py"]["properties"][0]["value"] == ">=0.30.0"
+    assert names["rpds-py"]["version"] == "2026.9.1"
+    assert names["rpds-py"]["purl"] == "pkg:pypi/rpds-py@2026.9.1"
 
 
 def test_bare_requirement_is_blocking(tmp_path: Path):

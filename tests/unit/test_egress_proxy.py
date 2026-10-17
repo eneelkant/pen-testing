@@ -70,3 +70,39 @@ def test_proxy_denies_host_not_in_allowlist(proxy, monkeypatch):
     ok, reason = proxy.decide_destination("other.example.invalid", 443)
     assert ok is False
     assert "not in" in reason
+
+
+def test_proxy_denies_disallowed_port(proxy, monkeypatch):
+    monkeypatch.setenv("PEN_PROXY_ALLOW_HOSTS", "staging.example.invalid")
+    monkeypatch.delenv("PEN_PROXY_ALLOW_PORTS", raising=False)
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    ok, reason = proxy.decide_destination("staging.example.invalid", 22)
+    assert ok is False
+    assert "port 22" in reason
+
+
+def test_proxy_denies_metadata_ip_rebinding(proxy, monkeypatch):
+    monkeypatch.setenv("PEN_PROXY_ALLOW_HOSTS", "staging.example.invalid")
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    ok, reason = proxy.decide_destination("staging.example.invalid", 443)
+    assert ok is False
+    assert "non-public" in reason.lower() or "169.254.169.254" in reason
+
+
+def test_gateway_policy_module_matches_core():
+    """Dockerfile copies core policy into the gateway image — keep sources aligned."""
+    root = Path(__file__).resolve().parents[2]
+    core = (root / "core" / "isolation" / "destination_policy.py").read_text(encoding="utf-8")
+    # Build copies from core/; ensure the module remains stdlib-only.
+    assert "import os" in core
+    assert "import ipaddress" in core
+    assert "from core." not in core
+    assert "decide_proxy_destination" in core

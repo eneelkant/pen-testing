@@ -72,6 +72,7 @@ def collect_diagnostics(config: PlatformConfig) -> dict[str, Any]:
         "retention": _retention_diagnostic(),
         "encryption": encryption_status(),
         "limits": _limit_diagnostic(),
+        "gates": _gate_diagnostic(),
     }
     if not docker:
         result["recommendations"].append(
@@ -97,9 +98,15 @@ def collect_diagnostics(config: PlatformConfig) -> dict[str, Any]:
         result["recommendations"].append(
             "Set PEN_DATA_KEY to a Fernet key, or unset PEN_REQUIRE_DATA_ENCRYPTION."
         )
+    if result["encryption"]["state"] == "invalid-key":
+        result["recommendations"].append("Replace PEN_DATA_KEY with a Fernet key. The current value is not valid.")
     if result["encryption"]["state"] == "off":
         result["recommendations"].append(
             "Assessment files are plaintext. Set PEN_DATA_KEY to encrypt records this process writes."
+        )
+    if result["gates"]["shannon_full_pipeline"]:
+        result["recommendations"].append(
+            "PEN_ALLOW_SHANNON_FULL_PIPELINE is set. Strict readiness refuses that gate."
         )
     return result
 
@@ -113,6 +120,13 @@ def _retention_diagnostic() -> dict[str, Any]:
     except ValueError as exc:
         return {"enabled": False, "error": str(exc)}
     return {"enabled": days is not None, "days": days, "automatic": False}
+
+
+def _gate_diagnostic() -> dict[str, Any]:
+    from core.isolation.policy import load_isolation_policy
+
+    policy = load_isolation_policy()
+    return {"shannon_full_pipeline": policy.allow_shannon_full_pipeline}
 
 
 def _limit_diagnostic() -> dict[str, Any]:
@@ -129,8 +143,15 @@ def _limit_diagnostic() -> dict[str, Any]:
 def production_config_errors(data: dict[str, Any]) -> list[str]:
     """Controls that must be present when PEN_DOCTOR_STRICT=1."""
     errors: list[str] = []
-    if data.get("encryption", {}).get("state") == "required-missing":
+    state = (data.get("encryption") or {}).get("state")
+    if state == "required-missing":
         errors.append("encryption key missing")
+    elif state == "invalid-key":
+        errors.append("encryption key is invalid")
+    elif state != "enabled":
+        errors.append("encryption is off")
+    if (data.get("gates") or {}).get("shannon_full_pipeline"):
+        errors.append("Shannon full pipeline is enabled")
     if not data.get("paths", {}).get("scopes_exists"):
         errors.append("authorization registry missing")
     limits = data.get("limits") or {}

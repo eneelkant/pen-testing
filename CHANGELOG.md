@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0a16 — 2026-10-18
+
+### Security
+
+- The MCP entrypoint accepts stdio only. `sse` and `streamable-http` raise `PermissionError` before a listener starts. There is still no multi-user authentication
+- `PEN_DOCTOR_STRICT=1` now fails when assessment encryption is off, when `PEN_DATA_KEY` is not a Fernet key, or when `PEN_ALLOW_SHANNON_FULL_PIPELINE` is set. A required-but-missing key still fails
+- The Compose orchestrator sets `PEN_REQUIRE_DATA_ENCRYPTION=true`, `PEN_DOCTOR_STRICT=true`, and `PEN_DATA_KEY` from the host environment. The key is not stored in the image. `scripts/docker_runtime_verify.sh` expects doctor to fail without a key and then retries with an ephemeral key
+
+### Supply chain
+
+- Local Trivy 0.76.0 (vulnerability DB `UpdatedAt` 2026-10-17 18:34:28Z) reported fixed HIGH/CRITICAL findings in the pinned Shannon, Temporal, Gitleaks, and Trivy images. Digests were not moved. The CI image step scans those names and fails when fixed findings are present. Counts are in `docs/SECURITY_EXCEPTIONS.md`
+- `python:3.12-slim-bookworm` at `sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258` remains 0 fixed HIGH/CRITICAL and 63 unfixed HIGH/CRITICAL rows. Unfixed rows are not a waiver
+
+### Notes
+
+- Local CLI use can still leave encryption off. That path is not the supported deployment
+- Pattern redaction and upstream container logs are unchanged. Overwrite-before-delete is still not forensic erasure
+- Counsel review in `docs/LICENSING_REVIEW.md` is still pending. This release is not an independent audit
+- Not production-ready
+
 ## 0.2.0a15 — 2026-10-18
 
 ### Security

@@ -1,4 +1,4 @@
-"""MCP server entrypoint (stdio by default).
+"""MCP server entrypoint (stdio only).
 
 Exposes a constrained tool surface over the existing platform APIs.
 Does not provide arbitrary shell, filesystem, or network access.
@@ -103,6 +103,29 @@ def list_findings(assessment_id: str) -> dict[str, Any]:
 def export_report(assessment_id: str, outdir: str | None = None) -> dict[str, Any]:
     """Generate Markdown/JSON/SARIF drafts from validated assessment results."""
     return service.export_report(assessment_id, outdir=outdir)
+
+
+def assert_supported_transport(transport: str) -> None:
+    """Refuse every transport except local stdio.
+
+    SSE and streamable HTTP would publish privileged tools with no authentication.
+    """
+    if transport != "stdio":
+        raise PermissionError(
+            f"MCP transport {transport!r} is refused. This server speaks stdio only "
+            "and does not authenticate remote clients."
+        )
+
+
+def _run_stdio_only(transport: str = "stdio", **kwargs: Any) -> None:
+    assert_supported_transport(transport)
+    if kwargs:
+        raise PermissionError("Remote MCP listener options are refused")
+    _mcp_run(transport="stdio")
+
+
+_mcp_run = mcp.run
+mcp.run = _run_stdio_only  # type: ignore[method-assign]
 
 
 def main() -> None:

@@ -38,7 +38,13 @@ services:
       PEN_ALLOW_SCOPE_DISABLE: "false"
       PEN_ALLOW_SHANNON_LIVE: "false"
       PEN_ALLOW_SHANNON_UNCONTAINED_NET: "false"
+      PEN_ALLOW_SHANNON_FULL_PIPELINE: "false"
       PEN_ALLOW_BRIAR_LIVE: "false"
+      # Supported deployment fails closed. The key comes from the host environment
+      # and is not written into this file or the image. An empty key makes doctor exit 1.
+      PEN_REQUIRE_DATA_ENCRYPTION: "true"
+      PEN_DOCTOR_STRICT: "true"
+      PEN_DATA_KEY: ${PEN_DATA_KEY:-}
       PEN_ALLOW_BRIAR_HOST_NET: "false"
       PEN_BRIAR_EXEC: "compose"
       # Provider keys: pass through from host env / .env — never bake into image

@@ -66,6 +66,21 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT VERIFIED`.
 | `python -m core.supply_chain images --name trivy-scanner` | 1 | `FAIL`, blocking 1, `CVE-2026-77214` |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT VERIFIED` locally (Docker not installed). GitHub Actions run `39087905596` step succeeded and printed `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`, `ORCHESTRATOR_STRICT_DOCTOR_OK`, `PEN_SCANNER_ISOLATED_INTERNAL=true`, and `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
 
+## CI on `792634a`
+
+Push run `39089164102` (PR #23):
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker runtime verification | success. Log contains `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`, `ORCHESTRATOR_STRICT_DOCTOR_OK`, and `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
+| Pinned base image vulnerability scan | success. Artifact `image-scan-python` uploaded |
+| Pinned upstream image vulnerability scan | failure, exit 1, `blocking_count` 612. Artifact `image-scan-upstream` uploaded after the failure |
+
+The workflow conclusion is failure. That failure was not waived. Earlier run `39087905596` on `29e2d88` had the same runtime markers and the same upstream count.
+
 ## CI on `29e2d88`
 
 Push run `39087905596` and pull request run `39087918349` (PR #23):

@@ -146,6 +146,7 @@ def test_doctor_strict_fails_when_encryption_is_required(tmp_path: Path, monkeyp
 
 def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
     assert all("@sha256:" in item["ref"] for item in PINNED_IMAGES)
+    assert all("3.14-slim" not in item["ref"] for item in PINNED_IMAGES)
     document = {
         "Results": [
             {

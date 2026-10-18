@@ -15,7 +15,8 @@
 ### Supply chain
 
 - Direct dependency `cryptography==50.0.2` (with `cffi==2.1.1` and `pycparser==3.11`) for file encryption
-- Production and probe images used by this repository are digest-pinned. `python -m core.supply_chain images` runs Trivy 0.76.0 when `trivy` or Docker is available. Fixed HIGH and CRITICAL findings fail the command. Unfixed findings stay in the report and do not by themselves fail it. If neither tool is available the status is `NOT_VERIFIED`
+- Production and probe images used by this repository are digest-pinned. The orchestrator base is `python:3.12-slim-bookworm` at `sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258`. `python:3.14-slim-bookworm` at `sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83` is not used: Trivy 0.76.0 reported fixed highs `GHSA-6v7p-g79w-8964`, `CVE-2025-47273`, `CVE-2026-97687`, and `CVE-2026-97689`
+- `python -m core.supply_chain images` runs Trivy 0.76.0 when `trivy` or Docker is available. Fixed HIGH and CRITICAL findings fail the command. Unfixed findings stay in the report and do not by themselves fail it. If neither tool is available the status is `NOT_VERIFIED`
 
 ### Operations
 

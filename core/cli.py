@@ -57,7 +57,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--category", default="active")
     p_run.add_argument("--output")
     p_run.add_argument("--timeout", type=int)
-    p_run.add_argument("--dry-run", action="store_true")
+    p_run.add_argument("--dry-run", action="store_true", help="Explicit dry-run. This is also the default.")
+    p_run.add_argument(
+        "--live",
+        action="store_true",
+        help="Execute the tool. Without --live, run stays a dry-run.",
+    )
     p_run.add_argument("--demo", action="store_true", help="Briar built-in demo only")
     p_run.add_argument(
         "--skip-scope-check",
@@ -87,6 +92,20 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override PEN_ASSESSMENT_RETENTION_DAYS for this invocation",
     )
+
+    p_backup = sub.add_parser(
+        "backup",
+        help="Copy assessment and report files into an archive (dry-run unless --apply)",
+    )
+    p_backup.add_argument("--output", required=True, help="Directory to create the archive in")
+    p_backup.add_argument("--apply", action="store_true")
+
+    p_restore = sub.add_parser(
+        "restore",
+        help="Restore an archive into the assessment and report directories (requires --apply)",
+    )
+    p_restore.add_argument("--archive", required=True)
+    p_restore.add_argument("--apply", action="store_true")
 
     return parser
 
@@ -153,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
         adapters = _adapters(config, scope)
         adapter = adapters[args.tool]
+        if args.live and args.dry_run:
+            print("ERROR: --live and --dry-run cannot be combined", file=sys.stderr)
+            return 2
         request = AdapterRequest(
             target=args.target,
             repo_path=args.repo,
@@ -160,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
             test_category=args.category,
             output_dir=args.output,
             timeout_seconds=args.timeout,
-            dry_run=args.dry_run,
+            dry_run=not args.live,
             skip_scope_check=bool(args.skip_scope_check and _skip_scope_allowed()),
             extra={"demo": bool(args.demo)},
         )
@@ -168,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
             print("ERROR: --timeout must be between 1 and 86400 seconds", file=sys.stderr)
             return 2
         slot = False
-        if not args.dry_run:
+        if args.live:
             try:
                 acquire_scan_slot()
                 slot = True
@@ -246,6 +268,31 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(report, indent=2))
         return 0 if report["ok"] else 1
+
+    if args.command in {"backup", "restore"}:
+        from mcp_server.config import assessments_dir
+        from core.ops.backup import create_backup, restore_backup
+
+        try:
+            assessment_root = assessments_dir(config)
+            report_root = Path(config.reports_dir)
+            if args.command == "backup":
+                report = create_backup(
+                    [assessment_root, report_root],
+                    Path(args.output),
+                    apply=bool(args.apply),
+                )
+            else:
+                report = restore_backup(
+                    Path(args.archive),
+                    {"assessments": assessment_root, report_root.name: report_root},
+                    apply=bool(args.apply),
+                )
+        except (PermissionError, ValueError, OSError, json.JSONDecodeError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, indent=2))
+        return 0
 
     if args.command == "daily-report":
         try:

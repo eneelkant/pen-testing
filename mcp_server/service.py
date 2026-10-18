@@ -21,6 +21,7 @@ from core.findings.redaction import redact_secrets, redact_text
 from core.net import redact_url_userinfo
 from core.ops.retention import parse_retention_days
 from core.scope.rate_limit import acquire_scan_slot, release_scan_slot
+from core.ops.crypto import protect_text, reveal_text
 from core.paths import assert_no_symlink_in_chain, confine_path, is_under_roots, safe_read_text, safe_write_text
 from core.reporting import export_json, export_markdown, export_sarif
 from core.results import ExecutionResult
@@ -254,7 +255,7 @@ def _save_assessment(record: dict[str, Any]) -> Path:
     record = redact_secrets(dict(record))
     record["assessment_id"] = safe_id
     path = assessments_dir(cfg) / f"{safe_id}.json"
-    safe_write_text(path, json.dumps(record, indent=2))
+    safe_write_text(path, protect_text(json.dumps(record, indent=2)))
     return path
 
 
@@ -266,7 +267,7 @@ def _load_assessment(assessment_id: str) -> dict[str, Any] | None:
     if not path.is_symlink() and not path.exists():
         return None
     try:
-        raw = safe_read_text(path)
+        raw = reveal_text(safe_read_text(path))
     except PermissionError:
         raise
     except FileNotFoundError:

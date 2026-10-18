@@ -10,6 +10,7 @@ from pathlib import Path
 from core.paths import safe_write_text
 from core.supply_chain.audit import audit_dependencies
 from core.supply_chain.sbom import build_sbom, validate_sbom_document
+from core.supply_chain.images import PINNED_IMAGES, scan_pinned_images
 from core.supply_chain.vuln import scan_components
 
 
@@ -22,6 +23,9 @@ def main(argv: list[str] | None = None) -> int:
     emit.add_argument("--output", required=True)
     vuln = sub.add_parser("vuln", help="Query OSV for pinned Python components")
     vuln.add_argument("--output", help="Write the JSON report to this path")
+    images = sub.add_parser("images", help="Scan pinned container images with Trivy when available")
+    images.add_argument("--output", help="Write the JSON report to this path")
+    images.add_argument("--name", action="append", default=[], help="Scan only this pinned image name")
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
     if args.command == "audit":
@@ -40,6 +44,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "vuln":
         document = build_sbom(root)
         report = scan_components(document["components"])
+        text = json.dumps(report, indent=2)
+        if args.output:
+            safe_write_text(args.output, text + "\n")
+        print(text)
+        if report["status"] == "NOT_VERIFIED":
+            return 2
+        return 0 if report["ok"] else 1
+    if args.command == "images":
+        selected = PINNED_IMAGES
+        if args.name:
+            selected = tuple(item for item in PINNED_IMAGES if item["name"] in set(args.name))
+            if len(selected) != len(set(args.name)):
+                print(json.dumps({"ok": False, "error": "unknown image name", "names": args.name}))
+                return 2
+        report = scan_pinned_images(images=selected)
         text = json.dumps(report, indent=2)
         if args.output:
             safe_write_text(args.output, text + "\n")

@@ -1,6 +1,6 @@
 # Licensing review notes (Shannon / Briar AGPL)
 
-**Status:** Qualified counsel review is **pending**. This document is not legal clearance.
+**Status:** Qualified counsel review is **pending**. Image digest pins do not change that. This document is not legal clearance.
 **Date:** 2026-10-17
 **Packages:** `@keygraph/shannon@3.4.0` (AGPL-3.0-only), `briar-pentest==0.4.62` (AGPL-3.0)
 **Also in the runtime path:** Temporal server image used by the Shannon E2E, `keygraph/shannon` worker image, Briar Compose image, `aquasec/trivy`, `zricethezav/gitleaks`. Their licenses are not cleared by this file.

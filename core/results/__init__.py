@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from core.findings import Finding
+from core.findings.redaction import redact_secrets, redact_text
 
 
 @dataclass
@@ -22,4 +23,9 @@ class ExecutionResult:
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["findings"] = [f.to_dict() if hasattr(f, "to_dict") else f for f in self.findings]
+        if isinstance(data.get("error"), str):
+            data["error"] = redact_text(data["error"])
+        data["logs"] = [redact_text(item) if isinstance(item, str) else item for item in data.get("logs") or []]
+        data["artifacts"] = redact_secrets(data.get("artifacts") or {})
+        data["metadata"] = redact_secrets(data.get("metadata") or {})
         return data

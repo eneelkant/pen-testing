@@ -120,6 +120,28 @@ def test_decide_allows_allowlisted_public():
     assert reason == "ok"
 
 
+def test_evaluate_returns_the_approved_address_for_connect():
+    from core.isolation.destination_policy import evaluate_destination, evaluate_redirect_hops
+
+    allowed, reason, ips = evaluate_destination(
+        "staging.example.invalid",
+        443,
+        allow_hosts={"staging.example.invalid"},
+        allow_ports={80, 443},
+        resolver=_gai("8.8.8.8"),
+    )
+    assert allowed is True
+    assert reason == "ok"
+    assert ips == ["8.8.8.8"]
+    ok, hop_reason = evaluate_redirect_hops(
+        [("staging.example.invalid", 443), ("169.254.169.254", 80)],
+        allow_hosts={"staging.example.invalid", "169.254.169.254"},
+        allow_ports={80, 443},
+    )
+    assert ok is False
+    assert "redirect hop denied" in hop_reason
+
+
 def test_decide_denies_prohibited_literal():
     ok, reason = decide_proxy_destination(
         "169.254.169.254",

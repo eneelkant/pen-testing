@@ -38,7 +38,9 @@ Cleanup considers regular `.json`, `.md`, `.sarif`, and `.log` files under the a
 | Authorization registry | `PEN_SCOPES_FILE` (default `scopes/registry.yaml`) | Same OS user | Operator-managed | Operator-managed |
 | Scanner container logs | Docker/Shannon/Briar, outside this process | Host Docker user | Upstream/engine default | Not cleaned by this CLI |
 
-Files are plaintext on the local disk. Encryption at rest is not implemented. Backups are not implemented. Restoring or copying these directories is the operator's responsibility, and a copy is as sensitive as the original.
+When `PEN_DATA_KEY` is unset, files are plaintext. Set it to a Fernet key to encrypt assessment records and backup members that this process writes. `PEN_REQUIRE_DATA_ENCRYPTION=1` refuses plaintext reads and writes. The key is not printed by doctor. This is not disk encryption or a managed KMS. A copy of the key decrypts the files. Backups are `pen-testing backup --apply` into a directory you choose; restore requires `--apply` and stays inside the assessment and report directories.
+
+`pen-testing cleanup --apply` overwrites a regular file with zeros before unlink. That reduces leftover plaintext on some filesystems. It does not erase SSD wear-leveling, snapshots, or files that were already copied. Symlinks are still not deleted.
 
 ## Rate limits
 

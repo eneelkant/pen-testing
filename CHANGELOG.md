@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.0a15 — 2026-10-18
+
+### Security
+
+- `pen-testing run` is a dry-run unless `--live` is set. `--live` and `--dry-run` together are rejected
+- Live scans that skip the authorization registry still consume `PEN_SKIP_SCOPE_RATE_LIMIT_RPS` (default 1). Skipping scope does not disable egress checks
+- The egress gateway connects to the address approved in the same decision, so a later DNS change cannot retarget that connection. Proxied redirect hops are checked individually. Browsers that ignore the proxy are still bounded by Docker `Internal=true`, not by this proxy
+- Assessment records are encrypted with Fernet when `PEN_DATA_KEY` is set. `PEN_REQUIRE_DATA_ENCRYPTION=1` refuses plaintext. The key is not logged
+- Execution results redact logs, errors, artifact values, and metadata on `to_dict`
+- `pen-testing cleanup --apply` overwrites regular files before unlink. That is not a guarantee on SSDs or snapshots
+- `pen-testing backup` and `pen-testing restore` copy only regular artifact files, skip symlinks, and refuse manifest paths that escape the destination. Writes require `--apply`
+
+### Supply chain
+
+- Direct dependency `cryptography==50.0.2` (with `cffi==2.1.1` and `pycparser==3.11`) for file encryption
+- Production and probe images used by this repository are digest-pinned. The orchestrator base is `python:3.12-slim-bookworm` at `sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258`. `python:3.14-slim-bookworm` at `sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83` is not used: Trivy 0.76.0 reported fixed highs `GHSA-6v7p-g79w-8964`, `CVE-2025-47273`, `CVE-2026-97687`, and `CVE-2026-97689`
+- `python -m core.supply_chain images` runs Trivy 0.76.0 when `trivy` or Docker is available. Fixed HIGH and CRITICAL findings fail the command. Unfixed findings stay in the report and do not by themselves fail it. If neither tool is available the status is `NOT_VERIFIED`
+
+### Operations
+
+- `pen-testing doctor` reports encryption state and in-process limits without printing key material. `PEN_DOCTOR_STRICT=1` exits 1 when the authorization registry or a required encryption key is missing
+
+### Notes
+
+- Counsel review in `docs/LICENSING_REVIEW.md` is still pending
+- Not production-ready
+
 ## 0.2.0a14 — 2026-10-17
 
 ### Security

@@ -107,6 +107,56 @@ def resolve_addresses(
     return ips
 
 
+def evaluate_destination(
+    host: str,
+    port: int,
+    *,
+    allow_hosts: set[str] | None = None,
+    allow_ports: set[int] | None = None,
+    resolver: ResolveFn | None = None,
+) -> tuple[bool, str, list[str]]:
+    """Decide a proxied connection and return the addresses that were approved.
+
+    Callers must connect to one of the returned addresses. Resolving the name
+    again at connect time would reopen a DNS-rebinding window.
+    """
+    host = (host or "").strip().lower().rstrip(".")
+    if not host:
+        return False, "missing host", []
+
+    ports = allow_ports if allow_ports is not None else load_allow_ports_from_env()
+    if port not in ports:
+        return False, f"port {port} not in PEN_PROXY_ALLOW_PORTS ({sorted(ports)})", []
+
+    hosts = allow_hosts if allow_hosts is not None else load_allow_hosts_from_env()
+    if not hosts:
+        return False, "PEN_PROXY_ALLOW_HOSTS is empty (deny by default)", []
+    if host not in hosts:
+        return False, f"host {host!r} not in PEN_PROXY_ALLOW_HOSTS", []
+
+    try:
+        literal = ipaddress.ip_address(host.removeprefix("[").removesuffix("]"))
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if is_prohibited_resolved_ip(literal):
+            return False, f"literal address prohibited: {literal}", []
+        return True, "ok", [str(literal)]
+
+    try:
+        ips = resolve_addresses(host, port, resolver=resolver)
+    except socket.gaierror as exc:
+        return False, f"DNS failed: {exc}", []
+    if not ips:
+        return False, "DNS returned no addresses", []
+
+    for ip_s in ips:
+        ip = ipaddress.ip_address(ip_s)
+        if is_prohibited_resolved_ip(ip):
+            return False, f"resolved to non-public {ip}", []
+    return True, "ok", ips
+
+
 def decide_proxy_destination(
     host: str,
     port: int,
@@ -120,39 +170,38 @@ def decide_proxy_destination(
     Returns ``(allowed, reason)``. Fail closed on missing/empty allowlist,
     disallowed ports, DNS failure, or any prohibited resolved address.
     """
-    host = (host or "").strip().lower().rstrip(".")
-    if not host:
-        return False, "missing host"
+    allowed, reason, _ips = evaluate_destination(
+        host,
+        port,
+        allow_hosts=allow_hosts,
+        allow_ports=allow_ports,
+        resolver=resolver,
+    )
+    return allowed, reason
 
-    ports = allow_ports if allow_ports is not None else load_allow_ports_from_env()
-    if port not in ports:
-        return False, f"port {port} not in PEN_PROXY_ALLOW_PORTS ({sorted(ports)})"
 
-    hosts = allow_hosts if allow_hosts is not None else load_allow_hosts_from_env()
-    if not hosts:
-        return False, "PEN_PROXY_ALLOW_HOSTS is empty (deny by default)"
-    if host not in hosts:
-        return False, f"host {host!r} not in PEN_PROXY_ALLOW_HOSTS"
+def evaluate_redirect_hops(
+    hops: list[tuple[str, int]],
+    *,
+    allow_hosts: set[str] | None = None,
+    allow_ports: set[int] | None = None,
+    resolver: ResolveFn | None = None,
+) -> tuple[bool, str]:
+    """Require every hop of a proxied redirect chain to pass destination policy.
 
-    # Literal IPs in the Host header: still evaluate prohibition.
-    try:
-        literal = ipaddress.ip_address(host.removeprefix("[").removesuffix("]"))
-    except ValueError:
-        literal = None
-    if literal is not None:
-        if is_prohibited_resolved_ip(literal):
-            return False, f"literal address prohibited: {literal}"
-        return True, "ok"
-
-    try:
-        ips = resolve_addresses(host, port, resolver=resolver)
-    except socket.gaierror as exc:
-        return False, f"DNS failed: {exc}"
-    if not ips:
-        return False, "DNS returned no addresses"
-
-    for ip_s in ips:
-        ip = ipaddress.ip_address(ip_s)
-        if is_prohibited_resolved_ip(ip):
-            return False, f"resolved to non-public {ip}"
+    This covers clients that honor the proxy and request each Location through it.
+    A browser that ignores proxy settings is not intercepted here.
+    """
+    if not hops:
+        return False, "redirect chain is empty"
+    for host, port in hops:
+        allowed, reason, _ips = evaluate_destination(
+            host,
+            port,
+            allow_hosts=allow_hosts,
+            allow_ports=allow_ports,
+            resolver=resolver,
+        )
+        if not allowed:
+            return False, f"redirect hop denied: {reason}"
     return True, "ok"

@@ -23,7 +23,7 @@ NET_NAME="${PEN_SHANNON_NET_NAME:-shannon-net}"
 FIXTURE_NAME="${PEN_SHANNON_FIXTURE_NAME:-pen-shannon-fixture}"
 LLM_NAME="${PEN_SHANNON_LLM_MOCK_NAME:-pen-shannon-llm-mock}"
 REDIR_NAME="${PEN_SHANNON_REDIRECT_NAME:-pen-shannon-redirect}"
-SHANNON_IMAGE="${PEN_SHANNON_WORKER_IMAGE:-keygraph/shannon:3.4.0}"
+SHANNON_IMAGE="${PEN_SHANNON_WORKER_IMAGE:-keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e}"
 SHANNON_PKG="${PEN_SHANNON_PACKAGE:-@keygraph/shannon@3.4.0}"
 E2E_TIMEOUT="${PEN_SHANNON_E2E_TIMEOUT:-420}"
 
@@ -88,17 +88,17 @@ docker rm -f "$FIXTURE_NAME" "$LLM_NAME" "$REDIR_NAME" >/dev/null 2>&1 || true
 docker run -d --name "$FIXTURE_NAME" --network "$NET_NAME" --network-alias fixture-shannon \
   -v "$ROOT/tests/fixtures/headers_server.py:/app/headers_server.py:ro" \
   --read-only --tmpfs /tmp \
-  python:3.12-slim-bookworm \
+  python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python /app/headers_server.py 8080 >/dev/null
 docker run -d --name "$REDIR_NAME" --network "$NET_NAME" --network-alias shannon-redirect \
   -v "$ROOT/tests/fixtures/redirect_server.py:/app/redirect_server.py:ro" \
   --read-only --tmpfs /tmp \
-  python:3.12-slim-bookworm \
+  python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python /app/redirect_server.py 8081 >/dev/null
 docker run -d --name "$LLM_NAME" --network "$NET_NAME" --network-alias shannon-llm-mock \
   -v "$ROOT/tests/fixtures/llm_mock_server.py:/app/llm_mock_server.py:ro" \
   --read-only --tmpfs /tmp \
-  python:3.12-slim-bookworm \
+  python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python /app/llm_mock_server.py 8080 >/dev/null
 
 ready=0
@@ -119,14 +119,14 @@ TARGET_URL="http://${FIXTURE_IP}:8080/"
 echo "SHANNON_E2E_FIXTURE_TARGET $TARGET_URL"
 
 log "== prove fixture reachable / prohibited unreachable from shannon-net (pre-assessment) =="
-docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
+docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c "import socket;s=socket.create_connection(('$FIXTURE_IP',8080),5);s.close();print('SHANNON_E2E_FIXTURE_REACHABLE')"
-docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
+docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c "import socket;s=socket.create_connection(('shannon-llm-mock',8080),5);s.close();print('SHANNON_E2E_LLM_MOCK_REACHABLE')"
 set +e
 PROHIBITED="$(docker run --rm --network "$NET_NAME" \
   -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
-  python:3.12-slim-bookworm \
+  python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c 'import os,socket,sys
 for k in list(os.environ):
   if "proxy" in k.lower(): del os.environ[k]
@@ -144,7 +144,7 @@ echo "$PROHIBITED" | grep -q SHANNON_E2E_PROHIBITED_BLOCKED || die "missing SHAN
 
 log "== prove redirect-to-prohibited cannot complete from shannon-net =="
 set +e
-REDIR_PROBE="$(docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
+REDIR_PROBE="$(docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c '
 import http.client, socket, sys
 conn = http.client.HTTPConnection("shannon-redirect", 8081, timeout=5)
@@ -170,7 +170,7 @@ echo "$REDIR_PROBE" | grep -q SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED || die "missin
 
 log "== prove DNS to external name fails closed on internal net =="
 set +e
-DNS_PROBE="$(docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
+DNS_PROBE="$(docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c '
 import socket,sys
 try:
@@ -396,7 +396,7 @@ test "$RESTART_RC" -ne 0 || die "restart probe unexpectedly succeeded"
 echo "$RESTART_PROBE" | grep -q SHANNON_E2E_RESTART_PROHIBITED_BLOCKED || die "missing SHANNON_E2E_RESTART_PROHIBITED_BLOCKED"
 
 # Fixture still reachable after assessment activity.
-docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
+docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c "import socket;s=socket.create_connection(('$FIXTURE_IP',8080),5);s.close();print('SHANNON_E2E_FIXTURE_STILL_REACHABLE')"
 
 if [[ "$ADAPTER_RC" -ne 0 ]]; then

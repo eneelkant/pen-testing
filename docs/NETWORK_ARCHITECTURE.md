@@ -43,7 +43,7 @@ Workers must **never** attach to control, host-gRPC, or egress legs.
 | Proxied destinations limited to allowlist + public resolve + ports | **Demonstrated** (unit + runtime) |
 | Redirect/DNS rebinding to non-public via proxy refused | **Demonstrated** (resolve-time) |
 | Transparent interception of browsers ignoring proxy | **Not claimed** — Internal net is the fallback block |
-| In-engine Shannon/Briar browser DNS, redirect, or proxy-bypass containment | **Not claimed.** `0.2.0a16` re-checked the gateway and the runtime probes (`BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED`, `SHANNON_E2E_DNS_OR_CONNECT_BLOCKED`, `SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED`). Those probes show direct sockets failing on `Internal=true` networks. They do not show the gateway reading traffic from a client that never connects to it |
+| In-engine Shannon/Briar browser DNS, redirect, or proxy-bypass containment | **BLOCKED.** `0.2.0a16` re-checked the gateway and the runtime probes (`BRIAR_LIVE_NOPROXY_DIRECT_BLOCKED`, `SHANNON_E2E_DNS_OR_CONNECT_BLOCKED`, `SHANNON_E2E_REDIRECT_FOLLOW_BLOCKED`). Those probes show direct sockets failing on `Internal=true` networks. They do not show the gateway reading traffic from a client that never connects to it. Containing that client requires a change inside the Shannon or Briar image, which this repository does not build |
 | Destination auth for every possible protocol/port beyond gateway | **Not claimed** |
 | Multi-tenant network isolation | **N/A** — no tenant plane |
 

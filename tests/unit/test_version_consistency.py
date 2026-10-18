@@ -16,12 +16,13 @@ def test_package_mcp_and_changelog_versions_match():
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert project["project"]["version"] == "0.2.0a16"
-    assert __version__ == "0.2.0a16"
+    assert project["project"]["version"] == "0.2.0a17"
+    assert __version__ == "0.2.0a17"
     assert mcp_package_version == __version__
     assert mcp._lowlevel_server.version == __version__
     assert (
-        changelog.index("## 0.2.0a16")
+        changelog.index("## 0.2.0a17")
+        < changelog.index("## 0.2.0a16")
         < changelog.index("## 0.2.0a15")
         < changelog.index("## 0.2.0a14")
         < changelog.index("## 0.2.0a13")

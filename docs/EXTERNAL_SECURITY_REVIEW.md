@@ -44,7 +44,7 @@ Question: Which pinned images and Python packages have fixed HIGH or CRITICAL fi
 
 Read: `core/supply_chain/images.py`, `core/supply_chain/vuln.py`, `.github/workflows/ci.yml`, `docs/SECURITY_EXCEPTIONS.md`, `docs/LICENSING_REVIEW.md`.
 
-Pass looks like: the reviewer can reproduce the Trivy and OSV results, fixed findings fail the image command, and the exception register matches the tool output. A fail is an ignore file, a removed image name, or a pin bump that was not run through the Shannon `--validate-model` path and the unit suite. License questions stay with counsel; this review does not clear AGPL obligations.
+Pass looks like: the reviewer can reproduce the Trivy and OSV results, fixed findings fail the image command, and the exception register matches the tool output. A fail is an ignore file, a removed image name, or a pin bump that was not run through the Shannon `--validate-model` path and the unit suite. On 2026-10-18 the maintained candidates for Gitleaks, Temporal, and Trivy still had fixed HIGH or CRITICAL findings, and Shannon had no release after `3.4.0`. Those pins were left in place. License questions stay with counsel; this review does not clear AGPL obligations. This paragraph is a request for that review, not a record that it happened.
 
 ## Reporting
 

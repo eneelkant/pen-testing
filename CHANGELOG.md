@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0a17 — 2026-10-18
+
+### Supply chain
+
+- Re-scanned the pinned Shannon, Temporal, Gitleaks, and Trivy digests with Trivy 0.76.0. The vulnerability database `UpdatedAt` was still 2026-10-17 18:34:28Z. Counts matched the previous scan. Digests were not changed
+- Candidate tags were scanned and rejected: Gitleaks `v8.30.1` had 60 fixed HIGH/CRITICAL findings, Temporal `1.7.3` had 25, and Temporal `1.9.1` had 7. npm `@keygraph/shannon` latest remains `3.4.0`. Trivy `0.76.0` is still the newest stable tag and still reports `CVE-2026-77214`. None of those candidates passed the fixed-finding gate, so no pin moved
+- An empty Trivy document is `NOT_VERIFIED` rather than a clean scan. Unscored image findings are blocking. A vendor status of `not_affected` is not a waiver. Withdrawn records are ignored
+- CI uploads `image-scan-python.json` and `image-scan-upstream.json` so a failing scan can be reviewed without scraping the log
+
+### Notes
+
+- Counsel review is still pending. This release is not an independent audit
+- Not production-ready
+
 ## 0.2.0a16 — 2026-10-18
 
 ### Security

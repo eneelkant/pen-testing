@@ -12,7 +12,7 @@ Integrates verified upstream engines out-of-process:
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 
-**Version:** `0.2.0a16` (alpha — **controlled testing**, not production-ready). See [`docs/READINESS_SCORECARD.md`](docs/READINESS_SCORECARD.md).
+**Version:** `0.2.0a17` (alpha — **controlled testing**, not production-ready). See [`docs/READINESS_SCORECARD.md`](docs/READINESS_SCORECARD.md).
 
 Docker: GitHub Actions verifies Compose build/runtime on `ubuntu-latest`, including a controlled Shannon Temporal + real-worker `--validate-model` E2E against a **local** LLM mock (no public targets). Scanner worker nets are Docker **`Internal=true`** (security boundary); `HTTP_PROXY` is convenience only. See [`docs/SCANNER_ISOLATION.md`](docs/SCANNER_ISOLATION.md) and [`docs/LICENSING_REVIEW.md`](docs/LICENSING_REVIEW.md).
 

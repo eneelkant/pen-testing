@@ -62,6 +62,28 @@ pen-testing cleanup --apply
 
 Roll back by checking out the previous git SHA and recreating containers from that revision. There is no in-application migration. Assessment files encrypted with the current `PEN_DATA_KEY` still need that key after a code rollback. Image digest pins live in `core/supply_chain/images.py`; do not move them to a newer tag without a compatibility run.
 
+## Key rotation
+
+There is no rotate command. To move assessment files to a new key:
+
+1. Keep the current `PEN_DATA_KEY`.
+2. `pen-testing restore --archive <old-backup> --apply` into an empty work directory, or copy the existing files while that key is set.
+3. Generate a new Fernet key and export it as `PEN_DATA_KEY`.
+4. `pen-testing backup --output <new-backup> --apply`.
+5. Store the new key outside the repository and outside the backup directory. Files written earlier stay readable only with the old key.
+
+A wrong key makes `restore --apply` raise an error and write nothing. Confirm that on a copy before deleting the old archive.
+
+## Operator checklist
+
+- [ ] `PEN_DATA_KEY` is set in the host environment for Compose and is absent from git, images, and doctor output
+- [ ] `PEN_DOCTOR_STRICT=1` exits 0 with that key, the authorization file present, and `PEN_ALLOW_SHANNON_FULL_PIPELINE` unset
+- [ ] `pen-testing backup --apply` has been run and a restore with the same key was checked on a copy
+- [ ] A restore with a different key was checked to fail
+- [ ] The archive and the key are stored apart from each other
+- [ ] Image digests in `core/supply_chain/images.py` match `docs/SECURITY_EXCEPTIONS.md`
+- [ ] Rollback is the previous git SHA, with the same `PEN_DATA_KEY` the files were written under
+
 ## What remains manual
 
 - Custody of `PEN_DATA_KEY` and of backup directories

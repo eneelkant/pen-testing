@@ -110,6 +110,72 @@ def test_compose_supported_deployment_requires_encryption():
     assert "BEGIN OPENSSH" not in rendered
 
 
+def test_restore_with_wrong_key_does_not_write_plaintext(tmp_path: Path, monkeypatch):
+    from core.ops.backup import create_backup, restore_backup
+
+    monkeypatch.setenv("PEN_DATA_KEY", _key())
+    source = tmp_path / "assessments"
+    source.mkdir()
+    (source / "note.json").write_text('{"ok": true}\n', encoding="utf-8")
+    archive = tmp_path / "archive"
+    create_backup([source], archive, apply=True)
+    monkeypatch.setenv("PEN_DATA_KEY", _key())
+    dest = tmp_path / "restored"
+    dest.mkdir()
+    with pytest.raises(PermissionError, match="could not be opened"):
+        restore_backup(archive, {"assessments": dest}, apply=True)
+    assert not (dest / "note.json").exists()
+
+
+def test_image_report_fails_closed_on_missing_and_unscored_data():
+    from core.supply_chain.images import classify_trivy_document
+
+    empty = classify_trivy_document({}, image="example@sha256:abc")
+    assert empty["status"] == "NOT_VERIFIED"
+    assert empty["ok"] is False
+    unscored = classify_trivy_document(
+        {
+            "SchemaVersion": 2,
+            "Results": [
+                {
+                    "Vulnerabilities": [
+                        {
+                            "VulnerabilityID": "CVE-2026-9",
+                            "PkgName": "example",
+                            "InstalledVersion": "1",
+                            "FixedVersion": "2",
+                            "Severity": "UNKNOWN",
+                            "Status": "not_affected",
+                        },
+                        {
+                            "VulnerabilityID": "CVE-2026-8",
+                            "PkgName": "old",
+                            "InstalledVersion": "1",
+                            "FixedVersion": "",
+                            "Severity": "LOW",
+                            "withdrawn": "2026-01-01T00:00:00Z",
+                        },
+                    ]
+                }
+            ],
+        },
+        image="example@sha256:abc",
+    )
+    assert unscored["status"] == "FAIL"
+    assert unscored["unscored_count"] == 1
+    assert unscored["withdrawn_count"] == 1
+    assert unscored["findings"][0]["blocking"] is True
+    assert unscored["findings"][1]["blocking"] is False
+
+
+def test_image_scan_rejects_unknown_name(capsys):
+    from core.supply_chain.__main__ import main
+
+    code = main(["images", "--name", "not-a-pinned-image"])
+    assert code == 2
+    assert "unknown image name" in capsys.readouterr().out
+
+
 def test_runtime_script_fails_closed_without_encryption_key():
     text = (ROOT / "scripts/docker_runtime_verify.sh").read_text(encoding="utf-8")
     assert "ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED" in text

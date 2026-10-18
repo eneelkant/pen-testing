@@ -2,7 +2,7 @@
 
 Review date: **2026-10-18**
 Parent of this change: `origin/main` `312d8586cb9c917f218861960ee882c1928e890a` (merge of PR #22, package `0.2.0a15`).
-This document describes `0.2.0a16`. Local commands were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine is not installed in the environment that produced the local numbers, so Compose runtime markers are `NOT VERIFIED` locally.
+This document describes `0.2.0a17`. Local commands were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine is not installed in the environment that produced the local numbers, so Compose runtime markers are `NOT VERIFIED` locally. `0.2.0a16` CI on `29e2d88` remains the last completed Docker evidence until this commit's workflow finishes.
 
 **Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images have fixed HIGH/CRITICAL findings and their digests were not changed.
 
@@ -40,9 +40,9 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT VERIFIED`.
 
 - Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Re-run them on this tree and record the exit codes in the PR.
 - `python:3.12-slim-bookworm` digest above: Trivy `PASS` for fixed HIGH/CRITICAL, 63 unfixed rows, 16 CVE ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver.
-- Shannon, Temporal, Gitleaks, and Trivy images: local Trivy `FAIL` (523, 49, 39, and 1 fixed HIGH/CRITICAL rows). Digests were not moved. No ignore file was added. The CI step `Pinned upstream image vulnerability scan` runs those four names and fails the job while the findings remain.
+- Shannon, Temporal, Gitleaks, and Trivy images: local Trivy `FAIL` (523, 49, 39, and 1 fixed HIGH/CRITICAL rows). `0.2.0a17` re-scanned those digests and the maintained candidates. Gitleaks `v8.30.1` was 60, Temporal `1.7.3` was 25, Temporal `1.9.1` was 7, and Trivy has no newer stable tag. Shannon npm `latest` is still `3.4.0`. No digest moved. No ignore file was added. The CI step `Pinned upstream image vulnerability scan` still fails the job. Artifacts `image-scan-python` and `image-scan-upstream` hold the classified report.
 - Counsel review is pending.
-- Next action: replace an upstream digest only after the Shannon `--validate-model` path and the unit suite run against that digest. Do not add a Trivy ignore to turn CI green.
+- Next action: wait for an upstream image with zero fixed HIGH/CRITICAL findings, then run the Shannon `--validate-model` path and the unit suite before changing a pin. Do not add a Trivy ignore to turn CI green.
 
 ### 6. Operational reliability — PARTIAL
 
@@ -54,13 +54,14 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT VERIFIED`.
 
 | Command | Exit | Result |
 |---|---|---|
-| `python -m pytest -q` on `312d858` before edits | 0 | 198 passed, 1 skipped |
-| `python -m pytest -q` after edits | 0 | 206 passed, 1 skipped (`tests/integration/test_smoke_markers.py`: Docker not installed) |
+| `python -m pytest -q` on `312d858` before the `0.2.0a16` edits | 0 | 198 passed, 1 skipped |
+| `python -m pytest -q` on `0.2.0a16` (`29e2d88`) | 0 | 206 passed, 1 skipped. Historical. |
+| `python -m pytest -q` on this `0.2.0a17` tree | 0 | 209 passed, 1 skipped (`tests/integration/test_smoke_markers.py`: Docker not installed) |
 | `python -m compileall core integrations providers mcp_server installers` | 0 | compiled |
 | gitleaks 8.21.2 `detect --source . --no-git` | 0 | no leaks |
 | `python -m core.supply_chain audit` | 0 | 24 components |
 | `python -m core.supply_chain emit` | 0 | CycloneDX 1.5, 24 components, no `vulnerabilities` array, structural validation empty |
-| `python -m core.supply_chain vuln` | 0 | `PASS`, `blocking_count` 0, `generated_at` `2026-10-18T01:48:52.160600+00:00`, database `https://api.osv.dev/v1/querybatch` |
+| `python -m core.supply_chain vuln` | 0 | `PASS`, `blocking_count` 0, `generated_at` `2026-10-18T02:10:04.383284+00:00`, database `https://api.osv.dev/v1/querybatch`. The SBOM has no `vulnerabilities` array and is not this result |
 | `python -m core.supply_chain images --name python-3.12-probe` | 0 | `PASS`, blocking 0, unfixed 63 |
 | `python -m core.supply_chain images --name trivy-scanner` | 1 | `FAIL`, blocking 1, `CVE-2026-77214` |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT VERIFIED` locally (Docker not installed). GitHub Actions run `39087905596` step succeeded and printed `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`, `ORCHESTRATOR_STRICT_DOCTOR_OK`, `PEN_SCANNER_ISOLATED_INTERNAL=true`, and `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |

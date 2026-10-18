@@ -173,6 +173,8 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
     assert report["status"] == "FAIL"
     assert report["blocking_count"] == 1
     assert report["unfixed_count"] == 1
+    assert report["findings"][0]["class"] == "fixed"
+    assert report["findings"][1]["class"] == "unfixed"
 
     class _Completed:
         returncode = 0
@@ -183,7 +185,19 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
         runner=lambda args, timeout=600: _Completed(),
         images=({"name": "one", "ref": PINNED_IMAGES[0]["ref"]},),
     )
-    assert scanned["status"] == "PASS"
+    assert scanned["status"] == "NOT_VERIFIED"
+
+    class _Clean:
+        returncode = 0
+        stdout = json.dumps({"SchemaVersion": 2, "ArtifactName": "example", "Results": []})
+        stderr = ""
+
+    clean = scan_pinned_images(
+        runner=lambda args, timeout=600: _Clean(),
+        images=({"name": "one", "ref": PINNED_IMAGES[0]["ref"]},),
+    )
+    assert clean["status"] == "PASS"
+    assert clean["blocking_count"] == 0
     monkeypatch.setattr("core.supply_chain.images.shutil.which", lambda _name: None)
     missing = scan_pinned_images()
     assert missing["status"] == "NOT_VERIFIED"

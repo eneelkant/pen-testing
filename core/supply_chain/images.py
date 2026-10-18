@@ -42,7 +42,28 @@ TRIVY_IMAGE = PINNED_IMAGES[-1]["ref"]
 _BLOCKING = {"HIGH", "CRITICAL"}
 
 
+def _complete_trivy_document(document: dict[str, Any]) -> bool:
+    """A usable Trivy report identifies the artifact or lists results.
+
+    ``{}`` is not a clean scan. Trivy emits ``SchemaVersion`` or ``Results``
+    even when the image has no vulnerabilities.
+    """
+    return any(key in document for key in ("Results", "SchemaVersion", "ArtifactName"))
+
+
 def classify_trivy_document(document: dict[str, Any], *, image: str) -> dict[str, Any]:
+    if not isinstance(document, dict) or not _complete_trivy_document(document):
+        return {
+            "ok": False,
+            "status": "NOT_VERIFIED",
+            "image": image,
+            "findings": [],
+            "blocking_count": 0,
+            "unfixed_count": 0,
+            "unscored_count": 0,
+            "error": "trivy report did not include a vulnerability result",
+            "note": "An empty document is not a clean scan.",
+        }
     findings: list[dict[str, Any]] = []
     for result in document.get("Results") or []:
         if not isinstance(result, dict):
@@ -52,26 +73,54 @@ def classify_trivy_document(document: dict[str, Any], *, image: str) -> dict[str
                 continue
             severity = str(vuln.get("Severity") or "UNKNOWN").upper()
             fixed = str(vuln.get("FixedVersion") or "")
+            withdrawn = bool(vuln.get("withdrawn"))
+            known = _BLOCKING | {"LOW", "MODERATE", "MEDIUM"}
+            if withdrawn:
+                kind = "withdrawn"
+                blocking = False
+            elif severity not in known:
+                kind = "unscored"
+                blocking = True
+            elif severity in _BLOCKING and bool(fixed):
+                kind = "fixed"
+                blocking = True
+            elif not fixed:
+                kind = "unfixed"
+                blocking = False
+            else:
+                kind = "fixed"
+                blocking = False
             findings.append(
                 {
                     "id": vuln.get("VulnerabilityID"),
                     "package": vuln.get("PkgName"),
                     "installed": vuln.get("InstalledVersion"),
                     "fixed": fixed,
-                    "severity": severity,
-                    "blocking": severity in _BLOCKING and bool(fixed),
+                    "severity": "withdrawn" if withdrawn else severity,
+                    "class": kind,
+                    "blocking": blocking,
                     "image": image,
                 }
             )
     blocking = [item for item in findings if item["blocking"]]
+    trivy_meta = document.get("Trivy") if isinstance(document.get("Trivy"), dict) else {}
     return {
         "ok": not blocking,
         "status": "FAIL" if blocking else "PASS",
         "image": image,
+        "artifact": document.get("ArtifactName") or image,
+        "created_at": document.get("CreatedAt") or "",
+        "scanner_version": str(trivy_meta.get("Version") or ""),
         "findings": findings,
         "blocking_count": len(blocking),
-        "unfixed_count": sum(1 for item in findings if not item["fixed"]),
-        "note": "Unfixed findings are visible and are not blocking. They are not a waiver.",
+        "unfixed_count": sum(1 for item in findings if item["class"] == "unfixed"),
+        "unscored_count": sum(1 for item in findings if item["class"] == "unscored"),
+        "withdrawn_count": sum(1 for item in findings if item["class"] == "withdrawn"),
+        "note": (
+            "Fixed HIGH and CRITICAL findings are blocking. Unscored findings are blocking. "
+            "Unfixed findings stay visible and are not a waiver. "
+            "A vendor status such as not_affected is not applied as a waiver."
+        ),
     }
 
 

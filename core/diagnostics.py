@@ -10,7 +10,9 @@ from typing import Any
 
 from core.config import PlatformConfig
 from core.execution import CommandRunner
+from core.ops.crypto import encryption_status
 from core.ops.retention import parse_retention_days
+from core.scope.rate_limit import max_inflight_scans, skip_scope_rate_limit_rps
 from integrations.briar import BriarAdapter
 from integrations.shannon import ShannonAdapter
 from providers import list_provider_status
@@ -68,6 +70,8 @@ def collect_diagnostics(config: PlatformConfig) -> dict[str, Any]:
         },
         "recommendations": [],
         "retention": _retention_diagnostic(),
+        "encryption": encryption_status(),
+        "limits": _limit_diagnostic(),
     }
     if not docker:
         result["recommendations"].append(
@@ -89,6 +93,14 @@ def collect_diagnostics(config: PlatformConfig) -> dict[str, Any]:
         result["recommendations"].append(
             f"Create an authorization registry at {config.scopes_file} before active scans."
         )
+    if result["encryption"]["state"] == "required-missing":
+        result["recommendations"].append(
+            "Set PEN_DATA_KEY to a Fernet key, or unset PEN_REQUIRE_DATA_ENCRYPTION."
+        )
+    if result["encryption"]["state"] == "off":
+        result["recommendations"].append(
+            "Assessment files are plaintext. Set PEN_DATA_KEY to encrypt records this process writes."
+        )
     return result
 
 
@@ -103,9 +115,39 @@ def _retention_diagnostic() -> dict[str, Any]:
     return {"enabled": days is not None, "days": days, "automatic": False}
 
 
+def _limit_diagnostic() -> dict[str, Any]:
+    try:
+        return {
+            "max_inflight_scans": max_inflight_scans(),
+            "skip_scope_rate_limit_rps": skip_scope_rate_limit_rps(),
+            "process_local": True,
+        }
+    except PermissionError as exc:
+        return {"error": str(exc), "process_local": True}
+
+
+def production_config_errors(data: dict[str, Any]) -> list[str]:
+    """Controls that must be present when PEN_DOCTOR_STRICT=1."""
+    errors: list[str] = []
+    if data.get("encryption", {}).get("state") == "required-missing":
+        errors.append("encryption key missing")
+    if not data.get("paths", {}).get("scopes_exists"):
+        errors.append("authorization registry missing")
+    limits = data.get("limits") or {}
+    if limits.get("error"):
+        errors.append(str(limits["error"]))
+    return errors
+
+
 def run_doctor(config: PlatformConfig) -> int:
+    import os
+
     data = collect_diagnostics(config)
+    strict = os.environ.get("PEN_DOCTOR_STRICT", "").strip().lower() in {"1", "true", "yes"}
+    problems = production_config_errors(data) if strict else []
+    data["strict"] = strict
+    data["strict_errors"] = problems
     print(json.dumps(data, indent=2))
-    # Non-zero if critical orchestration tools missing for active Shannon use
-    # Doctor itself should succeed as an informational command.
+    if problems:
+        return 1
     return 0

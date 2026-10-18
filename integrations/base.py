@@ -10,7 +10,7 @@ from core.config import PlatformConfig
 from core.isolation import assert_live_destination_allowed, load_isolation_policy
 from core.results import ExecutionResult
 from core.scope import ScopeEngine
-from core.scope.rate_limit import enforce_rate_limit
+from core.scope.rate_limit import enforce_rate_limit, enforce_unscoped_rate_limit
 
 
 @dataclass
@@ -54,6 +54,10 @@ class SecurityAdapter(ABC):
             return
         if request.skip_scope_check:
             # Callers must gate this flag (CLI requires PEN_ALLOW_SKIP_SCOPE=1).
+            # Egress checks stay in egress_preflight. This limit is the rate control
+            # that still applies when the registry is skipped.
+            if not request.dry_run:
+                enforce_unscoped_rate_limit()
             return
         isolation = load_isolation_policy()
         if not self.config.require_scope_for_active:

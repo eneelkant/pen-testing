@@ -17,6 +17,32 @@ _ARTIFACT_SUFFIXES = {".json", ".md", ".sarif", ".log"}
 _DISABLED = {"off", "disabled", "none"}
 
 
+def _secure_unlink(path: Path) -> None:
+    """Overwrite a regular file, then unlink it.
+
+    ``O_NOFOLLOW`` refuses a final-component symlink. Overwrite reduces leftover
+    plaintext on some filesystems. It is not a guarantee on SSDs, snapshots, or
+    copies that already left this directory.
+    """
+    flags = os.O_WRONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(str(path), flags)
+    try:
+        size = os.fstat(fd).st_size
+        remaining = size
+        chunk = b"\0" * 65536
+        while remaining > 0:
+            written = os.write(fd, chunk[: min(len(chunk), remaining)])
+            if written <= 0:
+                raise OSError(f"short write while erasing {path}")
+            remaining -= written
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    path.unlink()
+
+
 def parse_retention_days(raw: str | None) -> int | None:
     """Return a day count, or None when retention cleanup is disabled.
 
@@ -113,12 +139,7 @@ def cleanup_expired_files(
                 if not apply:
                     continue
                 try:
-                    flags = os.O_RDONLY
-                    if hasattr(os, "O_NOFOLLOW"):
-                        flags |= os.O_NOFOLLOW
-                    fd = os.open(str(full), flags)
-                    os.close(fd)
-                    full.unlink()
+                    _secure_unlink(full)
                     deleted.append(str(full))
                 except OSError as exc:
                     errors.append(f"{full}: {exc}")

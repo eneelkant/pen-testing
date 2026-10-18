@@ -23,13 +23,13 @@ from urllib.parse import urlparse
 try:
     # Container image layout: /app/destination_policy.py (copied at build).
     from destination_policy import (  # type: ignore[import-not-found]
-        decide_proxy_destination,
+        evaluate_destination,
         load_allow_hosts_from_env,
         load_allow_ports_from_env,
     )
 except ImportError:  # pragma: no cover - host unit tests
     from core.isolation.destination_policy import (
-        decide_proxy_destination,
+        evaluate_destination,
         load_allow_hosts_from_env,
         load_allow_ports_from_env,
     )
@@ -44,12 +44,26 @@ def _truthy(name: str, default: bool = False) -> bool:
 
 def decide_destination(host: str, port: int) -> tuple[bool, str]:
     """Public entry used by unit tests and handlers."""
-    return decide_proxy_destination(
+    allowed, reason, _ips = evaluate_destination(
         host,
         port,
         allow_hosts=load_allow_hosts_from_env(),
         allow_ports=load_allow_ports_from_env(),
     )
+    return allowed, reason
+
+
+def _open_upstream(host: str, port: int) -> socket.socket:
+    """Connect to an address approved by this call, not a later DNS lookup."""
+    allowed, reason, ips = evaluate_destination(
+        host,
+        port,
+        allow_hosts=load_allow_hosts_from_env(),
+        allow_ports=load_allow_ports_from_env(),
+    )
+    if not allowed or not ips:
+        raise PermissionError(reason or "destination denied")
+    return socket.create_connection((ips[0], port), timeout=10)
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -69,12 +83,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 return
         else:
             host, port = host_port, 443
-        ok, reason = decide_destination(host, port)
-        if not ok:
-            self.send_error(403, reason)
-            return
         try:
-            upstream = socket.create_connection((host, port), timeout=10)
+            upstream = _open_upstream(host, port)
+        except PermissionError as exc:
+            self.send_error(403, str(exc))
+            return
         except OSError as exc:
             self.send_error(502, str(exc))
             return
@@ -97,16 +110,14 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_error(400, "absolute URL required")
             return
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        ok, reason = decide_destination(parsed.hostname, port)
-        if not ok:
-            self.send_error(403, reason)
-            return
-        # Minimal forward for http only (tests); CONNECT covers https.
         if parsed.scheme != "http":
             self.send_error(501, "use CONNECT for https")
             return
         try:
-            upstream = socket.create_connection((parsed.hostname, port), timeout=10)
+            upstream = _open_upstream(parsed.hostname, port)
+        except PermissionError as exc:
+            self.send_error(403, str(exc))
+            return
         except OSError as exc:
             self.send_error(502, str(exc))
             return

@@ -12,6 +12,7 @@ from core.scope.models import ScopeDecision
 from core.scope.rate_limit import (
     acquire_scan_slot,
     enforce_rate_limit,
+    enforce_unscoped_rate_limit,
     release_scan_slot,
     reset_rate_limiter,
 )
@@ -132,6 +133,17 @@ def test_inflight_cap_is_process_local(monkeypatch):
     release_scan_slot()
     acquire_scan_slot()
     release_scan_slot()
+
+
+def test_scope_skip_still_rate_limits_live_preflight(monkeypatch):
+    monkeypatch.setenv("PEN_SKIP_SCOPE_RATE_LIMIT_RPS", "1")
+    now = datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)
+    enforce_unscoped_rate_limit(now=now)
+    with pytest.raises(PermissionError, match="scope-skipped"):
+        enforce_unscoped_rate_limit(now=now)
+    adapter = HeadersAdapter(PlatformConfig(), None)
+    adapter.preflight(AdapterRequest(target="http://127.0.0.1:9/", dry_run=True, skip_scope_check=True))
+    adapter.preflight(AdapterRequest(target="http://127.0.0.1:9/", dry_run=True, skip_scope_check=True))
 
 
 def test_invalid_inflight_cap_fails_closed(monkeypatch):

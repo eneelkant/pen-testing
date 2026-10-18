@@ -20,7 +20,7 @@ Workers must **never** attach to control, host-gRPC, or egress legs.
 ## Enforcement layers (what each actually does)
 
 1. **Docker `Internal=true`** — connection boundary for workers. Direct sockets to public IPs fail even when `HTTP_PROXY` is unset or ignored. This does **not** authorize destinations by hostname; it denies off-net routes.
-2. **Egress gateway (`PEN_PROXY_ALLOW_HOSTS` + resolve-time checks)** — destination-level authorization for *proxied* flows only. Empty allowlist denies all. Resolves DNS and refuses non-public / metadata answers. Default ports **80/443** (`PEN_PROXY_ALLOW_PORTS`).
+2. **Egress gateway (`PEN_PROXY_ALLOW_HOSTS` + resolve-time checks)** — destination-level authorization for *proxied* flows only. Empty allowlist denies all. Resolves DNS and refuses non-public / metadata answers. The gateway connects to an address from that same decision. Default ports **80/443** (`PEN_PROXY_ALLOW_PORTS`). Each proxied redirect request is checked again. Browsers that ignore the proxy are not intercepted.
 3. **Launch-time orchestrator gates** — scope registry + DNS→non-public refusal before Shannon/Briar start (`core/isolation/egress.py`). Independent of skip-scope (dual-gate).
 4. **Live / pipeline defaults** — `PEN_ALLOW_*` and `PEN_ALLOW_SHANNON_FULL_PIPELINE` default **false**.
 

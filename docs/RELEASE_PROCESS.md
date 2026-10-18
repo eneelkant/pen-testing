@@ -1,6 +1,6 @@
 # Release Process
 
-Semantic versioning. Current distributable line: **0.2.0a14** (alpha — not production-ready). Merged `0.2.0a13` is the destination-policy and Shannon full-pipeline gate and remains in the changelog.
+Semantic versioning. Current distributable line: **0.2.0a15** (alpha — not production-ready). Merged `0.2.0a14` is operational reliability and supply-chain metadata. Merged `0.2.0a13` is the destination-policy and Shannon full-pipeline gate. Both remain in the changelog.
 
 ## Compatibility policy
 

@@ -76,7 +76,7 @@ docker network connect "$EGRESS_NET" "$GW_NAME" 2>/dev/null || true
 # Prove worker-equivalent isolation on shannon-net.
 log "== prove shannon-net worker stand-in cannot reach 1.1.1.1 =="
 set +e
-PROBE="$(docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
+PROBE="$(docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c 'import socket,sys
 try:
   socket.create_connection(("1.1.1.1",443),3); print("UNEXPECTED_CONNECT"); sys.exit(0)
@@ -91,14 +91,14 @@ test "$RC" -ne 0 || die "shannon-net probe unexpectedly succeeded"
 echo "$PROBE" | grep -q SHANNON_NET_ISOLATED_BLOCKED || die "missing SHANNON_NET_ISOLATED_BLOCKED"
 
 log "== prove shannon-net stand-in can reach egress-gateway =="
-docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm \
+docker run --rm --network "$NET_NAME" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c 'import socket; s=socket.create_connection(("egress-gateway",3128),5); s.close(); print("SHANNON_NET_REACHES_GATEWAY")'
 
 log "== prove direct egress blocked with proxy env explicitly unset =="
 set +e
 NOPROXY_PROBE="$(docker run --rm --network "$NET_NAME" \
   -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= -e ALL_PROXY= -e all_proxy= \
-  python:3.12-slim-bookworm \
+  python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
   python -c 'import os,socket,sys
 for k in list(os.environ):
   if "proxy" in k.lower():
@@ -116,7 +116,7 @@ test "$NOPROXY_RC" -ne 0 || die "noproxy probe unexpectedly succeeded"
 echo "$NOPROXY_PROBE" | grep -q SHANNON_NET_NOPROXY_DIRECT_BLOCKED || die "missing SHANNON_NET_NOPROXY_DIRECT_BLOCKED"
 
 log "== prove real Shannon worker image on shannon-net (if pullable) =="
-SHANNON_IMAGE="${PEN_SHANNON_WORKER_IMAGE:-keygraph/shannon:3.4.0}"
+SHANNON_IMAGE="${PEN_SHANNON_WORKER_IMAGE:-keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e}"
 if docker pull "$SHANNON_IMAGE" >/tmp/shannon-pull.log 2>&1; then
   set +e
   REAL_PROBE="$(docker run --rm --network "$NET_NAME" --entrypoint node \

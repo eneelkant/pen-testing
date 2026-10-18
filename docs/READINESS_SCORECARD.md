@@ -63,7 +63,22 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT VERIFIED`.
 | `python -m core.supply_chain vuln` | 0 | `PASS`, `blocking_count` 0, `generated_at` `2026-10-18T01:48:52.160600+00:00`, database `https://api.osv.dev/v1/querybatch` |
 | `python -m core.supply_chain images --name python-3.12-probe` | 0 | `PASS`, blocking 0, unfixed 63 |
 | `python -m core.supply_chain images --name trivy-scanner` | 1 | `FAIL`, blocking 1, `CVE-2026-77214` |
-| `bash scripts/docker_runtime_verify.sh` | not run | `NOT VERIFIED` (Docker not installed) |
+| `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT VERIFIED` locally (Docker not installed). GitHub Actions run `39087905596` step succeeded and printed `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`, `ORCHESTRATOR_STRICT_DOCTOR_OK`, `PEN_SCANNER_ISOLATED_INTERNAL=true`, and `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
+
+## CI on `29e2d88`
+
+Push run `39087905596` and pull request run `39087918349` (PR #23):
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker runtime verification | success |
+| Pinned base image vulnerability scan (`python-3.12-probe`) | success |
+| Pinned upstream image vulnerability scan | failure, exit 1, `blocking_count` 612 (Shannon 523, Temporal 49, Gitleaks 39, Trivy scanner 1). `error` empty. This is the fixed-finding gate, not a scanner crash |
+
+The workflow conclusion is failure. That failure was not waived.
 
 ## Release gates that remain mandatory
 

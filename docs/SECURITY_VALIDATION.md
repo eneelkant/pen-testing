@@ -75,11 +75,21 @@ See also `docs/SCANNER_ISOLATION.md`.
 | DNS rebinding inside upstream browsers | NOT IMPLEMENTED | residual |
 | Upstream browser navigation containment | FAIL / not claimed | documented limitation |
 | Secret / URL userinfo redaction | PASS | `redact_text` + normalize |
+| GitHub, Slack, and `sk-` token redaction | PASS (unit) | `test_redacts_github_slack_and_openai_tokens` |
+| Assessment record redacted at rest | PASS (unit) | `test_assessment_save_redacts_and_symlink_is_not_read` |
+| Assessment symlink read/write | PASS (unit, refused) | same test |
+| Corrupt assessment JSON | PASS (unit, fail closed) | `test_corrupt_assessment_fails_closed` |
+| Export directory symlink escape | PASS (unit, refused) | `test_export_refuses_symlink_outdir` |
+| Parent-directory symlink write | PASS (unit, refused) | `test_safe_write_refuses_parent_symlink` |
+| Retention cleanup follows symlink | PASS (unit, does not) | `test_cleanup_deletes_old_files_and_skips_symlinks` |
+| Cleanup from status/MCP | PASS (unit, not performed) | `test_platform_status_does_not_echo_secrets_or_delete` |
+| SBOM vulnerability claim | PASS (unit, not claimed) | `test_repo_dependency_audit_and_sbom_have_no_cve_claim` |
+| Live CVE / OSV database scan | NOT RUN | no scanner configured; do not treat metadata audit as one |
 | Assessment ID path traversal | PASS | UUID-only IDs |
 | Report outdir escape | PASS | confined to reports/work dirs |
 | Report write via final-path symlink | PASS | `safe_write_text` refuses symlinks / uses `O_NOFOLLOW` |
 | Local scanner path escape | PASS | confined under work/reports/cwd |
-| Symlink dir escape via `confine_path` | PASS | resolve() leaves allowed roots → blocked |
+| Symlink dir escape via `confine_path` | PASS | symlink components refused before resolution |
 | CLI `--skip-scope-check` without env gate | PASS (rejected) | `PEN_ALLOW_SKIP_SCOPE=1` required |
 | Rate limit enforcement (network) | NOT IMPLEMENTED | registry field recorded only |
 

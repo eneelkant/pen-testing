@@ -12,6 +12,11 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("api_key_assign", re.compile(r"(?i)((?:api[_-]?key|token|secret|password)\s*[:=]\s*)([^\s,\"']+)")),
     ("jwt", re.compile(r"\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b")),
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("github_token", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b")),
+    ("github_pat", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b")),
+    ("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
+    ("slack_webhook", re.compile(r"https://hooks\.slack\.com/services/\S+")),
+    ("openai_style_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b")),
     ("private_key_block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S)),
 ]
 
@@ -33,7 +38,19 @@ def redact_secrets(obj: Any, replacement: str = "[REDACTED]") -> Any:
         out: dict[str, Any] = {}
         for key, value in obj.items():
             key_l = str(key).lower()
-            if any(s in key_l for s in ("password", "secret", "token", "api_key", "apikey", "authorization")):
+            if any(
+                s in key_l
+                for s in (
+                    "password",
+                    "secret",
+                    "token",
+                    "api_key",
+                    "apikey",
+                    "authorization",
+                    "credential",
+                    "private_key",
+                )
+            ):
                 out[key] = replacement
             else:
                 out[key] = redact_secrets(value, replacement=replacement)

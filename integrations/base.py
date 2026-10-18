@@ -10,6 +10,7 @@ from core.config import PlatformConfig
 from core.isolation import assert_live_destination_allowed, load_isolation_policy
 from core.results import ExecutionResult
 from core.scope import ScopeEngine
+from core.scope.rate_limit import enforce_rate_limit
 
 
 @dataclass
@@ -65,11 +66,13 @@ class SecurityAdapter(ABC):
             return
         if self.scope_engine is None:
             raise PermissionError("Scope engine is required for active testing")
-        self.scope_engine.require(
+        decision = self.scope_engine.require(
             request.target,
             test_category=request.test_category,
             require_non_production=not self.config.allow_production_active,
         )
+        if not request.dry_run:
+            enforce_rate_limit(decision)
 
     def egress_preflight(self, request: AdapterRequest) -> None:
         """Launch-time destination gate for live remote engines (not in-engine containment).

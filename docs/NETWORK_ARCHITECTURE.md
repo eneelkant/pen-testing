@@ -1,7 +1,7 @@
 # Network architecture (supported single-operator deployment)
 
 **Status:** READY FOR CONTROLLED TESTING — not a multi-tenant SaaS fabric.  
-**Baseline:** document against current `main` after destination-policy work (`0.2.0a13+`).
+**Baseline:** destination-policy work merged as `0.2.0a13`. Later alphas keep those controls. Proxy environment variables are not a security boundary; Docker `Internal=true` is the worker connection boundary for direct sockets.
 
 ## Planes
 

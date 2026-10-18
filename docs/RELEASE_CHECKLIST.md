@@ -1,6 +1,6 @@
 # Controlled release checklist
 
-Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKED` / `N/A`.
+Use before tagging a non-alpha release. Scorecard statuses are `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, and `NOT VERIFIED`.
 
 ## Security boundaries
 
@@ -39,6 +39,12 @@ Use before tagging a non-alpha release. Status values: `PASS` / `FAIL` / `BLOCKE
   - `MISSING_INTERNAL_CONFIG_BLOCKS`
 - [ ] No `docker.sock` in Compose render
 - [ ] Report path confinement + symlink-safe writes still pass
+- [ ] Assessment symlink read/write refusal still passes (`tests/unit/test_ops_data_protection.py`)
+- [ ] `pen-testing cleanup` dry-run does not delete; `--apply` does not follow symlinks
+- [ ] `python -m core.supply_chain audit` exit 0 and SBOM contains `pyyaml` and `jsonschema` with no `vulnerabilities` claim
+- [ ] `python -m core.supply_chain vuln` recorded for the release SHA (`PASS`, `FAIL`, or `NOT VERIFIED`). A metadata audit is not a CVE result. Blocking findings stay visible
+- [ ] Non-dry-run scans honor `rate_limit_rps` and `PEN_MAX_INFLIGHT_SCANS` in-process
+- [ ] Gitleaks CI still green on the release SHA (do not waive findings)
 
 ## Quality
 

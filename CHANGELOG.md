@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.2.0a14 — 2026-10-17
+
+### Security
+
+- Report and assessment IO refuses symlink path components, including parent directories (`safe_read_text` / `safe_write_text`)
+- Assessment records are redacted before they are stored; corrupt records and symlink reads fail closed
+- CLI `export-report` inputs and outputs must stay under the work dir, reports dir, or current directory
+- Redaction covers GitHub tokens, Slack tokens and webhooks, and `sk-` style keys in addition to existing patterns
+- `pen-testing cleanup` removes expired local `.json` / `.md` / `.sarif` / `.log` files under the assessment and report directories. It is dry-run unless `--apply`. It does not follow or delete symlinks. MCP status checks do not delete artifacts
+- Authorization records with `rate_limit_rps` are enforced on non-dry-run adapter preflight. `PEN_MAX_INFLIGHT_SCANS` bounds concurrent live CLI/MCP scans in this process
+
+### Supply chain
+
+- `python -m core.supply_chain audit` checks that runtime dependencies are present in `requirements/base.txt` and reports unpinned requirements without treating that report as a CVE scan
+- `python -m core.supply_chain emit` writes a CycloneDX 1.5 SBOM from declared requirements. The document has no `vulnerabilities` array
+- `rpds-py` is pinned to `2026.9.1`, the version resolved with `jsonschema==4.26.0` during unit tests
+- Optional OSV query (`python -m core.supply_chain vuln`) records database results separately from the metadata audit
+
+### Documentation
+
+- `docs/READINESS_SCORECARD.md` records six milestones with PASS / PARTIAL / BLOCKED / FAIL / NOT VERIFIED
+- `docs/DATA_PROTECTION.md` describes local retention, redaction, and file confinement
+- `docs/LICENSING_REVIEW.md` keeps AGPL questions open; counsel review is not complete
+
+### Notes
+
+- Includes merged `0.2.0a13` destination policy and Shannon full-pipeline gate. This release does not replace that work
+- A green metadata audit is not a claim of zero known CVEs
+- Pattern redaction does not cover upstream scanner logs written outside this process
+- Encryption at rest, backups, and multi-user authentication are not implemented
+- Not production-ready
+
 ## 0.2.0a13 — 2026-10-13
 
 ### Security

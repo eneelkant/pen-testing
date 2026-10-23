@@ -38,7 +38,7 @@ Gitleaks `v8.30.1` CLI check used the GitHub release binary `gitleaks_8.30.1_lin
 
 Image: `python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258`
 
-CI on `4e8453d` (run `40004715041`), report `CreatedAt` `2026-10-23T18:40:22.548071832Z`. Result: `FAIL`. `blocking_count` 2, both `unscored` / `UNKNOWN` severity (`DLA-4845-1` on `ca-certificates` with a fixed version, and `CVE-2026-82560` on `perl-base` with an empty fixed version). Fixed HIGH/CRITICAL count remains 0. Unfixed HIGH/CRITICAL package rows remain 63. Full report without a severity pre-filter: `finding_row_count` 289, `unique_cve_count` 130. Earlier inventories that scanned only `HIGH,CRITICAL` reported `PASS` with `blocking_count` 0 because UNKNOWN rows were never emitted. That is not a waiver of the unscored gate.
+CI on `85ac470` (PR run `40005558585`), report `CreatedAt` `2026-10-23T18:46:24.556020881Z`. Result: `FAIL`. `blocking_count` 2, both `unscored` / `UNKNOWN` severity (`DLA-4845-1` on `ca-certificates` with a fixed version, and `CVE-2026-82560` on `perl-base` with an empty fixed version). Fixed HIGH/CRITICAL count remains 0. Unfixed HIGH/CRITICAL package rows remain 63. Full report without a severity pre-filter: `finding_row_count` 289, `unique_cve_count` 130. Earlier inventories that scanned only `HIGH,CRITICAL` reported `PASS` with `blocking_count` 0 because UNKNOWN rows were never emitted. That is not a waiver of the unscored gate.
 
 The 63 unfixed HIGH/CRITICAL rows are package copies of 16 CVE ids. util-linux is eight binary packages times six CVEs (48 rows).
 

@@ -40,9 +40,9 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 ### 5. Supply chain — FAIL
 
 - Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Local re-run on this tree: audit 0, emit 0, vuln `PASS` blocking 0.
-- `python:3.12-slim-bookworm` on CI `4e8453d` / run `40004715041`: `FAIL`, `blocking_count` 2 (unscored UNKNOWN: `DLA-4845-1`, `CVE-2026-82560`). Fixed HIGH/CRITICAL remains 0. Unfixed HIGH/CRITICAL rows remain 63. Full report: 289 rows / 130 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
-- Shannon, Temporal, Gitleaks, and Trivy images: digests were not moved. No ignore file was added. On `4e8453d` the upstream scan step was skipped after the Python scan failed; historical CI on `ac712a4` had upstream `blocking_count` 612. The workflow now runs both scans before enforcing the gate so upstream evidence is always uploaded. Recompute upstream `blocking_count` from the next head's artifact.
-- `0.2.0a18` records digest/platform/scanner/DB/exit metadata, unique CVE vs row counts, and treats empty, schema-only, mismatched, stale, and nonzero-exit-with-clean-body reports as `NOT_VERIFIED`.
+- `python:3.12-slim-bookworm` on CI `85ac470` / PR run `40005558585`: `FAIL`, `blocking_count` 2 (unscored UNKNOWN: `DLA-4845-1`, `CVE-2026-82560`). Fixed HIGH/CRITICAL remains 0. Unfixed HIGH/CRITICAL rows remain 63. Full report: 289 rows / 130 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
+- Shannon, Temporal, Gitleaks, and Trivy images on the same run: `FAIL`, top-level `blocking_count` **1068** (641 fixed HIGH/CRITICAL + 427 unscored). Per image: Shannon 548 fixed + 419 unscored; Temporal 51 + 4; Gitleaks 40 + 1; Trivy scanner 2 + 3. Digests were not moved. No ignore file was added. Historical HIGH/CRITICAL-only count on `ac712a4` was 612.
+- `0.2.0a18` records digest/platform/scanner/DB/exit metadata, unique CVE vs row counts, and treats empty, schema-only, mismatched, stale, and nonzero-exit-with-clean-body reports as `NOT_VERIFIED`. CI runs both scans before the gate so both artifacts upload.
 - Counsel review is pending.
 - Next action: wait for images with zero fixed HIGH/CRITICAL and zero unscored findings, then run the Shannon `--validate-model` path and the unit suite before changing a pin. Do not add a Trivy ignore to turn CI green.
 

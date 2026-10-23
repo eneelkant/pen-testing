@@ -65,7 +65,19 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 | `python3 -m core.supply_chain images` | 2 | `NOT_VERIFIED` locally (`trivy and docker are unavailable`) |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` succeeded for the runtime script markers listed above |
 
-## CI diagnosis for jobs named “Docker build and runtime” on `85ac470`
+## CI on `46ef944` (current PR head)
+
+PR run `40007096658` and push run `40007085301`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** (Compose + Shannon `--validate-model` path) |
+| Pinned image vulnerability scans | **failure**. Python `blocking_count` 2; upstream `blocking_count` 1068. Artifacts uploaded. Gate not waived |
+
+## CI diagnosis for older jobs named “Docker build and runtime” on `85ac470`
 
 PR run `40005558585` job `120592446563` and push run `40005547895` job `120592410406` shared one root cause. It was **not** a Compose/runtime defect:
 
@@ -76,9 +88,7 @@ PR run `40005558585` job `120592446563` and push run `40005547895` job `12059241
 | Pinned base + upstream image scans | reports written; exits 1 |
 | Enforce pinned image scan gates | **failure** (`PYTHON_IMAGE_SCAN_EXIT=1`, `UPSTREAM_IMAGE_SCAN_EXIT=1`) |
 
-Python report: `blocking_count` 2 (unscored). Upstream report: `blocking_count` 1068. Artifacts uploaded. Gate not waived.
-
-After this follow-up, image scans run in a separate required job `Pinned image vulnerability scans` so a vulnerability-gate failure is not labeled as a Docker runtime failure. Docker runtime stays a real runtime check.
+Python report: `blocking_count` 2 (unscored). Upstream report: `blocking_count` 1068. Artifacts uploaded. Gate not waived. Image scans were later moved to job `Pinned image vulnerability scans`.
 
 ## CI on `85ac470` (PR #23)
 

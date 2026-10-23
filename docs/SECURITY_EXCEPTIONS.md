@@ -61,16 +61,16 @@ The orchestrator container is user `10001`, `cap_drop: ALL`, `no-new-privileges`
 
 ## Upstream images — fixed findings, pins unchanged
 
-Local classification on 2026-10-18. Same Trivy binary and DB. Status `FAIL` for each image. `unfixed_count` 0 in these four reports. CI step `Pinned upstream image vulnerability scan` runs the same command and is expected to fail until the digests change after a compatibility test.
+CI on `85ac470` (PR run `40005558585`), Trivy 0.76.0, no severity pre-filter. Status `FAIL` for each image. Top-level `blocking_count` **1068** = **641** fixed HIGH/CRITICAL + **427** unscored UNKNOWN. Digests unchanged. Artifact `image-scan-upstream`. Historical HIGH/CRITICAL-only count on `ac712a4` was 612; the increase is from a fresher vulnerability DB (fixed HIGH/CRITICAL alone is now 641) plus previously hidden UNKNOWN rows.
 
-| Image | Report CreatedAt | Blocking | What the rows are |
-|---|---|---|---|
-| `keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e` | 2026-10-18T01:44:09.748799555Z | 523 (37 CRITICAL, 486 HIGH) | 485 are `chromium` 149.0.7827.53-r0. The rest include `fast-uri`, `brace-expansion`, `protobufjs`, `@grpc/grpc-js`, `js-yaml`, and other Node packages. Critical ids start `CVE-2026-106195`, `CVE-2026-106237`, `CVE-2026-13032` |
-| `temporalio/temporal:1.7.0@sha256:9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4` | 2026-10-18T01:44:00.472833571Z | 49 HIGH | Go `stdlib` v1.26.2, `golang.org/x/crypto`, `golang.org/x/net`, `google.golang.org/grpc`, Alpine `libcrypto3` / `libssl3` 3.5.6-r0, Thrift, Echo |
-| `zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46` | 2026-10-18T01:44:00.999850114Z | 39 (1 CRITICAL, 38 HIGH) | CRITICAL `CVE-2025-68121` in Go stdlib v1.22.8. Also git 2.43.5-r0, musl, OpenSSH 9.6_p1-r1 |
-| `aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222` | 2026-10-18T01:44:02.183745759Z | 1 HIGH | `CVE-2026-77214` in `libexpat` 2.8.5-r0, fixed version reported as 2.9.0-r0 |
+| Image | Report CreatedAt | Fixed HIGH/CRITICAL | Unscored | Rows / unique ids |
+|---|---|---|---|---|
+| `keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e` | 2026-10-23T18:46:54.910207566Z | 548 (37 CRITICAL, 511 HIGH) | 419 | 1785 / 1769 |
+| `temporalio/temporal:1.7.0@sha256:9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4` | 2026-10-23T18:47:06.638250792Z | 51 HIGH | 4 | 135 / 99 |
+| `zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46` | 2026-10-23T18:47:14.960844558Z | 40 (1 CRITICAL, 39 HIGH) | 1 | 124 / 107 |
+| `aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222` | 2026-10-23T18:47:24.645779064Z | 2 HIGH (`CVE-2026-77214`, `CVE-2026-111943`) | 3 | 6 / 5 |
 
-The Shannon and Temporal tags are the ones the `--validate-model` path starts. Replacing them changes the worker that CI isolation tests run. That compatibility run was not executed in this environment (no Docker). The Gitleaks tag is the CI `detect` image. The Trivy tag is the scanner image the supply-chain command runs when the `trivy` binary is absent. The adapter pins in `integrations/scanners/trivy.py` (`0.58.1`) and the Gitleaks adapter were not bumped.
+The Shannon and Temporal tags are the ones the `--validate-model` path starts. Replacing them changes the worker that CI isolation tests run. CI on `85ac470` still printed Docker runtime success before the image gate. The Gitleaks tag is the CI `detect` image. The Trivy tag is the scanner image the supply-chain command runs when the `trivy` binary is absent. The adapter pins in `integrations/scanners/trivy.py` (`0.58.1`) and the Gitleaks adapter were not bumped.
 
 ## Not exceptions
 

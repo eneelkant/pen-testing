@@ -65,9 +65,9 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 | `python3 -m core.supply_chain images` | 2 | `NOT_VERIFIED` locally (`trivy and docker are unavailable`) |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` succeeded for the runtime script markers listed above |
 
-## CI on `4e8453d` (PR #23)
+## CI on `85ac470` (PR #23)
 
-PR run `40004715041` and push run `40004707193`:
+PR run `40005558585` (and push run `40005547895`):
 
 | Job / step | Result |
 |---|---|
@@ -75,11 +75,13 @@ PR run `40004715041` and push run `40004707193`:
 | Secret scanning (gitleaks) | success |
 | Dependency metadata check | success |
 | Docker runtime verification | success |
-| Pinned base image vulnerability scan | failure, exit 1, `blocking_count` 2 (unscored). Artifact `image-scan-python` uploaded |
-| Pinned upstream image vulnerability scan | skipped because the Python scan step failed first. No `image-scan-upstream` artifact on this head |
-| Upload upstream image scan | failure (`if-no-files-found: error`) |
+| Pinned base image vulnerability scan | step completed; report `FAIL`, `blocking_count` 2 (unscored). Artifact `image-scan-python` uploaded |
+| Pinned upstream image vulnerability scan | step completed; report `FAIL`, `blocking_count` 1068 (641 fixed HIGH/CRITICAL + 427 unscored). Artifact `image-scan-upstream` uploaded |
+| Enforce pinned image scan gates | failure (nonzero scan exits). Not waived |
 
-The workflow conclusion is failure. That failure was not waived. A follow-up commit makes both scans run under `if: always()` and fails the job in a final gate step so upstream evidence is still produced.
+## CI on `4e8453d` (historical for this PR)
+
+PR run `40004715041`: unit/gitleaks/deps/runtime success; Python scan `FAIL` blocking 2; upstream scan skipped before the workflow fix; no upstream artifact on that head.
 
 ## CI on prior PR head `ac712a4` (historical)
 

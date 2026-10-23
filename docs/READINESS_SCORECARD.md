@@ -2,7 +2,7 @@
 
 Review date: **2026-10-23** (Asia/Calcutta).
 Parent of this change: `origin/main` `312d8586cb9c917f218861960ee882c1928e890a` (merge of PR #22, package `0.2.0a15`).
-This document describes `0.2.0a18` on PR #23 (`cursor/readiness-gaps-87c9`). Local unit commands were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine and Trivy are not installed in the environment that produced the local numbers, so Compose runtime markers and a fresh image rescan are `NOT_VERIFIED` locally. The last completed upstream image evidence on this PR is CI run `39089581237` on head `ac712a4` (`blocking_count` 612). Recompute that count from the artifact after this commit's workflow finishes; do not treat the historical 612 as a live result for the new head.
+This document describes `0.2.0a18` on PR #23 (`cursor/readiness-gaps-87c9`). Local unit commands were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine and Trivy are not installed in the environment that produced the local numbers, so Compose runtime markers and a fresh local image rescan are `NOT_VERIFIED` here.
 
 **Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images have fixed HIGH/CRITICAL findings and their digests were not changed.
 
@@ -39,11 +39,12 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
 ### 5. Supply chain — FAIL
 
-- Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Re-run them on this tree and record the exit codes below.
-- `python:3.12-slim-bookworm` digest above: last CI Trivy result on `ac712a4` was `PASS` for fixed HIGH/CRITICAL, 63 unfixed rows / 16 CVE ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver.
-- Shannon, Temporal, Gitleaks, and Trivy images: last CI classified report on `ac712a4` was `FAIL` with `blocking_count` 612 (523 + 49 + 39 + 1). Digests were not moved. No ignore file was added. `0.2.0a18` records digest/platform/scanner/DB/exit metadata, unique CVE vs row counts, and treats empty, schema-only, mismatched, stale, and nonzero-exit-with-clean-body reports as `NOT_VERIFIED`. The CI step `Pinned upstream image vulnerability scan` is still expected to fail until a compatible cleaner digest exists.
+- Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Local re-run on this tree: audit 0, emit 0, vuln `PASS` blocking 0.
+- `python:3.12-slim-bookworm` on CI `4e8453d` / run `40004715041`: `FAIL`, `blocking_count` 2 (unscored UNKNOWN: `DLA-4845-1`, `CVE-2026-82560`). Fixed HIGH/CRITICAL remains 0. Unfixed HIGH/CRITICAL rows remain 63. Full report: 289 rows / 130 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
+- Shannon, Temporal, Gitleaks, and Trivy images: digests were not moved. No ignore file was added. On `4e8453d` the upstream scan step was skipped after the Python scan failed; historical CI on `ac712a4` had upstream `blocking_count` 612. The workflow now runs both scans before enforcing the gate so upstream evidence is always uploaded. Recompute upstream `blocking_count` from the next head's artifact.
+- `0.2.0a18` records digest/platform/scanner/DB/exit metadata, unique CVE vs row counts, and treats empty, schema-only, mismatched, stale, and nonzero-exit-with-clean-body reports as `NOT_VERIFIED`.
 - Counsel review is pending.
-- Next action: wait for an upstream image with zero fixed HIGH/CRITICAL findings, then run the Shannon `--validate-model` path and the unit suite before changing a pin. Do not add a Trivy ignore to turn CI green.
+- Next action: wait for images with zero fixed HIGH/CRITICAL and zero unscored findings, then run the Shannon `--validate-model` path and the unit suite before changing a pin. Do not add a Trivy ignore to turn CI green.
 
 ### 6. Operational reliability — PARTIAL
 
@@ -64,6 +65,22 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 | `python3 -m core.supply_chain images` | 2 | `NOT_VERIFIED` locally (`trivy and docker are unavailable`) |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` succeeded for the runtime script markers listed above |
 
+## CI on `4e8453d` (PR #23)
+
+PR run `40004715041` and push run `40004707193`:
+
+| Job / step | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker runtime verification | success |
+| Pinned base image vulnerability scan | failure, exit 1, `blocking_count` 2 (unscored). Artifact `image-scan-python` uploaded |
+| Pinned upstream image vulnerability scan | skipped because the Python scan step failed first. No `image-scan-upstream` artifact on this head |
+| Upload upstream image scan | failure (`if-no-files-found: error`) |
+
+The workflow conclusion is failure. That failure was not waived. A follow-up commit makes both scans run under `if: always()` and fails the job in a final gate step so upstream evidence is still produced.
+
 ## CI on prior PR head `ac712a4` (historical)
 
 Push/PR run `39089581237` (PR #23):
@@ -74,10 +91,8 @@ Push/PR run `39089581237` (PR #23):
 | Secret scanning (gitleaks) | success |
 | Dependency metadata check | success |
 | Docker runtime verification | success. Log contains `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`, `ORCHESTRATOR_STRICT_DOCTOR_OK`, and `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
-| Pinned base image vulnerability scan | success. Artifact `image-scan-python` uploaded |
+| Pinned base image vulnerability scan | success under the old HIGH/CRITICAL-only Trivy filter. Artifact `image-scan-python` uploaded |
 | Pinned upstream image vulnerability scan | failure, exit 1, `blocking_count` 612. Artifact `image-scan-upstream` uploaded after the failure |
-
-The workflow conclusion is failure. That failure was not waived. Recompute `blocking_count` from the artifact produced by the `0.2.0a18` head after push.
 
 ## Release gates that remain mandatory
 

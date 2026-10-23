@@ -14,7 +14,8 @@
 - Image scan reports record repository, tag, digest, platform, scanner version, vulnerability-database metadata, scan timestamp, exit code, finding row counts, and unique CVE counts
 - Empty, schema-only, digest-mismatched, stale `CreatedAt`, stale vulnerability-database, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`
 - Trivy is invoked without a severity pre-filter so UNKNOWN/unscored rows remain visible to the classifier
-- Digests were not changed. The fixed HIGH/CRITICAL gate remains fail-closed
+- CI runs the Python and upstream image scans independently, uploads both artifacts, then fails the job if either gate exits nonzero
+- Digests were not changed. The fixed HIGH/CRITICAL and unscored gates remain fail-closed
 
 ### Notes
 

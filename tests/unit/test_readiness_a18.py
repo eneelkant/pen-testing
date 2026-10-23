@@ -264,3 +264,14 @@ def test_scan_records_exit_code_and_rejects_empty_json():
     )
     assert scanned["status"] == "NOT_VERIFIED"
     assert scanned["images"][0]["status"] == "NOT_VERIFIED"
+
+
+def test_ci_runs_both_image_scans_before_gate():
+    text = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "Enforce pinned image scan gates" in text
+    assert "PYTHON_IMAGE_SCAN_EXIT" in text
+    assert "UPSTREAM_IMAGE_SCAN_EXIT" in text
+    assert "Pinned upstream image vulnerability scan" in text
+    # Upstream must not be skipped solely because the Python scan failed.
+    upstream_idx = text.index("Pinned upstream image vulnerability scan")
+    assert "if: always()" in text[upstream_idx : upstream_idx + 200]

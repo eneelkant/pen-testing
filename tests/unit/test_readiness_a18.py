@@ -266,12 +266,21 @@ def test_scan_records_exit_code_and_rejects_empty_json():
     assert scanned["images"][0]["status"] == "NOT_VERIFIED"
 
 
-def test_ci_runs_both_image_scans_before_gate():
+def test_ci_separates_docker_runtime_from_image_scan_gate():
     text = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "name: Docker build and runtime" in text
+    assert "name: Pinned image vulnerability scans" in text
     assert "Enforce pinned image scan gates" in text
     assert "PYTHON_IMAGE_SCAN_EXIT" in text
     assert "UPSTREAM_IMAGE_SCAN_EXIT" in text
     assert "Pinned upstream image vulnerability scan" in text
+    # Image scans must not live inside the Docker runtime job.
+    docker_job = text.split("docker-runtime:")[1].split("image-scan:")[0]
+    assert "image-scan-python.json" not in docker_job
+    assert "docker_runtime_verify.sh" in docker_job
     # Upstream must not be skipped solely because the Python scan failed.
     upstream_idx = text.index("Pinned upstream image vulnerability scan")
     assert "if: always()" in text[upstream_idx : upstream_idx + 200]
+    assert "pluggy==1.7.0" in (Path(__file__).resolve().parents[2] / "requirements/dev.txt").read_text(
+        encoding="utf-8"
+    )

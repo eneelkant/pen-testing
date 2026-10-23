@@ -1,7 +1,7 @@
 # Readiness scorecard
 
 Review date: **2026-10-23** (Asia/Calcutta).
-Parent of this change: `origin/main` `312d8586cb9c917f218861960ee882c1928e890a` (merge of PR #22, package `0.2.0a15`).
+Parent of this change: `origin/main` `9c02a031d05e1915393fa4e8db2f169739d51a69` (merge of PR #24, pluggy 1.7.0; earlier PR #22 was `312d858`).
 This document describes `0.2.0a18` on PR #23 (`cursor/readiness-gaps-87c9`). Local unit commands were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine and Trivy are not installed in the environment that produced the local numbers, so Compose runtime markers and a fresh local image rescan are `NOT_VERIFIED` here.
 
 **Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images have fixed HIGH/CRITICAL findings and their digests were not changed.
@@ -64,6 +64,21 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 | `python3 -m core.supply_chain vuln` | 0 | `PASS`, `blocking_count` 0, `generated_at` `2026-10-23T18:36:18.771506+00:00` |
 | `python3 -m core.supply_chain images` | 2 | `NOT_VERIFIED` locally (`trivy and docker are unavailable`) |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` succeeded for the runtime script markers listed above |
+
+## CI diagnosis for jobs named “Docker build and runtime” on `85ac470`
+
+PR run `40005558585` job `120592446563` and push run `40005547895` job `120592410406` shared one root cause. It was **not** a Compose/runtime defect:
+
+| Step | Result |
+|---|---|
+| Docker Engine / Compose / install | success |
+| Docker runtime verification (`scripts/docker_runtime_verify.sh`) | success |
+| Pinned base + upstream image scans | reports written; exits 1 |
+| Enforce pinned image scan gates | **failure** (`PYTHON_IMAGE_SCAN_EXIT=1`, `UPSTREAM_IMAGE_SCAN_EXIT=1`) |
+
+Python report: `blocking_count` 2 (unscored). Upstream report: `blocking_count` 1068. Artifacts uploaded. Gate not waived.
+
+After this follow-up, image scans run in a separate required job `Pinned image vulnerability scans` so a vulnerability-gate failure is not labeled as a Docker runtime failure. Docker runtime stays a real runtime check.
 
 ## CI on `85ac470` (PR #23)
 

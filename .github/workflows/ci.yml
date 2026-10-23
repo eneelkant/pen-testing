@@ -107,8 +107,47 @@ jobs:
       - name: Docker runtime verification
         run: bash scripts/docker_runtime_verify.sh
 
-      # Run both image scans even when one fails so artifacts stay complete.
-      # The final gate step fails the job if either exit code is nonzero.
+      - name: Collect Docker diagnostics on failure
+        if: failure()
+        run: |
+          set +e
+          echo "== docker compose ps =="
+          docker compose --profile workers --profile fixtures ps -a
+          echo "== docker images (project) =="
+          docker images 'pen-testing-*'
+          echo "== docker compose config =="
+          docker compose config
+          echo "== disk =="
+          df -h
+
+      - name: Cleanup compose resources
+        if: always()
+        run: |
+          docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans || true
+          docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal || true
+          docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f || true
+          docker network rm shannon-net pen-shannon-egress pen-shannon-host || true
+
+  # Separate from Docker runtime so a vulnerability-gate failure is not reported
+  # as a Compose/runtime defect. The gate stays fail-closed.
+  image-scan:
+    name: Pinned image vulnerability scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
       - name: Pinned base image vulnerability scan
         run: |
           set +e
@@ -116,6 +155,20 @@ jobs:
           code=$?
           echo "PYTHON_IMAGE_SCAN_EXIT=${code}" >> "$GITHUB_ENV"
           test -f image-scan-python.json
+          SCAN_EXIT="${code}" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(Path("image-scan-python.json").read_text())
+          print(
+              "python_image_scan",
+              "status=", report.get("status"),
+              "blocking=", report.get("blocking_count"),
+              "rows=", report.get("finding_row_count"),
+              "unique=", report.get("unique_cve_count"),
+              "exit=", os.environ.get("SCAN_EXIT"),
+          )
+          PY
 
       - name: Upload Python image scan
         if: always()
@@ -141,6 +194,28 @@ jobs:
           code=$?
           echo "UPSTREAM_IMAGE_SCAN_EXIT=${code}" >> "$GITHUB_ENV"
           test -f image-scan-upstream.json
+          SCAN_EXIT="${code}" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(Path("image-scan-upstream.json").read_text())
+          print(
+              "upstream_image_scan",
+              "status=", report.get("status"),
+              "blocking=", report.get("blocking_count"),
+              "rows=", report.get("finding_row_count"),
+              "unique=", report.get("unique_cve_count"),
+              "exit=", os.environ.get("SCAN_EXIT"),
+          )
+          for image in report.get("images") or []:
+              print(
+                  " ",
+                  image.get("pin_name") or image.get("name"),
+                  "blocking=", image.get("blocking_count"),
+                  "unscored=", image.get("unscored_count"),
+                  "status=", image.get("status"),
+              )
+          PY
 
       - name: Upload upstream image scan
         if: always()
@@ -160,27 +235,6 @@ jobs:
           test -n "${UPSTREAM_IMAGE_SCAN_EXIT:-}"
           test "${PYTHON_IMAGE_SCAN_EXIT}" -eq 0
           test "${UPSTREAM_IMAGE_SCAN_EXIT}" -eq 0
-
-      - name: Collect Docker diagnostics on failure
-        if: failure()
-        run: |
-          set +e
-          echo "== docker compose ps =="
-          docker compose --profile workers --profile fixtures ps -a
-          echo "== docker images (project) =="
-          docker images 'pen-testing-*'
-          echo "== docker compose config =="
-          docker compose config
-          echo "== disk =="
-          df -h
-
-      - name: Cleanup compose resources
-        if: always()
-        run: |
-          docker compose --profile workers --profile live-workers --profile fixtures down -v --remove-orphans || true
-          docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal || true
-          docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f || true
-          docker network rm shannon-net pen-shannon-egress pen-shannon-host || true
 
   secret-scan:
     name: Secret scanning (gitleaks)

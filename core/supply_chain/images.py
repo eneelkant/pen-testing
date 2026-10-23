@@ -2,13 +2,16 @@
 
 Digests were resolved from the registry on 2026-10-18. A scan that cannot run
 is NOT_VERIFIED. Fixed HIGH and CRITICAL findings are blocking. Unfixed
-findings are reported and are not a claim that the image is safe.
+findings are reported and are not a claim that the image is safe. Empty,
+malformed, stale, or identity-mismatched reports are NOT_VERIFIED.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 PINNED_IMAGES = (
@@ -40,30 +43,199 @@ PINNED_IMAGES = (
 
 TRIVY_IMAGE = PINNED_IMAGES[-1]["ref"]
 _BLOCKING = {"HIGH", "CRITICAL"}
+_KNOWN_SEVERITY = _BLOCKING | {"LOW", "MODERATE", "MEDIUM"}
+# Reports older than this, or with a vulnerability DB older than this, are not
+# treated as a clean or current result.
+_MAX_EVIDENCE_AGE = timedelta(days=7)
+_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def parse_image_ref(ref: str) -> dict[str, str]:
+    """Split ``name:tag@sha256:...`` into structured identity fields."""
+    digest = ""
+    name_tag = ref
+    if "@" in ref:
+        name_tag, digest = ref.rsplit("@", 1)
+        digest = digest.strip()
+    repository = name_tag
+    tag = ""
+    if "/" in name_tag:
+        # tag is after the final colon that is not part of a registry port
+        slash = name_tag.rfind("/")
+        colon = name_tag.rfind(":")
+        if colon > slash:
+            repository, tag = name_tag[:colon], name_tag[colon + 1 :]
+    elif ":" in name_tag:
+        repository, tag = name_tag.split(":", 1)
+    return {"repository": repository, "tag": tag, "digest": digest, "ref": ref}
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if not value or not isinstance(value, str):
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _complete_trivy_document(document: dict[str, Any]) -> bool:
-    """A usable Trivy report identifies the artifact or lists results.
+    """A usable Trivy report identifies the artifact and includes a Results key.
 
-    ``{}`` is not a clean scan. Trivy emits ``SchemaVersion`` or ``Results``
-    even when the image has no vulnerabilities.
+    ``{}`` and schema-only documents are not clean scans. Trivy emits
+    ``Results`` (possibly an empty list) for a completed image scan.
     """
-    return any(key in document for key in ("Results", "SchemaVersion", "ArtifactName"))
+    if "Results" not in document:
+        return False
+    if "SchemaVersion" not in document and "ArtifactName" not in document:
+        return False
+    return True
 
 
-def classify_trivy_document(document: dict[str, Any], *, image: str) -> dict[str, Any]:
+def _report_digests(document: dict[str, Any]) -> set[str]:
+    found: set[str] = set()
+    for match in _DIGEST_RE.findall(str(document.get("ArtifactName") or "")):
+        found.add(match)
+    metadata = document.get("Metadata") if isinstance(document.get("Metadata"), dict) else {}
+    for key in ("ImageID", "RepoDigests", "DiffIDs"):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            found.update(_DIGEST_RE.findall(value))
+        elif isinstance(value, list):
+            for item in value:
+                found.update(_DIGEST_RE.findall(str(item)))
+    return found
+
+
+def _scanner_version(document: dict[str, Any]) -> str:
+    for key in ("Trivy", "trivy"):
+        block = document.get(key)
+        if isinstance(block, dict) and block.get("Version"):
+            return str(block["Version"])
+    metadata = document.get("Metadata") if isinstance(document.get("Metadata"), dict) else {}
+    for key in ("Trivy", "trivy"):
+        block = metadata.get(key)
+        if isinstance(block, dict) and block.get("Version"):
+            return str(block["Version"])
+    return ""
+
+
+def _database_metadata(document: dict[str, Any]) -> dict[str, str]:
+    metadata = document.get("Metadata") if isinstance(document.get("Metadata"), dict) else {}
+    db = metadata.get("VulnerabilityDB") if isinstance(metadata.get("VulnerabilityDB"), dict) else {}
+    if not db:
+        db = document.get("VulnerabilityDB") if isinstance(document.get("VulnerabilityDB"), dict) else {}
+    return {
+        "updated_at": str(db.get("UpdatedAt") or db.get("updated_at") or ""),
+        "next_update": str(db.get("NextUpdate") or db.get("next_update") or ""),
+        "downloaded_at": str(db.get("DownloadedAt") or db.get("downloaded_at") or ""),
+    }
+
+
+def _platform(document: dict[str, Any]) -> str:
+    metadata = document.get("Metadata") if isinstance(document.get("Metadata"), dict) else {}
+    config = metadata.get("ImageConfig") if isinstance(metadata.get("ImageConfig"), dict) else {}
+    architecture = str(config.get("architecture") or metadata.get("Architecture") or "")
+    os_name = str(config.get("os") or (metadata.get("OS") or {}).get("Family") or "")
+    if isinstance(metadata.get("OS"), dict) and not os_name:
+        os_name = str(metadata["OS"].get("Family") or "")
+    parts = [part for part in (os_name, architecture) if part]
+    return "/".join(parts)
+
+
+def _not_verified(image: str, error: str, **extra: Any) -> dict[str, Any]:
+    identity = parse_image_ref(image)
+    payload = {
+        "ok": False,
+        "status": "NOT_VERIFIED",
+        "image": image,
+        "name": identity["repository"],
+        "tag": identity["tag"],
+        "digest": identity["digest"],
+        "platform": "",
+        "findings": [],
+        "finding_row_count": 0,
+        "unique_cve_count": 0,
+        "blocking_count": 0,
+        "unfixed_count": 0,
+        "unscored_count": 0,
+        "withdrawn_count": 0,
+        "error": error,
+        "note": "Missing, malformed, stale, or mismatched scan evidence is not a clean result.",
+    }
+    payload.update(extra)
+    return payload
+
+
+def classify_trivy_document(
+    document: dict[str, Any],
+    *,
+    image: str,
+    now: datetime | None = None,
+    max_age: timedelta | None = None,
+    exit_code: int | None = None,
+) -> dict[str, Any]:
+    identity = parse_image_ref(image)
     if not isinstance(document, dict) or not _complete_trivy_document(document):
-        return {
-            "ok": False,
-            "status": "NOT_VERIFIED",
-            "image": image,
-            "findings": [],
-            "blocking_count": 0,
-            "unfixed_count": 0,
-            "unscored_count": 0,
-            "error": "trivy report did not include a vulnerability result",
-            "note": "An empty document is not a clean scan.",
-        }
+        return _not_verified(image, "trivy report did not include a vulnerability result", exit_code=exit_code)
+
+    expected = identity["digest"]
+    if expected:
+        reported = _report_digests(document)
+        artifact = str(document.get("ArtifactName") or "")
+        # Accept either explicit digest metadata or an ArtifactName that carries
+        # the pinned repository/tag (local docker scans often omit RepoDigests).
+        digest_ok = any(expected in item or item.endswith(expected.split(":", 1)[-1]) for item in reported)
+        name_ok = False
+        if artifact:
+            pin_name = identity["repository"].split("/")[-1]
+            name_ok = identity["repository"] in artifact or (pin_name and pin_name in artifact)
+            if identity["tag"] and identity["tag"] in artifact:
+                name_ok = True
+        if reported and not digest_ok:
+            return _not_verified(
+                image,
+                "trivy report image digest does not match the pinned digest",
+                exit_code=exit_code,
+                artifact=artifact,
+                reported_digests=sorted(reported),
+            )
+        if not reported and not name_ok and artifact and artifact != image:
+            return _not_verified(
+                image,
+                "trivy report artifact identity does not match the pinned image",
+                exit_code=exit_code,
+                artifact=artifact,
+            )
+
+    clock = now or datetime.now(timezone.utc)
+    age_limit = max_age if max_age is not None else _MAX_EVIDENCE_AGE
+    created_at = str(document.get("CreatedAt") or "")
+    created = _parse_time(created_at)
+    if created is not None and clock - created > age_limit:
+        return _not_verified(
+            image,
+            "trivy report CreatedAt is stale",
+            exit_code=exit_code,
+            created_at=created_at,
+        )
+    db_meta = _database_metadata(document)
+    db_updated = _parse_time(db_meta.get("updated_at"))
+    if db_updated is not None and clock - db_updated > age_limit:
+        return _not_verified(
+            image,
+            "trivy vulnerability database UpdatedAt is stale",
+            exit_code=exit_code,
+            created_at=created_at,
+            database=db_meta,
+        )
+
     findings: list[dict[str, Any]] = []
     for result in document.get("Results") or []:
         if not isinstance(result, dict):
@@ -74,11 +246,10 @@ def classify_trivy_document(document: dict[str, Any], *, image: str) -> dict[str
             severity = str(vuln.get("Severity") or "UNKNOWN").upper()
             fixed = str(vuln.get("FixedVersion") or "")
             withdrawn = bool(vuln.get("withdrawn"))
-            known = _BLOCKING | {"LOW", "MODERATE", "MEDIUM"}
             if withdrawn:
                 kind = "withdrawn"
                 blocking = False
-            elif severity not in known:
+            elif severity not in _KNOWN_SEVERITY:
                 kind = "unscored"
                 blocking = True
             elif severity in _BLOCKING and bool(fixed):
@@ -103,15 +274,41 @@ def classify_trivy_document(document: dict[str, Any], *, image: str) -> dict[str
                 }
             )
     blocking = [item for item in findings if item["blocking"]]
-    trivy_meta = document.get("Trivy") if isinstance(document.get("Trivy"), dict) else {}
+    unique_ids = {str(item["id"]) for item in findings if item.get("id")}
+    status = "FAIL" if blocking else "PASS"
+    ok = not blocking
+    # A nonzero scanner exit is never treated as a clean pass, even when the
+    # JSON body happens to contain only non-blocking rows.
+    if exit_code not in {0, None} and ok:
+        return _not_verified(
+            image,
+            "trivy exited nonzero",
+            exit_code=exit_code,
+            created_at=created_at,
+            findings=findings,
+            finding_row_count=len(findings),
+            unique_cve_count=len(unique_ids),
+            database=db_meta,
+        )
+    if exit_code not in {0, None} and not ok:
+        # Keep FAIL with findings; still record the exit code.
+        pass
     return {
-        "ok": not blocking,
-        "status": "FAIL" if blocking else "PASS",
+        "ok": ok,
+        "status": status,
         "image": image,
+        "name": identity["repository"],
+        "tag": identity["tag"],
+        "digest": identity["digest"],
+        "platform": _platform(document),
         "artifact": document.get("ArtifactName") or image,
-        "created_at": document.get("CreatedAt") or "",
-        "scanner_version": str(trivy_meta.get("Version") or ""),
+        "created_at": created_at,
+        "scanner_version": _scanner_version(document),
+        "database": db_meta,
+        "exit_code": exit_code,
         "findings": findings,
+        "finding_row_count": len(findings),
+        "unique_cve_count": len(unique_ids),
         "blocking_count": len(blocking),
         "unfixed_count": sum(1 for item in findings if item["class"] == "unfixed"),
         "unscored_count": sum(1 for item in findings if item["class"] == "unscored"),
@@ -119,7 +316,8 @@ def classify_trivy_document(document: dict[str, Any], *, image: str) -> dict[str
         "note": (
             "Fixed HIGH and CRITICAL findings are blocking. Unscored findings are blocking. "
             "Unfixed findings stay visible and are not a waiver. "
-            "A vendor status such as not_affected is not applied as a waiver."
+            "A vendor status such as not_affected is not applied as a waiver. "
+            "finding_row_count counts package rows; unique_cve_count counts distinct ids."
         ),
     }
 
@@ -128,6 +326,7 @@ def scan_pinned_images(
     *,
     runner: Callable[..., Any] | None = None,
     images: tuple[dict[str, str], ...] | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Scan pinned images with a local trivy binary or a pinned trivy container.
 
@@ -135,6 +334,8 @@ def scan_pinned_images(
     object with ``returncode`` and ``stdout``.
     """
     selected = images if images is not None else PINNED_IMAGES
+    tool_version = "0.76.0"
+    scan_timestamp = (now or datetime.now(timezone.utc)).isoformat()
     if runner is None:
         if shutil.which("trivy"):
             def runner(args, timeout=600):  # type: ignore[no-redef]
@@ -159,8 +360,11 @@ def scan_pinned_images(
                 "error": "trivy and docker are unavailable",
                 "images": [],
                 "blocking_count": 0,
+                "finding_row_count": 0,
+                "unique_cve_count": 0,
                 "tool": "trivy",
                 "tool_version": "",
+                "scan_timestamp": scan_timestamp,
             }
     else:
         invoke = runner
@@ -168,12 +372,14 @@ def scan_pinned_images(
 
     reports = []
     blocking_count = 0
+    finding_row_count = 0
+    unique_cves: set[str] = set()
     for image in selected:
+        # Do not pre-filter severities: UNKNOWN/unscored rows must remain visible
+        # so the classifier can fail closed on them.
         args = [
             *prefix,
             "image",
-            "--severity",
-            "HIGH,CRITICAL",
             "--format",
             "json",
             "--quiet",
@@ -188,9 +394,13 @@ def scan_pinned_images(
                 "error": str(exc),
                 "images": reports,
                 "blocking_count": blocking_count,
+                "finding_row_count": finding_row_count,
+                "unique_cve_count": len(unique_cves),
                 "tool": "trivy",
-                "tool_version": "0.76.0",
+                "tool_version": tool_version,
+                "scan_timestamp": scan_timestamp,
             }
+        exit_code = getattr(completed, "returncode", None)
         stdout = getattr(completed, "stdout", "") or ""
         try:
             document = json.loads(stdout) if stdout.strip() else {}
@@ -201,21 +411,28 @@ def scan_pinned_images(
                 "error": "trivy did not return JSON",
                 "images": reports,
                 "blocking_count": blocking_count,
+                "finding_row_count": finding_row_count,
+                "unique_cve_count": len(unique_cves),
                 "tool": "trivy",
-                "tool_version": "0.76.0",
+                "tool_version": tool_version,
+                "scan_timestamp": scan_timestamp,
+                "exit_code": exit_code,
             }
-        classified = classify_trivy_document(document if isinstance(document, dict) else {}, image=image["ref"])
-        if getattr(completed, "returncode", 0) not in {0, None} and not classified["findings"]:
-            classified = {
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "image": image["ref"],
-                "findings": [],
-                "blocking_count": 0,
-                "error": (getattr(completed, "stderr", "") or "")[:500],
-            }
+        classified = classify_trivy_document(
+            document if isinstance(document, dict) else {},
+            image=image["ref"],
+            now=now,
+            exit_code=exit_code if isinstance(exit_code, int) else None,
+        )
+        if not classified.get("scanner_version"):
+            classified["scanner_version"] = tool_version
+        classified["pin_name"] = image.get("name") or ""
         reports.append(classified)
         blocking_count += int(classified.get("blocking_count") or 0)
+        finding_row_count += int(classified.get("finding_row_count") or 0)
+        for item in classified.get("findings") or []:
+            if item.get("id"):
+                unique_cves.add(str(item["id"]))
         if classified.get("status") == "NOT_VERIFIED":
             return {
                 "ok": False,
@@ -223,8 +440,11 @@ def scan_pinned_images(
                 "error": classified.get("error") or "image scan failed",
                 "images": reports,
                 "blocking_count": blocking_count,
+                "finding_row_count": finding_row_count,
+                "unique_cve_count": len(unique_cves),
                 "tool": "trivy",
-                "tool_version": "0.76.0",
+                "tool_version": tool_version,
+                "scan_timestamp": scan_timestamp,
             }
     return {
         "ok": blocking_count == 0,
@@ -232,7 +452,13 @@ def scan_pinned_images(
         "error": "",
         "images": reports,
         "blocking_count": blocking_count,
+        "finding_row_count": finding_row_count,
+        "unique_cve_count": len(unique_cves),
         "tool": "trivy",
-        "tool_version": "0.76.0",
-        "note": "PASS means no fixed HIGH or CRITICAL finding in the scanned images.",
+        "tool_version": tool_version,
+        "scan_timestamp": scan_timestamp,
+        "note": (
+            "PASS means no fixed HIGH or CRITICAL finding and no unscored finding "
+            "in the scanned images. Empty or mismatched reports are NOT_VERIFIED."
+        ),
     }

@@ -128,14 +128,20 @@ def test_restore_with_wrong_key_does_not_write_plaintext(tmp_path: Path, monkeyp
 
 
 def test_image_report_fails_closed_on_missing_and_unscored_data():
+    from datetime import datetime, timezone
+
     from core.supply_chain.images import classify_trivy_document
 
     empty = classify_trivy_document({}, image="example@sha256:abc")
     assert empty["status"] == "NOT_VERIFIED"
     assert empty["ok"] is False
+    schema_only = classify_trivy_document({"SchemaVersion": 2}, image="example@sha256:abc")
+    assert schema_only["status"] == "NOT_VERIFIED"
     unscored = classify_trivy_document(
         {
             "SchemaVersion": 2,
+            "ArtifactName": "example@sha256:abc",
+            "CreatedAt": "2026-10-18T00:00:00Z",
             "Results": [
                 {
                     "Vulnerabilities": [
@@ -160,6 +166,7 @@ def test_image_report_fails_closed_on_missing_and_unscored_data():
             ],
         },
         image="example@sha256:abc",
+        now=datetime(2026, 10, 18, tzinfo=timezone.utc),
     )
     assert unscored["status"] == "FAIL"
     assert unscored["unscored_count"] == 1

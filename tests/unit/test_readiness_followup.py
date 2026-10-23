@@ -147,7 +147,12 @@ def test_doctor_strict_fails_when_encryption_is_required(tmp_path: Path, monkeyp
 def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
     assert all("@sha256:" in item["ref"] for item in PINNED_IMAGES)
     assert all("3.14-slim" not in item["ref"] for item in PINNED_IMAGES)
+    pin = PINNED_IMAGES[0]["ref"]
     document = {
+        "SchemaVersion": 2,
+        "ArtifactName": pin,
+        "CreatedAt": "2026-10-18T01:22:03Z",
+        "Metadata": {"RepoDigests": [pin]},
         "Results": [
             {
                 "Vulnerabilities": [
@@ -169,10 +174,12 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
             }
         ]
     }
-    report = classify_trivy_document(document, image="example@sha256:abc")
+    report = classify_trivy_document(document, image=pin, now=datetime(2026, 10, 18, tzinfo=timezone.utc))
     assert report["status"] == "FAIL"
     assert report["blocking_count"] == 1
     assert report["unfixed_count"] == 1
+    assert report["finding_row_count"] == 2
+    assert report["unique_cve_count"] == 2
     assert report["findings"][0]["class"] == "fixed"
     assert report["findings"][1]["class"] == "unfixed"
 
@@ -183,18 +190,27 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
 
     scanned = scan_pinned_images(
         runner=lambda args, timeout=600: _Completed(),
-        images=({"name": "one", "ref": PINNED_IMAGES[0]["ref"]},),
+        images=({"name": "one", "ref": pin},),
     )
     assert scanned["status"] == "NOT_VERIFIED"
 
     class _Clean:
         returncode = 0
-        stdout = json.dumps({"SchemaVersion": 2, "ArtifactName": "example", "Results": []})
+        stdout = json.dumps(
+            {
+                "SchemaVersion": 2,
+                "ArtifactName": pin,
+                "CreatedAt": "2026-10-18T01:22:03Z",
+                "Metadata": {"RepoDigests": [f"python@{pin.split('@', 1)[1]}"]},
+                "Results": [],
+            }
+        )
         stderr = ""
 
     clean = scan_pinned_images(
         runner=lambda args, timeout=600: _Clean(),
-        images=({"name": "one", "ref": PINNED_IMAGES[0]["ref"]},),
+        images=({"name": "one", "ref": pin},),
+        now=datetime(2026, 10, 18, tzinfo=timezone.utc),
     )
     assert clean["status"] == "PASS"
     assert clean["blocking_count"] == 0

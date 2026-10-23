@@ -72,7 +72,7 @@ There is no rotate command. To move assessment files to a new key:
 4. `pen-testing backup --output <new-backup> --apply`.
 5. Store the new key outside the repository and outside the backup directory. Files written earlier stay readable only with the old key.
 
-A wrong key makes `restore --apply` raise an error and write nothing. Confirm that on a copy before deleting the old archive.
+A wrong key, corrupt member, or checksum mismatch is detected before any destination file is replaced, so `restore --apply` does not commit partial restored data. Confirm that on a copy before deleting the old archive.
 
 ## Operator checklist
 

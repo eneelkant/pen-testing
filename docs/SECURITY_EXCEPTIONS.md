@@ -2,9 +2,9 @@
 
 **Status:** Inventory of findings this repository has actually scanned. Nothing in this file is a waiver, an ignore-file entry, or an acceptance signature.
 
-**Scanner:** Trivy 0.76.0. Vulnerability DB `UpdatedAt` 2026-10-17 18:34:28Z, downloaded 2026-10-18 01:15:57Z. Image sources were the registry (`--image-src remote`) for the upstream images. Docker was not installed in that environment, so the container runtime itself is `NOT VERIFIED` here.
+**Scanner:** Trivy 0.76.0. Vulnerability DB `UpdatedAt` 2026-10-17 18:34:28Z, downloaded 2026-10-18 01:15:57Z for the inventory below. Image sources were the registry (`--image-src remote`) for the upstream images. Docker and Trivy were not installed in the `0.2.0a18` authoring environment, so a fresh local rescan is `NOT_VERIFIED` here; CI artifacts on the PR head are the live evidence.
 
-**Gate:** `python -m core.supply_chain images` fails on fixed HIGH or CRITICAL findings and on unscored findings. Unfixed findings are printed and do not by themselves fail the command. An empty Trivy document is `NOT_VERIFIED`. There is no `.trivyignore`. A vendor status such as `not_affected` is not a waiver. No finding below is marked verified non-applicable.
+**Gate:** `python -m core.supply_chain images` fails on fixed HIGH or CRITICAL findings and on unscored findings. Unfixed findings are printed and do not by themselves fail the command. Empty, schema-only, digest-mismatched, stale `CreatedAt`, stale vulnerability-database, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`. There is no `.trivyignore`. A vendor status such as `not_affected` is not a waiver. No finding below is marked verified non-applicable. Reports distinguish `finding_row_count` from `unique_cve_count`.
 
 **Owner:** repository maintainer. **Next review:** 2026-11-18.
 

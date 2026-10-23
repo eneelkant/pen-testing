@@ -53,7 +53,7 @@ pen-testing restore --archive /secure/backups/2026-10-18        # dry-run
 pen-testing restore --archive /secure/backups/2026-10-18 --apply
 ```
 
-The archive stays where you point `--output`. Restore writes only under the assessment and report directories, skips symlinks, and rejects manifest paths that leave that root. There is no backup scheduler in Compose. An operator cron job can call the same command; this repository does not install one. See `docs/OPERATIONS.md`.
+The archive stays where you point `--output`. Create seals every member before writing a staging directory, then replaces the destination archive only after the manifest is complete. Restore path-checks, decrypts, and checksum-verifies every member before any destination file is replaced; commit uses per-file staging temps. A wrong key, invalid key, missing key under `PEN_REQUIRE_DATA_ENCRYPTION`, corrupt ciphertext, or mixed plaintext member in an encrypted archive raises an error and does not commit restored data. Restore writes only under the assessment and report directories, skips symlinks, and rejects manifest paths that leave that root. There is no backup scheduler in Compose. An operator cron job can call the same command; this repository does not install one. See `docs/OPERATIONS.md`.
 
 `pen-testing cleanup --apply` overwrites a regular file with zeros before unlink. That reduces leftover plaintext on some filesystems. It is not forensic erasure. It does not erase SSD wear-leveling, snapshots, or files that were already copied. Symlinks are still not deleted.
 

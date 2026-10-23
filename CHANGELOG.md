@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0a18 — 2026-10-23
+
+### Security
+
+- Backup create seals every member before any archive write, commits through a staging directory, and leaves an existing archive intact when sealing or staging fails
+- Restore decrypts and checksum-verifies every member before replacing any destination file. Staging temps are removed on commit failure. A wrong key or corrupt member writes nothing
+- `safe_write_text` writes to a same-directory temp file and `os.replace`s into place so a failed write does not truncate an existing record
+- Encrypted manifests refuse plaintext members when encryption is required
+
+### Supply chain
+
+- Image scan reports record repository, tag, digest, platform, scanner version, vulnerability-database metadata, scan timestamp, exit code, finding row counts, and unique CVE counts
+- Empty, schema-only, digest-mismatched, stale `CreatedAt`, stale vulnerability-database, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`
+- Trivy is invoked without a severity pre-filter so UNKNOWN/unscored rows remain visible to the classifier
+- Digests were not changed. The fixed HIGH/CRITICAL gate remains fail-closed
+
+### Notes
+
+- Counsel review is still pending. This release is not an independent audit
+- Not production-ready
+
 ## 0.2.0a17 — 2026-10-18
 
 ### Supply chain

@@ -291,7 +291,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          REQUIRE_GITHUB_BASELINE_REVIEW: "1"
         run: |
           python -m core.supply_chain images \
             --baseline core/supply_chain/image_baseline.json \

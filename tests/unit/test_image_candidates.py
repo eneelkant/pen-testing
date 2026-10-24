@@ -557,9 +557,7 @@ def test_preclassified_pass_without_raw_results_is_not_reused(tmp_path: Path):
     evidence.mkdir()
     ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
     planted = _pass_row(ref)
-    # Summary-only PASS: no Results, no findings.
     assert "Results" not in planted
-    assert "findings" not in planted
     (evidence / "planted-pass.json").write_text(json.dumps(planted), encoding="utf-8")
     calls: list[str] = []
 
@@ -578,7 +576,8 @@ def test_preclassified_pass_without_raw_results_is_not_reused(tmp_path: Path):
     assert report["acceptable"] == []
 
 
-def test_preclassified_pass_with_blocking_findings_is_failed(tmp_path: Path):
+def test_preclassified_pass_with_blocking_findings_forces_fresh_scan(tmp_path: Path):
+    """Stored PASS is never trusted, even when findings claim blockers."""
     watch = _watch()
     evidence = tmp_path / "evidence"
     evidence.mkdir()
@@ -591,14 +590,7 @@ def test_preclassified_pass_with_blocking_findings_is_failed(tmp_path: Path):
             "fixed": "1.2.3",
             "class": "fixed",
             "blocking": True,
-        },
-        {
-            "id": "CVE-TEST-2",
-            "severity": "UNKNOWN",
-            "fixed": "",
-            "class": "unscored",
-            "blocking": True,
-        },
+        }
     ]
     planted["blocking_count"] = 0
     planted["unscored_count"] = 0
@@ -613,35 +605,130 @@ def test_preclassified_pass_with_blocking_findings_is_failed(tmp_path: Path):
         now=NOW,
         database=LIVE_DB,
     )
-    # Revalidation from findings yields FAIL; may be reused as FAIL without rescan.
+    assert calls == [ref]
+    assert report["candidates"][0]["reused_evidence"] is False
     assert report["acceptable"] == []
-    assert report["candidates"][0]["status"] == "FAIL"
-    assert report["candidates"][0]["blocking_count"] >= 1
-    assert report["candidates"][0]["unscored_count"] >= 1
+    assert report["candidates"][0]["blocking_count"] == 99
 
 
-def test_preclassified_pass_with_clean_findings_still_requires_results_for_reuse(tmp_path: Path):
-    """Empty findings on a PASS summary must not become ACCEPTABLE via reuse."""
+def test_planted_empty_results_pass_is_not_accepted_via_reuse(tmp_path: Path):
+    """Empty Trivy Results + stored metadata must not become ACCEPTABLE via reuse."""
     watch = _watch()
     evidence = tmp_path / "evidence"
     evidence.mkdir()
     ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
     planted = _pass_row(ref)
-    planted["findings"] = []
-    (evidence / "empty-findings.json").write_text(json.dumps(planted), encoding="utf-8")
+    planted["Results"] = []
+    planted["ArtifactName"] = ref
+    planted["CreatedAt"] = planted["created_at"]
+    (evidence / "empty-results.json").write_text(json.dumps(planted), encoding="utf-8")
     calls: list[str] = []
 
     report = monitor_candidates(
         watch=watch,
         fetcher=lambda _url: _hub(DIGEST_A),
-        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=3),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=4),
         evidence_dir=evidence,
         now=NOW,
         database=LIVE_DB,
     )
     assert calls == [ref]
     assert report["candidates"][0]["reused_evidence"] is False
+    assert report["acceptable"] == []
     assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
+
+
+def test_raw_trivy_results_fail_is_reclassified_not_trusting_stored_counts(tmp_path: Path):
+    """Raw Results go through classify_trivy_document; planted PASS counts are ignored."""
+    watch = _watch()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    raw = {
+        "ArtifactName": ref,
+        "CreatedAt": "2026-10-24T01:00:00Z",
+        "digest": DIGEST_A,
+        "platform": "linux/amd64",
+        "scanner_version": "0.76.0",
+        "database": {"updated_at": "2026-10-24T01:18:19Z"},
+        # Misleading stored gate fields — classifier must ignore these.
+        "status": "PASS",
+        "blocking_count": 0,
+        "unscored_count": 0,
+        "Results": [
+            {
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-PLANT-1",
+                        "PkgName": "openssl",
+                        "InstalledVersion": "1.0.0",
+                        "FixedVersion": "1.0.1",
+                        "Severity": "CRITICAL",
+                    }
+                ]
+            }
+        ],
+    }
+    (evidence / "raw.json").write_text(json.dumps(raw), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=1),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    # status PASS on the document blocks reuse entirely → fresh scan.
+    assert calls == [ref]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert report["acceptable"] == []
+
+
+def test_raw_trivy_results_without_pass_status_are_reclassified(tmp_path: Path):
+    """Raw Trivy JSON without a stored PASS status is classified canonically."""
+    watch = _watch()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    raw = {
+        "ArtifactName": ref,
+        "CreatedAt": "2026-10-24T01:00:00Z",
+        "digest": DIGEST_A,
+        "platform": "linux/amd64",
+        "scanner_version": "0.76.0",
+        "database": {"updated_at": "2026-10-24T01:18:19Z"},
+        "Results": [
+            {
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-RAW-1",
+                        "PkgName": "curl",
+                        "InstalledVersion": "1.0.0",
+                        "FixedVersion": "1.0.1",
+                        "Severity": "HIGH",
+                    }
+                ]
+            }
+        ],
+    }
+    (evidence / "raw-fail.json").write_text(json.dumps(raw), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=50),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == []
+    assert report["candidates"][0]["reused_evidence"] is True
+    assert report["candidates"][0]["status"] == "FAIL"
+    assert report["candidates"][0]["blocking_count"] == 1
+    assert report["acceptable"] == []
 
 
 def test_acceptable_only_after_fresh_exact_digest_pass():

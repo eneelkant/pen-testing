@@ -221,15 +221,12 @@ def evidence_reusable(
         )
     if document.get("status") == "NOT_VERIFIED":
         return False, "evidence status is NOT_VERIFIED"
-    # A planted PASS summary without raw Trivy Results must never be treated as
-    # reusable clean evidence. FAIL-shaped rows with findings may still be
-    # revalidated during materialization; PASS without Results is rejected here
-    # unless findings exist so blockers can be recomputed into FAIL.
-    if document.get("status") == "PASS" and "Results" not in document:
-        findings = document.get("findings")
-        if not isinstance(findings, list) or not findings:
-            return False, "pre-classified PASS lacks raw Trivy Results for revalidation"
-    created_at = str(document.get("created_at") or "")
+    # Stored PASS is never reusable. Acceptance requires a fresh scan whose
+    # findings are classified by classify_trivy_document — never stored PASS
+    # status or stored blocker counts alone.
+    if document.get("status") == "PASS":
+        return False, "PASS evidence cannot be reused; require a fresh scan"
+    created_at = str(document.get("created_at") or document.get("CreatedAt") or "")
     created = _parse_time(created_at)
     if not created_at or created is None:
         return False, "evidence CreatedAt is missing"
@@ -265,66 +262,6 @@ def evidence_reusable(
     return True, ""
 
 
-def _recompute_from_finding_rows(document: dict[str, Any], *, ref: str) -> dict[str, Any] | None:
-    """Recompute gate counts from stored finding rows. Returns None if unusable."""
-    findings = document.get("findings")
-    if not isinstance(findings, list) or not findings:
-        return None
-    recomputed: list[dict[str, Any]] = []
-    for item in findings:
-        if not isinstance(item, dict):
-            continue
-        severity = str(item.get("severity") or "UNKNOWN").upper()
-        fixed = str(item.get("fixed") or item.get("FixedVersion") or "")
-        kind = str(item.get("class") or "")
-        if not kind:
-            if severity in {"HIGH", "CRITICAL"} and fixed:
-                kind = "fixed"
-            elif severity not in {"HIGH", "CRITICAL", "LOW", "MODERATE", "MEDIUM"}:
-                kind = "unscored"
-            elif not fixed:
-                kind = "unfixed"
-            else:
-                kind = "fixed"
-        blocking = bool(item.get("blocking")) if "blocking" in item else (
-            kind == "unscored" or (kind == "fixed" and severity in {"HIGH", "CRITICAL"})
-        )
-        # Prefer canonical class over a planted blocking flag for PASS bodies.
-        if kind == "unscored":
-            blocking = True
-        elif kind == "fixed" and severity in {"HIGH", "CRITICAL"}:
-            blocking = True
-        elif kind in {"unfixed", "withdrawn"}:
-            blocking = False
-        recomputed.append({**item, "class": kind, "blocking": blocking, "severity": severity})
-    if not recomputed:
-        return None
-    blocking_rows = [item for item in recomputed if item.get("blocking")]
-    unique_ids = {str(item.get("id")) for item in recomputed if item.get("id")}
-    unscored_count = sum(1 for item in recomputed if item.get("class") == "unscored")
-    status = "FAIL" if blocking_rows else "PASS"
-    identity = parse_image_ref(ref)
-    return {
-        "ok": not blocking_rows,
-        "status": status,
-        "image": ref,
-        "name": identity["repository"],
-        "tag": identity["tag"],
-        "digest": identity["digest"] or str(document.get("digest") or ""),
-        "platform": str(document.get("platform") or ""),
-        "created_at": str(document.get("created_at") or ""),
-        "scanner_version": str(document.get("scanner_version") or document.get("tool_version") or ""),
-        "database": document.get("database") if isinstance(document.get("database"), dict) else {},
-        "findings": recomputed,
-        "finding_row_count": len(recomputed),
-        "unique_cve_count": len(unique_ids),
-        "blocking_count": len(blocking_rows),
-        "unscored_count": unscored_count,
-        "error": "",
-        "revalidated_from": "findings",
-    }
-
-
 def _classify_from_evidence(
     document: dict[str, Any],
     *,
@@ -332,12 +269,12 @@ def _classify_from_evidence(
     now: datetime,
     database: dict[str, str] | None,
 ) -> dict[str, Any]:
-    """Materialize a classification from stored evidence without trusting PASS alone.
+    """Materialize classification from stored evidence without trusting PASS alone.
 
-    Raw Trivy documents (``Results`` present) are always run through
-    ``classify_trivy_document``. Pre-classified PASS rows without ``Results`` are
-    rejected. FAIL reject-inventory summaries may be rebound for rejection-only
-    reuse after ``evidence_reusable`` has already passed.
+    Raw Trivy documents (``Results`` present) always go through
+    ``classify_trivy_document``. Pre-classified PASS is never trusted here.
+    FAIL reject-inventory summaries may be rebound for rejection-only reuse
+    after ``evidence_reusable`` has already passed.
     """
     identity = parse_image_ref(ref)
     if "Results" in document:
@@ -352,10 +289,6 @@ def _classify_from_evidence(
 
     status = str(document.get("status") or "")
     if status == "PASS":
-        recomputed = _recompute_from_finding_rows(document, ref=ref)
-        if recomputed is not None and recomputed.get("status") == "FAIL":
-            # Recomputed blockers demote a planted PASS to FAIL (rejection only).
-            return recomputed
         return {
             "ok": False,
             "status": "NOT_VERIFIED",
@@ -371,7 +304,7 @@ def _classify_from_evidence(
             "created_at": str(document.get("created_at") or ""),
             "scanner_version": str(document.get("scanner_version") or document.get("tool_version") or ""),
             "database": document.get("database") if isinstance(document.get("database"), dict) else {},
-            "error": "pre-classified PASS lacks raw Trivy Results for revalidation",
+            "error": "stored PASS status is not trusted; require a fresh scan",
         }
 
     if status in {"FAIL", "NOT_VERIFIED"} and "blocking_count" in document:
@@ -542,9 +475,14 @@ def monitor_candidates(
                     now=clock,
                     database=database,
                 )
-                # Materialization can still fail closed (e.g. planted PASS).
-                if classified.get("status") == "NOT_VERIFIED" and classified.get("error"):
-                    reuse_error = str(classified.get("error") or reuse_error)
+                # Never accept via reuse. PASS (including empty Results that
+                # classify clean) forces a fresh scan. FAIL reject inventory may
+                # be reused. NOT_VERIFIED materialization also forces a rescan.
+                if classified.get("status") == "PASS":
+                    reuse_error = "PASS evidence requires a fresh scan; stored PASS is never accepted via reuse"
+                    classified = None
+                elif classified.get("status") == "NOT_VERIFIED":
+                    reuse_error = str(classified.get("error") or reuse_error or "reused evidence not verified")
                     classified = None
                 else:
                     reused = True
@@ -685,7 +623,12 @@ def monitor_candidates(
         if status == "NOT_VERIFIED":
             unresolved = True
         elif status == "PASS" and blocking_count == 0 and unscored_count == 0:
-            if require_live_database and not live_ok:
+            if reused:
+                row["status"] = "NOT_VERIFIED"
+                row["error"] = "reused evidence cannot make a candidate acceptable"
+                rows[-1] = row
+                unresolved = True
+            elif require_live_database and not live_ok:
                 row["status"] = "NOT_VERIFIED"
                 row["error"] = "live vulnerability database probe required before accepting a candidate"
                 rows[-1] = row
@@ -722,8 +665,9 @@ def monitor_candidates(
         "policy": (
             "PASS requires zero fixed HIGH/CRITICAL and zero unscored findings with valid "
             "fresh scan metadata. Reused evidence must match digest, platform, scanner "
-            "version, and live DB freshness. Pre-classified PASS without raw Trivy Results "
-            "is rejected. This monitor never updates PINNED_IMAGES or merges PRs."
+            "0.76.0, and live DB freshness. Stored PASS is never reused or accepted; only "
+            "a fresh scan classified by classify_trivy_document may become acceptable. "
+            "This monitor never updates PINNED_IMAGES or merges PRs."
         ),
     }
 

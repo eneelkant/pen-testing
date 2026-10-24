@@ -35,6 +35,7 @@ import json
 import re
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -664,6 +665,40 @@ def build_candidate_entries(
 # ------------------------------------------------------------ GitHub approval proof
 
 
+
+
+def _http_bytes(url: str, token: str) -> bytes:
+    """Download a GitHub artifact without forwarding the API token on redirects."""
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "pen-testing-image-baseline-gate",
+        },
+    )
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        with opener.open(request, timeout=30) as response:
+            return response.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code not in {301, 302, 303, 307, 308}:
+            raise
+        location = str(exc.headers.get("Location") or "")
+        parsed = urllib.parse.urlparse(location)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or not host.endswith(".blob.core.windows.net"):
+            raise ValueError("GitHub artifact redirect target is not an approved HTTPS blob host")
+        # The artifact URL is signed. Do not forward GitHub's bearer token to it.
+        request = urllib.request.Request(location, headers={"User-Agent": "pen-testing-image-baseline-gate"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read()
 
 
 def _artifact_member(archive: bytes, relative_path: str) -> bytes:

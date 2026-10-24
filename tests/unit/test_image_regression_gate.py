@@ -714,7 +714,7 @@ def test_github_baseline_verification_rejects_content_changed_after_review(tmp_p
         fetch_json=fetch_json,
         fetch_bytes=fetch_bytes,
     )
-    assert any("differs from the exact content reviewed" in error for error in errors)
+    assert any("does not match the exact content of the reviewed PR head" in error for error in errors)
 
 
 def test_github_baseline_verification_rejects_tampered_raw_artifact(tmp_path):

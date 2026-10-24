@@ -24,6 +24,9 @@
 - Added `python -m core.supply_chain candidates` and scheduled workflow `image-candidate-monitor.yml` to watch official Hub tags, reuse committed reject evidence, scan only new digests, and report `NO_ACCEPTABLE_CANDIDATE` without changing pins
 - Image remediation pass (2026-10-24): reproduced CI run `40066307720` (Python FAIL / upstream 1,075 blocking). Evaluated additional official digests including `python:3.12.13-slim-bookworm` and Temporal `1.7.3`; all rejected. Pins unchanged. See `docs/IMAGE_REMEDIATION.md`
 - Candidate evidence reuse matches fail-closed guarantees: exact digest/platform/`0.76.0` scanner, live `trivy version` DB probe required (age alone insufficient), pre-classified PASS without raw Trivy `Results` rejected, missing platform reported explicitly rather than defaulted
+- Pins are OCI index digests; `PINNED_IMAGES` now records each pin's registry-verified linux/amd64 child as `platform_digest`, and the candidate monitor treats that child as pinned. Correction: the earlier "Shannon `3.4.0` / Trivy `0.76.0` digest moved" notes were wrong — `9e53649e…` and `166061a4…` are the amd64 children of the existing pins
+- Pinned image scans pass `--platform linux/amd64` and mark a report NOT_VERIFIED when its image config is not linux/amd64, or when the report's own `Trivy.Version` is missing or not `0.76.0`. The local `trivy version` probe is kept as `probe_scanner_version` for diagnostics and no longer fills a missing report version (a pinned index scanned as arm64 reports identical RepoDigests)
+- `python -m core.supply_chain images --raw-dir DIR` writes each image's parsed Trivy document as canonical JSON (sorted keys; not a byte-for-byte copy of Trivy stdout) and records the SHA-256 of the exact bytes written to disk in the report; CI uploads these files as artifact `image-scan-raw`. Pins unchanged
 
 ### Notes
 

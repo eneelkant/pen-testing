@@ -942,6 +942,19 @@ def test_raw_scanner_version_disagreeing_with_probe_is_not_verified():
     _assert_not_accepted(_run(scan), error_fragment="disagrees with probed scanner")
 
 
+def test_custom_scanner_missing_raw_trivy_version_rejects_probe_fallback():
+    """Injected scanners must not accept a candidate via tool_version alone."""
+
+    def scan(ref):
+        row = _pass_row(ref)
+        row["tool_version"] = "0.76.0"
+        row["scanner_version"] = "0.76.0"
+        row["raw_document"] = _raw_trivy(ref, version=None)
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="scanner version is missing")
+
+
 def test_summary_scanner_version_cannot_override_raw():
     def scan(ref):
         row = _pass_row(ref)

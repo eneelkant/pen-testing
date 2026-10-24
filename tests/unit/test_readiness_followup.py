@@ -224,7 +224,11 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
         "SchemaVersion": 2,
         "ArtifactName": pin,
         "CreatedAt": "2026-10-18T01:22:03Z",
-        "Metadata": {"RepoDigests": [f"python@{pin.split('@', 1)[1]}"]},
+        "Metadata": {
+            "RepoDigests": [f"python@{pin.split('@', 1)[1]}"],
+            "ImageConfig": {"architecture": "amd64", "os": "linux"},
+        },
+        "Trivy": {"Version": "0.76.0"},
         "Results": [],
     }
 

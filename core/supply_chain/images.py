@@ -4,6 +4,14 @@ Digests were resolved from the registry on 2026-10-18. A scan that cannot run
 is NOT_VERIFIED. Fixed HIGH and CRITICAL findings are blocking. Unfixed
 findings are reported and are not a claim that the image is safe. Empty,
 malformed, stale, or identity-mismatched reports are NOT_VERIFIED.
+
+Each ``ref`` digest is a multi-platform OCI image index. ``platform_digest`` is
+that index's linux/amd64 child manifest, read from the registry on 2026-10-24
+(``docker buildx imagetools inspect --raw <ref>``). Docker Hub's tags API
+reports per-platform digests, so candidate monitoring must compare against
+``platform_digest``; comparing against the index digest never matches.
+Pinned scans force ``--platform linux/amd64`` and verify the scanned platform
+and the scanner version recorded in the report itself.
 """
 
 from __future__ import annotations
@@ -18,30 +26,40 @@ PINNED_IMAGES = (
     {
         "name": "python-3.12-probe",
         "ref": "python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258",
+        "platform_digest": "sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d",
     },
     {
         "name": "python-3.12-orchestrator",
         "ref": "python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258",
+        "platform_digest": "sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d",
     },
     {
         "name": "shannon-worker",
         "ref": "keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e",
+        "platform_digest": "sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a",
     },
     {
         "name": "temporal",
         "ref": "temporalio/temporal:1.7.0@sha256:9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4",
+        "platform_digest": "sha256:6dc6fda8437b7aca517a5daeff024438f469f0c40a16c28118393d8477965f5f",
     },
     {
         "name": "gitleaks",
         "ref": "zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46",
+        "platform_digest": "sha256:e5fa09c73ff086ea57f3731a4e1fb372969fb73314cc932020472eb23a5dfc7e",
     },
     {
         "name": "trivy-scanner",
         "ref": "aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222",
+        "platform_digest": "sha256:166061a4a15c64a94a3aab430659e2c166dc0815fbc54a222c6d56d64132f552",
     },
 )
 
 TRIVY_IMAGE = PINNED_IMAGES[-1]["ref"]
+# Every gate (pinned scans and candidate acceptance) requires this platform and
+# the scanner version of the pinned Trivy image.
+REQUIRED_PLATFORM = "linux/amd64"
+REQUIRED_SCANNER_VERSION = TRIVY_IMAGE.split("@", 1)[0].rsplit(":", 1)[-1] or "0.76.0"
 _BLOCKING = {"HIGH", "CRITICAL"}
 _KNOWN_SEVERITY = _BLOCKING | {"LOW", "MODERATE", "MEDIUM"}
 # Reports older than this, or with a vulnerability DB older than this, are not
@@ -361,6 +379,85 @@ def classify_trivy_document(
     }
 
 
+def _enforce_scan_identity(
+    classified: dict[str, Any],
+    *,
+    image: str,
+    required_platform: str,
+    required_scanner_version: str,
+) -> dict[str, Any]:
+    """Downgrade a PASS/FAIL row to NOT_VERIFIED on platform or scanner mismatch.
+
+    ``scanner_version`` must be present in the report (``Trivy.Version``); a
+    missing value is NOT_VERIFIED regardless of what the local probe reports.
+    """
+    if classified.get("status") == "NOT_VERIFIED":
+        return classified
+    platform = str(classified.get("platform") or "")
+    if platform != required_platform:
+        return _not_verified(
+            image,
+            f"scanned platform {platform!r} does not match required {required_platform!r}"
+            if platform
+            else "scanned platform is missing from the Trivy report",
+            platform=platform,
+            scanner_version=classified.get("scanner_version") or "",
+            database=classified.get("database") or {},
+            created_at=classified.get("created_at") or "",
+        )
+    scanner = str(classified.get("scanner_version") or "")
+    if not scanner:
+        return _not_verified(
+            image,
+            "scanner version is missing from the Trivy report; the local probe is not accepted as a substitute",
+            platform=platform,
+            scanner_version="",
+            database=classified.get("database") or {},
+            created_at=classified.get("created_at") or "",
+        )
+    if scanner != required_scanner_version:
+        return _not_verified(
+            image,
+            f"scanner_version {scanner!r} does not match required {required_scanner_version!r}",
+            platform=platform,
+            scanner_version=scanner,
+            database=classified.get("database") or {},
+            created_at=classified.get("created_at") or "",
+        )
+    return classified
+
+
+def write_raw_evidence(report: dict[str, Any], raw_dir: Any) -> dict[str, Any]:
+    """Move each row's ``raw_document`` into ``raw_dir`` and record its sha256.
+
+    Each file holds canonical JSON (``indent=1``, sorted keys, UTF-8) serialized
+    from the parsed Trivy document; it is not a byte-for-byte copy of Trivy's
+    original stdout. ``raw_evidence`` records the path, the SHA-256 of the exact
+    bytes written to disk, and their length. Rows without a raw document get
+    ``raw_evidence: None`` so a missing file is visible rather than silently absent.
+    """
+    import hashlib
+    from pathlib import Path
+
+    directory = Path(raw_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    for index, row in enumerate(report.get("images") or []):
+        raw = row.pop("raw_document", None)
+        if not isinstance(raw, dict) or not raw:
+            row["raw_evidence"] = None
+            continue
+        label = re.sub(r"[^A-Za-z0-9_.-]", "_", str(row.get("pin_name") or row.get("name") or index))
+        path = directory / f"{index:02d}-{label}.trivy.json"
+        payload = json.dumps(raw, indent=1, sort_keys=True).encode("utf-8")
+        path.write_bytes(payload)
+        row["raw_evidence"] = {
+            "path": str(path),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "bytes": len(payload),
+        }
+    return report
+
+
 def _trivy_invoke_prefix(*, use_docker: bool) -> list[str]:
     """Build the argv prefix for host Trivy or the pinned Trivy container.
 
@@ -385,6 +482,8 @@ def scan_pinned_images(
     images: tuple[dict[str, str], ...] | None = None,
     now: datetime | None = None,
     include_raw: bool = False,
+    required_platform: str = REQUIRED_PLATFORM,
+    required_scanner_version: str = REQUIRED_SCANNER_VERSION,
 ) -> dict[str, Any]:
     """Scan pinned images with a local trivy binary or a pinned trivy container.
 
@@ -394,9 +493,16 @@ def scan_pinned_images(
     ``trivy version --format json`` and injects that metadata before
     classification so missing DB freshness cannot be treated as a clean pass.
 
-    ``include_raw`` attaches the unmodified Trivy JSON to each image row as
-    ``raw_document`` so callers (the candidate monitor) can independently
-    re-classify raw findings instead of trusting this summary.
+    ``include_raw`` attaches the parsed Trivy document (a ``dict``, not the
+    original stdout bytes) to each image row as ``raw_document`` so callers (the
+    candidate monitor) can independently re-classify raw findings instead of
+    trusting this summary.
+
+    Pinned refs are multi-platform indexes, so Trivy is told which platform to
+    scan. A report whose image config is not ``required_platform``, or whose own
+    ``Trivy.Version`` is missing or differs from ``required_scanner_version``, is
+    NOT_VERIFIED, never PASS/FAIL. The ``trivy version`` probe result is recorded
+    as ``probe_scanner_version`` for diagnostics and never fills a missing version.
     """
     selected = images if images is not None else PINNED_IMAGES
     tool_version = "0.76.0"
@@ -533,6 +639,8 @@ def scan_pinned_images(
             "--format",
             "json",
             "--quiet",
+            "--platform",
+            required_platform,
             image["ref"],
         ]
         try:
@@ -577,8 +685,16 @@ def scan_pinned_images(
             exit_code=exit_code if isinstance(exit_code, int) else None,
             database=database_meta,
         )
-        if not classified.get("scanner_version"):
-            classified["scanner_version"] = tool_version
+        # The scanner identity must come from the report itself. The local
+        # ``trivy version`` probe is kept as diagnostic metadata only and never
+        # substitutes for a missing report version.
+        classified["probe_scanner_version"] = tool_version
+        classified = _enforce_scan_identity(
+            classified,
+            image=image["ref"],
+            required_platform=required_platform,
+            required_scanner_version=required_scanner_version,
+        )
         classified["pin_name"] = image.get("name") or ""
         if include_raw:
             classified["raw_document"] = document if isinstance(document, dict) else {}

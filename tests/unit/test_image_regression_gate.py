@@ -75,6 +75,7 @@ def _approval(**overrides):
         "approval_ref": "https://github.com/eneelkant/pen-testing/pull/28",
         "approved_at": "2026-10-24T18:20:00+00:00",
         "expires_at": "2026-11-20T18:20:00+00:00",
+        "reviewed_commit_sha": "b" * 40,
     }
     approval.update(overrides)
     return approval
@@ -165,6 +166,15 @@ def test_existing_finding_whose_installed_version_changes_is_new():
     moved = [_vuln("CVE-2026-0001", installed="2.8.6-r0")] + BASE_OS[1:]
     _, result = _evaluate(_raw(PIN["ref"], moved, BASE_GO))
     assert result["regression_gate"]["status"] == "FAIL"
+
+
+def test_changed_severity_or_fix_metadata_on_existing_finding_requires_review():
+    raw = copy.deepcopy(BASE_RAW)
+    raw["Results"][0]["Vulnerabilities"][0]["Severity"] = "CRITICAL"
+    _, result = _evaluate(raw)
+    assert result["regression_gate"]["status"] == "FAIL"
+    assert result["regression_gate"]["changed_blocking_count"] == 1
+    assert "CHANGED_BLOCKING" in result["images"][0]["reason"]
 
 
 def test_removed_inherited_finding_is_reported_resolved():
@@ -493,11 +503,11 @@ def test_approve_entries_enforces_limits():
     document = _doc(_entry(BASE_RAW, approval=None))
     with pytest.raises(ValueError):
         bl.approve_entries(document, approved_by="eneelkant", approval_ref="https://github.com/eneelkant/pen-testing/pull/28",
-                           expires_in_days=32, now=NOW)
+                           expires_in_days=32, reviewed_commit_sha="b" * 40, now=NOW)
     with pytest.raises(ValueError):
-        bl.approve_entries(document, approved_by="eneelkant", approval_ref="ok", expires_in_days=30, now=NOW)
+        bl.approve_entries(document, approved_by="eneelkant", approval_ref="ok", expires_in_days=30, reviewed_commit_sha="b" * 40, now=NOW)
     assert bl.approve_entries(document, approved_by="eneelkant",
-                              approval_ref="https://github.com/eneelkant/pen-testing/pull/28", expires_in_days=31, now=NOW) == 1
+                              approval_ref="https://github.com/eneelkant/pen-testing/pull/28", expires_in_days=31, reviewed_commit_sha="b" * 40, now=NOW) == 1
     assert bl.validate_baseline(document, now=NOW + timedelta(minutes=1)) == []
     assert bl.validate_baseline(document, now=NOW + timedelta(days=31)) != []
 

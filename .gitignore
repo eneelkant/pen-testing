@@ -10,6 +10,7 @@ credentials*.json
 # Workspaces and scan artifacts (may contain sensitive findings)
 workspaces/
 .artifacts/
+artifacts/
 reports/out/
 reports/generated/
 **/findings-private/

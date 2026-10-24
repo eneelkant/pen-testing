@@ -384,6 +384,7 @@ def scan_pinned_images(
     runner: Callable[..., Any] | None = None,
     images: tuple[dict[str, str], ...] | None = None,
     now: datetime | None = None,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """Scan pinned images with a local trivy binary or a pinned trivy container.
 
@@ -392,6 +393,10 @@ def scan_pinned_images(
     embed vulnerability-DB timestamps; this function probes
     ``trivy version --format json`` and injects that metadata before
     classification so missing DB freshness cannot be treated as a clean pass.
+
+    ``include_raw`` attaches the unmodified Trivy JSON to each image row as
+    ``raw_document`` so callers (the candidate monitor) can independently
+    re-classify raw findings instead of trusting this summary.
     """
     selected = images if images is not None else PINNED_IMAGES
     tool_version = "0.76.0"
@@ -575,6 +580,8 @@ def scan_pinned_images(
         if not classified.get("scanner_version"):
             classified["scanner_version"] = tool_version
         classified["pin_name"] = image.get("name") or ""
+        if include_raw:
+            classified["raw_document"] = document if isinstance(document, dict) else {}
         reports.append(classified)
         blocking_count += int(classified.get("blocking_count") or 0)
         finding_row_count += int(classified.get("finding_row_count") or 0)

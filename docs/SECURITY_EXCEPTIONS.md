@@ -30,6 +30,7 @@ Rescan 2026-10-24 (Trivy 0.76.0). Earlier pass used DB `UpdatedAt` 2026-10-23T19
 | Candidate | Immutable digest | CreatedAt | Fixed HIGH/CRITICAL | Unscored | Blocking | Decision |
 |---|---|---|---|---|---|---|
 | `python:3.12-slim-bookworm` (tag tip) | `sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0` | 2026-10-24T01:12:19Z | 0 | 2 | 2 | Rejected. Still fails unscored gate |
+| `python:3.12.13-slim-bookworm` | `sha256:6e13e65c55e33adf203d77ee371cf8bf5d81bd4902ef07565721f46bf44917af` | 2026-10-24T06:12:50Z | 11 | 7 | 18 | Rejected. Worse than pinned `34386ef0…` (introduces fixed HIGH/CRITICAL) |
 | `python:3.13-slim-bookworm` (tag tip) | `sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a6678850` | 2026-10-24T01:56:52Z | 4 | 2 | 6 | Rejected. Introduces fixed HIGH/CRITICAL |
 | `python:3.14-slim-bookworm` (tag tip) | `sha256:7dff173021016c8829ae58d5ce112ffc388073ebe67f351aeb6ba2909e35f847` | 2026-10-24T02:23:13Z | 4 | 2 | 6 | Rejected. Same fixed HIGH package set as earlier 3.14 tip (`GHSA-6v7p-g79w-8964`, `CVE-2025-47273`, `CVE-2026-97687`, `CVE-2026-97689`) plus unscored |
 | `python:3.12-slim` (tag tip) | `sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c` | 2026-10-24T01:59:36Z | 0 | 1 (`CVE-2026-82560`) | 1 | Rejected. Unscored remains blocking; not bookworm pin family |
@@ -41,6 +42,8 @@ Rescan 2026-10-24 (Trivy 0.76.0). Earlier pass used DB `UpdatedAt` 2026-10-23T19
 | `aquasec/trivy:0.76.1` / `latest` | `sha256:2e6c00d711ab4ae41d8a30c2c1fd3bd3b62704c177bb120f95012e939edfb3df` | 2026-10-24T01:56:53Z | 1 | 3 | 4 | Rejected |
 | `aquasec/trivy:0.76.0` (Hub tip; digest moved) | `sha256:166061a4a15c64a94a3aab430659e2c166dc0815fbc54a222c6d56d64132f552` | 2026-10-24T01:58:59Z | 3 | 3 | 6 | Rejected |
 | `aquasec/trivy:canary` | `sha256:307afa4f9cfb610229338d837c03f2a5623efb4dd08bef03ebb1a9598afd9b2c` | 2026-10-24T01:59:01Z | 0 | 3 | 3 | Rejected. Unscored blockers remain; canary not a pin |
+
+Remediation branch rescan of pinned images (2026-10-24, same DB `UpdatedAt` 2026-10-24T01:18:19Z, report `CreatedAt` ~06:10Z) matched Actions run `40066307720`: Python FAIL blocking **3** (all unscored); upstream aggregate blocking **1,075** (Shannon 970 / Temporal 58 / Gitleaks 41 / Trivy 6). Full write-up: `docs/IMAGE_REMEDIATION.md`. Pins unchanged; no candidate passed.
 
 npm `@keygraph/shannon` latest remains `3.4.0`. No `3.5.0` / `3.4.1` tags on Docker Hub. Gitleaks GitHub newest release remains `v8.30.1`.
 

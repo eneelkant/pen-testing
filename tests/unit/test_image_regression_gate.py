@@ -76,9 +76,7 @@ def _approval(**overrides):
     approval = {
         "approved_by": "eneelkant",
         "approval_ref": "https://github.com/eneelkant/pen-testing/pull/28",
-        "approved_at": "2026-10-24T18:20:00+00:00",
         "expires_at": "2026-11-20T18:20:00+00:00",
-        "reviewed_commit_sha": "b" * 40,
     }
     approval.update(overrides)
     return approval
@@ -268,36 +266,36 @@ def test_valid_entry_has_no_errors():
 
 
 def test_expired_baseline_fails_gate():
-    entry = _entry(BASE_RAW, approval=_approval(approved_at="2026-10-24T18:12:00+00:00", expires_at="2026-10-24T18:25:00+00:00"))
+    entry = _entry(BASE_RAW, approval=_approval(expires_at="2026-10-24T18:25:00+00:00"))
     assert any("expired" in e for e in _errors_for(entry))
     _, result = _evaluate(document=_doc(entry))
     assert result["regression_gate"]["status"] == "FAIL"
 
 
 def test_expiry_longer_than_31_days_is_rejected():
-    entry = _entry(BASE_RAW, approval=_approval(expires_at="2026-11-25T18:21:00+00:00"))
-    assert any("31-day maximum" in e for e in _errors_for(entry))
+    entry = _entry(BASE_RAW, approval=_approval(expires_at="2026-12-02T00:00:00+00:00"))
+    assert any("7-day review window" in e for e in _errors_for(entry))
 
 
 @pytest.mark.parametrize("approval, fragment", [
     (None, "candidate entries are not authoritative"),
     ({"approved_by": "", "approval_ref": "https://github.com/eneelkant/pen-testing/pull/28",
-      "approved_at": "2026-10-24T18:20:00+00:00", "expires_at": "2026-11-20T18:20:00+00:00"}, "approved_by"),
+      "expires_at": "2026-11-20T18:20:00+00:00"}, "approved_by"),
     ({"approved_by": "eneelkant", "approval_ref": "approved in chat",
-      "approved_at": "2026-10-24T18:20:00+00:00", "expires_at": "2026-11-20T18:20:00+00:00"}, "approval_ref"),
-    ({"approved_by": "eneelkant", "approval_ref": "https://github.com/eneelkant/pen-testing/pull/28",
-      "expires_at": "2026-11-20T18:20:00+00:00"}, "missing field"),
+      "expires_at": "2026-11-20T18:20:00+00:00"}, "approval_ref"),
+    ({"approved_by": "eneelkant", "approval_ref": "https://github.com/eneelkant/pen-testing/pull/28"}, "missing field"),
 ])
 def test_missing_or_invalid_approval_is_rejected(approval, fragment):
     assert any(fragment in e for e in _errors_for(_entry(BASE_RAW, approval=approval)))
 
 
-def test_approval_on_stale_evidence_or_before_scan_is_rejected():
-    stale = _approval(approved_at="2026-11-02T00:00:00+00:00", expires_at="2026-11-20T00:00:00+00:00")
-    assert any("stale scan evidence" in e for e in bl.validate_baseline(
-        _doc(_entry(BASE_RAW, approval=stale)), now=datetime(2026, 11, 3, tzinfo=timezone.utc)))
-    early = _approval(approved_at="2026-10-24T17:00:00+00:00")
-    assert any("precedes the scan" in e for e in _errors_for(_entry(BASE_RAW, approval=early)))
+def test_expiry_must_fit_scan_and_review_windows():
+    too_late = _approval(expires_at="2026-12-02T00:00:00+00:00")
+    assert any("7-day review window" in e for e in bl.validate_baseline(
+        _doc(_entry(BASE_RAW, approval=too_late)), now=NOW))
+    before_scan = _approval(expires_at="2026-10-24T18:00:00+00:00")
+    assert any("must be after the source scan" in e for e in _errors_for(
+        _entry(BASE_RAW, approval=before_scan)))
 
 
 @pytest.mark.parametrize("value", ["", "A" * 64, "abc", None, "g" * 64])
@@ -506,11 +504,11 @@ def test_approve_entries_enforces_limits():
     document = _doc(_entry(BASE_RAW, approval=None))
     with pytest.raises(ValueError):
         bl.approve_entries(document, approved_by="eneelkant", approval_ref="https://github.com/eneelkant/pen-testing/pull/28",
-                           expires_in_days=32, reviewed_commit_sha="b" * 40, now=NOW)
+                           expires_in_days=32, now=NOW)
     with pytest.raises(ValueError):
-        bl.approve_entries(document, approved_by="eneelkant", approval_ref="ok", expires_in_days=30, reviewed_commit_sha="b" * 40, now=NOW)
+        bl.approve_entries(document, approved_by="eneelkant", approval_ref="ok", expires_in_days=30, now=NOW)
     assert bl.approve_entries(document, approved_by="eneelkant",
-                              approval_ref="https://github.com/eneelkant/pen-testing/pull/28", expires_in_days=31, reviewed_commit_sha="b" * 40, now=NOW) == 1
+                              approval_ref="https://github.com/eneelkant/pen-testing/pull/28", expires_in_days=31, now=NOW) == 1
     assert bl.validate_baseline(document, now=NOW + timedelta(minutes=1)) == []
     assert bl.validate_baseline(document, now=NOW + timedelta(days=31)) != []
 
@@ -561,12 +559,8 @@ def test_committed_baseline_matches_current_pins_and_evidence_rules():
         assert entry["ref"] == pin["ref"] and entry["platform_digest"] == pin["platform_digest"]
     from core.supply_chain.images import _parse_time
 
-    # Validate as of just after the latest approval (or scan), so the test is not a time bomb.
-    reference_now = max(
-        _parse_time((entry["approval"] or {}).get("approved_at") or entry["scanned_at"])
-        for entry in document["entries"]
-    ) + timedelta(minutes=1)
-    errors = bl.validate_baseline(document, now=reference_now)
+    # Candidate entries are pending approval; JSON does not claim an approval timestamp.
+    errors = bl.validate_baseline(document, now=NOW)
     # Only acceptable problem: entries still awaiting owner approval.
     assert all("not authoritative until an owner approves" in e for e in errors), errors
     assert "python-3.12-probe" not in {e["pin_name"] for e in document["entries"]}

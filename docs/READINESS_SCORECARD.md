@@ -42,7 +42,7 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 - Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Local re-run on this tree: audit 24 components, emit CycloneDX 1.5 with 24 components, vuln `PASS` blocking 0.
 - Local host-Trivy rescan 2026-10-24 (Trivy 0.76.0, DB `UpdatedAt` 2026-10-23T19:15:43Z): pinned Python `FAIL`, `blocking_count` **3** unscored (`DLA-4845-1`, `CVE-2026-82560`, `DLA-4854-1`). Fixed HIGH/CRITICAL remains 0. Full report: 290 rows / 131 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
 - Same local rescan of Shannon, Temporal, Gitleaks, and Trivy pins: `FAIL`, aggregate upstream `blocking_count` **1069** (642 fixed HIGH/CRITICAL + 427 unscored). Per image blocking: Shannon 967; Temporal 55; Gitleaks 41; Trivy 6. Digests were not moved. No ignore file was added.
-- Candidate tags for Python tip, Gitleaks `v8.30.1`, Temporal `1.7.3` / `1.9.1`, and Trivy `latest` were rescanned on the same DB and all still fail; none were adopted.
+- Candidate tags rescanned 2026-10-24 (including Shannon Hub tip `9e53649e…`, Temporal `1.8.1`, Python `3.13-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / Hub `0.76.0` / `canary`) all still fail; none were adopted. See `docs/SECURITY_EXCEPTIONS.md`.
 - Reporting fix: Trivy image JSON omits `VulnerabilityDB`. Classification now requires DB `UpdatedAt` (from the report or a `trivy version --format json` probe). Missing DB metadata is `NOT_VERIFIED`, not PASS. CI logs print tool version and DB timestamps.
 - Counsel review is pending.
 - Next action: wait for images with zero fixed HIGH/CRITICAL and zero unscored findings, then run the Shannon `--validate-model` path and the unit suite before changing a pin. Do not add a Trivy ignore to turn CI green.
@@ -67,7 +67,19 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 | Host Trivy rescan of all pinned upstream images | 1 (expected) | Aggregate blocking 1069; see `docs/SECURITY_EXCEPTIONS.md` |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` / `79a6dea` succeeded for the runtime script markers |
 
-## CI on `d0b4a6f` (current PR head)
+## CI on `7b7614c` (current PR head)
+
+PR run `40050942802` and push run `40050940324` on `7b7614c6b6d6778f82f1d49bf3a0bceee2c101f2`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Python `FAIL` blocking **3** unscored; upstream `FAIL` blocking **1075**. Tool 0.76.0; DB `UpdatedAt` 2026-10-24T01:18:19Z. Gate not waived |
+
+## CI on `d0b4a6f` (download-db-only fix)
 
 PR run `40050425111` and push run `40050421096` on `d0b4a6f0d4a0d9b7b5412e6d8ccd1268bd21a7cb`:
 
@@ -77,7 +89,7 @@ PR run `40050425111` and push run `40050421096` on `d0b4a6f0d4a0d9b7b5412e6d8ccd
 | Secret scanning (gitleaks) | success |
 | Dependency metadata check | success |
 | Docker build and runtime | **success** |
-| Pinned image vulnerability scans | **failure**. Python `FAIL` blocking **3** unscored (`DLA-4845-1`, `CVE-2026-82560`, `DLA-4854-1`); upstream `FAIL` blocking **1069**. Tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z recorded on both artifacts. Gate not waived |
+| Pinned image vulnerability scans | **failure**. Python `FAIL` blocking **3** unscored; upstream `FAIL` blocking **1069**. Tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z. Gate not waived |
 
 ## CI on `abfd437` (DB inject without cold-cache download)
 

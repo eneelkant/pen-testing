@@ -158,7 +158,13 @@ def blocking_findings(raw_document: dict[str, Any], classified: dict[str, Any]) 
         raise BaselineEvidenceError("raw Trivy rows do not align with the classified findings")
     out: list[dict[str, Any]] = []
     for (result, vuln), finding in zip(rows, findings):
-        if vuln.get("VulnerabilityID") != finding.get("id") or vuln.get("PkgName") != finding.get("package"):
+        if (
+            vuln.get("VulnerabilityID") != finding.get("id")
+            or vuln.get("PkgName") != finding.get("package")
+            or str(vuln.get("InstalledVersion") or "") != str(finding.get("installed") or "")
+            or str(vuln.get("FixedVersion") or "") != str(finding.get("fixed") or "")
+            or str(vuln.get("Severity") or "UNKNOWN").upper() != str(finding.get("severity") or "").upper()
+        ):
             raise BaselineEvidenceError("raw Trivy rows do not align with the classified findings")
         if not finding.get("blocking"):
             continue

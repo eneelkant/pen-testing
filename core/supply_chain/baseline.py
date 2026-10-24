@@ -766,6 +766,7 @@ def verify_github_approvals(
     repository: str | None,
     required: bool,
     fetch_json: Any = None,
+    fetch_bytes: Any = None,
 ) -> list[str]:
     """Verify a baseline entry against a real review of its exact reviewed content.
 
@@ -798,7 +799,23 @@ def verify_github_approvals(
             with urllib.request.urlopen(request, timeout=15) as response:
                 return json.loads(response.read().decode("utf-8"))
 
+    if fetch_bytes is None:
+        def fetch_bytes(url: str) -> bytes:
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    "User-Agent": "pen-testing-image-baseline-gate",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return response.read()
+
     api_root = "https://api.github.com"
+    run_cache: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
+    archive_cache: dict[tuple[int, str], bytes] = {}
     pull_cache: dict[tuple[str, int], tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     baseline_cache: dict[tuple[str, str], Any] = {}
     compare_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -897,6 +914,17 @@ def verify_github_approvals(
             ] if isinstance(reviewed_document, dict) else []
             if len(reviewed_entries) != 1 or _without_approval(reviewed_entries[0]) != _without_approval(entry):
                 errors.append(f"entries[{index}]: baseline entry differs from the exact content reviewed by {approver!r}")
+                continue
+            provenance_errors = verify_baseline_entry_ci_evidence(
+                entry,
+                token=token,
+                repository=repository,
+                fetch_json=fetch_json,
+                fetch_bytes=fetch_bytes,
+                run_cache=run_cache,
+                archive_cache=archive_cache,
+            )
+            errors.extend(f"entries[{index}]: {error}" for error in provenance_errors)
         except (OSError, TimeoutError, ValueError, KeyError, TypeError, json.JSONDecodeError, urllib.error.URLError) as exc:
             errors.append(f"entries[{index}]: GitHub review verification failed: {exc}")
     return errors

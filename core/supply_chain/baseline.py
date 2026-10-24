@@ -630,6 +630,129 @@ def build_candidate_entries(
 
 
 
+
+def _artifact_member(archive: bytes, relative_path: str) -> bytes:
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+            members = [name for name in zipped.namelist() if not name.endswith("/")]
+            exact = [name for name in members if name == relative_path]
+            matches = exact or [name for name in members if name.endswith("/" + relative_path)]
+            if len(matches) != 1:
+                raise BaselineEvidenceError("artifact member is missing or ambiguous: " + relative_path)
+            return zipped.read(matches[0])
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise BaselineEvidenceError("CI artifact is not a valid ZIP: " + str(exc)) from exc
+
+
+def verify_baseline_entry_ci_evidence(
+    entry: dict[str, Any],
+    *,
+    token: str,
+    repository: str,
+    fetch_json: Any,
+    fetch_bytes: Any,
+    run_cache: dict[int, tuple[dict[str, Any], dict[str, Any]]],
+    archive_cache: dict[tuple[int, str], bytes],
+) -> list[str]:
+    """Verify an entry against official CI run metadata, summary, and raw artifact."""
+    errors: list[str] = []
+    source = entry.get("source") if isinstance(entry.get("source"), dict) else {}
+    run_id = source.get("ci_run_id")
+    if not isinstance(run_id, int) or isinstance(run_id, bool) or run_id <= 0:
+        return ["source.ci_run_id is invalid"]
+    if source.get("artifact") != "image-scan-raw":
+        return ["source.artifact must be image-scan-raw"]
+
+    api = "https://api.github.com/repos/" + repository
+    try:
+        if run_id not in run_cache:
+            run = fetch_json(api + "/actions/runs/" + str(run_id))
+            artifact_doc = fetch_json(api + "/actions/runs/" + str(run_id) + "/artifacts?per_page=100")
+            artifacts = artifact_doc.get("artifacts") if isinstance(artifact_doc, dict) else None
+            if not isinstance(run, dict) or not isinstance(artifacts, list):
+                raise BaselineEvidenceError("GitHub returned malformed CI run or artifact metadata")
+            run_cache[run_id] = (run, {
+                str(item.get("name")): item for item in artifacts if isinstance(item, dict)
+            })
+        run, artifacts = run_cache[run_id]
+        if run.get("id") != run_id or run.get("status") != "completed":
+            return ["source CI run is missing or incomplete"]
+        if str(run.get("head_sha") or "").lower() != str(source.get("commit") or "").lower():
+            return ["source commit does not match the actual CI run head SHA"]
+        run_repository = str(((run.get("repository") or {}).get("full_name")) or "")
+        if run_repository and run_repository.lower() != repository.lower():
+            return ["source CI run belongs to a different repository"]
+
+        def read_member(artifact_name: str, member_path: str) -> bytes:
+            cache_key = (run_id, artifact_name)
+            if cache_key not in archive_cache:
+                item = artifacts.get(artifact_name)
+                if not isinstance(item, dict) or item.get("expired"):
+                    raise BaselineEvidenceError("CI artifact is missing or expired: " + artifact_name)
+                url = str(item.get("archive_download_url") or "")
+                if not url:
+                    raise BaselineEvidenceError("CI artifact has no archive download URL: " + artifact_name)
+                archive_cache[cache_key] = fetch_bytes(url)
+            return _artifact_member(archive_cache[cache_key], member_path)
+
+        raw_path = str(source.get("raw_path") or "")
+        raw_bytes = read_member("image-scan-raw", raw_path)
+        raw_sha = hashlib.sha256(raw_bytes).hexdigest()
+        if raw_sha != source.get("raw_sha256"):
+            return ["raw evidence SHA-256 differs from authentic CI artifact"]
+
+        is_python = str(entry.get("pin_name") or "").startswith("python-")
+        summary_artifact = "image-scan-python" if is_python else "image-scan-upstream"
+        summary_filename = "image-scan-python.json" if is_python else "image-scan-upstream.json"
+        summary_bytes = read_member(summary_artifact, summary_filename)
+        summary = json.loads(summary_bytes.decode("utf-8"))
+        if not isinstance(summary, dict) or summary.get("status") == "NOT_VERIFIED":
+            return ["source CI summary is malformed or NOT_VERIFIED"]
+        database = summary.get("database") if isinstance(summary.get("database"), dict) else {}
+        if str(database.get("updated_at") or "") != str(entry.get("db_updated_at") or ""):
+            return ["db_updated_at differs from authentic CI summary"]
+
+        matching = [
+            item for item in (summary.get("images") or [])
+            if isinstance(item, dict) and item.get("pin_name") == entry.get("pin_name")
+        ]
+        if len(matching) != 1:
+            return ["pin is missing or duplicated in authentic CI summary"]
+        row = matching[0]
+        raw_summary = row.get("raw_evidence") if isinstance(row.get("raw_evidence"), dict) else {}
+        if (
+            row.get("image") != entry.get("ref")
+            or row.get("platform") != entry.get("platform")
+            or row.get("scanner_version") != entry.get("scanner_version")
+            or row.get("created_at") != entry.get("scanned_at")
+            or str(raw_summary.get("sha256") or "") != raw_sha
+            or str(raw_summary.get("path") or "").split("/")[-1] != raw_path.split("/")[-1]
+        ):
+            return ["baseline metadata differs from authentic CI summary"]
+        raw = json.loads(raw_bytes.decode("utf-8"))
+        scanned = _parse_time(str(raw.get("CreatedAt") or ""))
+        recorded = _parse_time(str(entry.get("scanned_at") or ""))
+        if scanned is None or recorded is None or scanned != recorded:
+            return ["scanned_at differs from raw CI report"]
+        classified = classify_trivy_document(
+            raw, image=str(entry.get("ref") or ""), now=scanned,
+            database={"updated_at": str(database.get("updated_at") or "")},
+        )
+        classified = _enforce_scan_identity(
+            classified, image=str(entry.get("ref") or ""),
+            required_platform=REQUIRED_PLATFORM,
+            required_scanner_version=str(entry.get("scanner_version") or ""),
+        )
+        if classified.get("status") == "NOT_VERIFIED":
+            return ["raw CI evidence does not verify: " + str(classified.get("error") or "unknown error")]
+        expected = sorted(blocking_findings(raw, classified), key=lambda item: key_tuple(item["key"]))
+        if json.dumps(expected, sort_keys=True) != json.dumps(entry.get("findings"), sort_keys=True):
+            return ["baseline findings differ from canonical classification of CI raw evidence"]
+    except (OSError, TimeoutError, ValueError, KeyError, TypeError, json.JSONDecodeError, urllib.error.URLError, BaselineEvidenceError) as exc:
+        errors.append("cannot verify CI provenance: " + str(exc))
+    return errors
+
+
 def _without_approval(entry: dict[str, Any]) -> dict[str, Any]:
     result = dict(entry)
     result["approval"] = None

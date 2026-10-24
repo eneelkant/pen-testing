@@ -42,10 +42,11 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 - Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Local re-run on this tree: audit 24 components, emit CycloneDX 1.5 with 24 components, vuln `PASS` blocking 0.
 - Local host-Trivy rescan 2026-10-24 (Trivy 0.76.0, DB `UpdatedAt` 2026-10-23T19:15:43Z): pinned Python `FAIL`, `blocking_count` **3** unscored (`DLA-4845-1`, `CVE-2026-82560`, `DLA-4854-1`). Fixed HIGH/CRITICAL remains 0. Full report: 290 rows / 131 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
 - Same local rescan of Shannon, Temporal, Gitleaks, and Trivy pins: `FAIL`, aggregate upstream `blocking_count` **1069** (642 fixed HIGH/CRITICAL + 427 unscored). Per image blocking: Shannon 967; Temporal 55; Gitleaks 41; Trivy 6. Digests were not moved. No ignore file was added.
-- Candidate tags rescanned 2026-10-24 (including Shannon Hub tip `9e53649e…`, Temporal `1.8.1`, Python `3.13-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / Hub `0.76.0` / `canary`) all still fail; none were adopted. See `docs/SECURITY_EXCEPTIONS.md`.
+- Candidate tags rescanned 2026-10-24 (including Shannon Hub tip `9e53649e…`, Temporal `1.8.1`, Python `3.13`/`3.14-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / Hub `0.76.0` / `canary`) all still fail; none were adopted. See `docs/SECURITY_EXCEPTIONS.md`.
 - Reporting fix: Trivy image JSON omits `VulnerabilityDB`. Classification now requires DB `UpdatedAt` (from the report or a `trivy version --format json` probe). Missing DB metadata is `NOT_VERIFIED`, not PASS. CI logs print tool version and DB timestamps.
+- Automated watch: `python -m core.supply_chain candidates` + `.github/workflows/image-candidate-monitor.yml` (schedule/manual). Reuses `candidate_rejects.json`; never auto-pins.
 - Counsel review is pending.
-- Next action: wait for images with zero fixed HIGH/CRITICAL and zero unscored findings, then run the Shannon `--validate-model` path and the unit suite before changing a pin. Do not add a Trivy ignore to turn CI green.
+- Next action: wait for the candidate monitor (or a manual rescan) to report `ACCEPTABLE_CANDIDATE`, then run Shannon `--validate-model` and units before changing a pin. Do not add a Trivy ignore to turn CI green.
 
 ### 6. Operational reliability — PARTIAL
 
@@ -57,7 +58,7 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
 | Command | Exit | Result |
 |---|---|---|
-| `python3 -m pytest -q tests/unit` on this `0.2.0a18` tree | 0 | 227 passed |
+| `python3 -m pytest -q tests/unit` on this `0.2.0a18` tree | 0 | 237 passed |
 | `python3 -m compileall core integrations providers mcp_server installers` | 0 | compiled |
 | gitleaks | `NOT_VERIFIED` locally | gitleaks binary not installed in this environment |
 | `python3 -m core.supply_chain audit` | 0 | 24 components; metadata only |

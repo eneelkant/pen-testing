@@ -31,6 +31,7 @@ Rescan 2026-10-24 (Trivy 0.76.0). Earlier pass used DB `UpdatedAt` 2026-10-23T19
 |---|---|---|---|---|---|---|
 | `python:3.12-slim-bookworm` (tag tip) | `sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0` | 2026-10-24T01:12:19Z | 0 | 2 | 2 | Rejected. Still fails unscored gate |
 | `python:3.13-slim-bookworm` (tag tip) | `sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a6678850` | 2026-10-24T01:56:52Z | 4 | 2 | 6 | Rejected. Introduces fixed HIGH/CRITICAL |
+| `python:3.14-slim-bookworm` (tag tip) | `sha256:7dff173021016c8829ae58d5ce112ffc388073ebe67f351aeb6ba2909e35f847` | 2026-10-24T02:23:13Z | 4 | 2 | 6 | Rejected. Same fixed HIGH package set as earlier 3.14 tip (`GHSA-6v7p-g79w-8964`, `CVE-2025-47273`, `CVE-2026-97687`, `CVE-2026-97689`) plus unscored |
 | `python:3.12-slim` (tag tip) | `sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c` | 2026-10-24T01:59:36Z | 0 | 1 (`CVE-2026-82560`) | 1 | Rejected. Unscored remains blocking; not bookworm pin family |
 | `keygraph/shannon:3.4.0` (Hub tip; digest moved) | `sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a` | 2026-10-24T01:56:50Z | 551 | 419 | 970 | Rejected. Same order of blockers as pinned `4e726ed8…` |
 | `zricethezav/gitleaks:v8.30.1` | `sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb` | 2026-10-24T01:12:26Z | 72 | 6 | 78 | Rejected. Worse than pinned `v8.21.2` |
@@ -42,6 +43,10 @@ Rescan 2026-10-24 (Trivy 0.76.0). Earlier pass used DB `UpdatedAt` 2026-10-23T19
 | `aquasec/trivy:canary` | `sha256:307afa4f9cfb610229338d837c03f2a5623efb4dd08bef03ebb1a9598afd9b2c` | 2026-10-24T01:59:01Z | 0 | 3 | 3 | Rejected. Unscored blockers remain; canary not a pin |
 
 npm `@keygraph/shannon` latest remains `3.4.0`. No `3.5.0` / `3.4.1` tags on Docker Hub. Gitleaks GitHub newest release remains `v8.30.1`.
+
+## Automated candidate watch
+
+`python -m core.supply_chain candidates` resolves the official Hub tags in `CANDIDATE_WATCH`, reuses fresh entries from `core/supply_chain/candidate_rejects.json` (and optional `--evidence-dir`), and scans only new digests. It never updates pins. Scheduled/manual workflow: `.github/workflows/image-candidate-monitor.yml`. Status values: `ACCEPTABLE_CANDIDATE`, `NO_ACCEPTABLE_CANDIDATE`, `NOT_VERIFIED`.
 
 ## Python base — fixed HIGH/CRITICAL still zero; unscored now visible
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from core.paths import safe_write_text
 from core.supply_chain.audit import audit_dependencies
 from core.supply_chain.sbom import build_sbom, validate_sbom_document
+from core.supply_chain.candidates import monitor_candidates
 from core.supply_chain.images import PINNED_IMAGES, scan_pinned_images
 from core.supply_chain.vuln import scan_components
 
@@ -26,6 +27,15 @@ def main(argv: list[str] | None = None) -> int:
     images = sub.add_parser("images", help="Scan pinned container images with Trivy when available")
     images.add_argument("--output", help="Write the JSON report to this path")
     images.add_argument("--name", action="append", default=[], help="Scan only this pinned image name")
+    candidates = sub.add_parser(
+        "candidates",
+        help="Watch official image tags for digests that pass the fail-closed gate (never updates pins)",
+    )
+    candidates.add_argument("--output", required=True, help="Write the JSON monitor report to this path")
+    candidates.add_argument(
+        "--evidence-dir",
+        help="Directory of prior Trivy/classified JSON reports to reuse for unchanged digests",
+    )
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
     if args.command == "audit":
@@ -66,6 +76,17 @@ def main(argv: list[str] | None = None) -> int:
         if report["status"] == "NOT_VERIFIED":
             return 2
         return 0 if report["ok"] else 1
+    if args.command == "candidates":
+        evidence = Path(args.evidence_dir).resolve() if args.evidence_dir else None
+        report = monitor_candidates(evidence_dir=evidence)
+        text = json.dumps(report, indent=2)
+        safe_write_text(args.output, text + "\n")
+        print(text)
+        if report["status"] == "NOT_VERIFIED":
+            return 2
+        if report["status"] == "ACCEPTABLE_CANDIDATE":
+            return 0
+        return 1
     parser.error(f"Unknown command: {args.command}")
     return 2
 

@@ -56,6 +56,9 @@ Changelog = "https://github.com/eneelkant/pen-testing/blob/main/CHANGELOG.md"
 [tool.setuptools.packages.find]
 include = ["core*", "integrations*", "providers*", "mcp_server*"]
 
+[tool.setuptools.package-data]
+"core.supply_chain" = ["candidate_rejects.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

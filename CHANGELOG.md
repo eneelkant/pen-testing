@@ -20,7 +20,8 @@
 - Image vulnerability scans run in a separate CI job from Docker Compose runtime verification so a gate failure is not reported as a runtime defect
 - Branch includes merged `main` after PR #24 (`pluggy==1.7.0`)
 - Digests were not changed. The fixed HIGH/CRITICAL and unscored gates remain fail-closed
-- Candidate tags rescanned on 2026-10-24 with Trivy 0.76.0 still fail the gate; no pin moved. Additional Hub tips (Shannon `3.4.0` digest move, Temporal `1.8.1`, Python `3.13-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / canary) also fail. Python unscored rows checked against NVD/Debian; severities were not invented into the classifier
+- Candidate tags rescanned on 2026-10-24 with Trivy 0.76.0 still fail the gate; no pin moved. Additional Hub tips (Shannon `3.4.0` digest move, Temporal `1.8.1`, Python `3.13`/`3.14-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / canary) also fail. Python unscored rows checked against NVD/Debian; severities were not invented into the classifier
+- Added `python -m core.supply_chain candidates` and scheduled workflow `image-candidate-monitor.yml` to watch official Hub tags, reuse committed reject evidence, scan only new digests, and report `NO_ACCEPTABLE_CANDIDATE` without changing pins
 
 ### Notes
 

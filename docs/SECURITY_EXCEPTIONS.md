@@ -46,7 +46,9 @@ npm `@keygraph/shannon` latest remains `3.4.0`. No `3.5.0` / `3.4.1` tags on Doc
 
 ## Automated candidate watch
 
-`python -m core.supply_chain candidates` resolves the official Hub tags in `CANDIDATE_WATCH`, reuses fresh entries from `core/supply_chain/candidate_rejects.json` (and optional `--evidence-dir`), and scans only new digests. It never updates pins. Scheduled/manual workflow: `.github/workflows/image-candidate-monitor.yml`. Status values: `ACCEPTABLE_CANDIDATE`, `NO_ACCEPTABLE_CANDIDATE`, `NOT_VERIFIED`.
+`python -m core.supply_chain candidates` resolves the official Hub tags in `CANDIDATE_WATCH`, reuses entries from `core/supply_chain/candidate_rejects.json` (and optional `--evidence-dir`) only when they match the resolved digest, `linux/amd64`, required Trivy scanner version, and fresh CreatedAt / vulnerability-DB `UpdatedAt` (including not older than a live `trivy version` probe). Otherwise it rescans. It never updates pins. Scheduled/manual workflow: `.github/workflows/image-candidate-monitor.yml` (visible to `gh workflow list` only after the file exists on the default branch). Status values: `ACCEPTABLE_CANDIDATE`, `NO_ACCEPTABLE_CANDIDATE`, `NOT_VERIFIED`.
+
+Report at 2026-10-24T05:24:00Z: `NO_ACCEPTABLE_CANDIDATE`, all six watched tips `reused_evidence: true`. Digests matched Hub tips; scanner `0.76.0`; platform `linux/amd64`; evidence DB `UpdatedAt` `2026-10-24T01:18:19Z` equaled the live probe. Reuse was digest-bound and within the 7-day window; no newer official digests were available for Python 3.12, Temporal, Gitleaks, Shannon, or Trivy tips.
 
 ## Python base — fixed HIGH/CRITICAL still zero; unscored now visible
 

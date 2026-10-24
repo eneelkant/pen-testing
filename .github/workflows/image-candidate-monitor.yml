@@ -3,6 +3,11 @@ name: Image candidate monitor
 # Watches official Hub tags for digests that pass the fail-closed image gate.
 # Never updates pins and never merges. Separate from CI so a NO_ACCEPTABLE_CANDIDATE
 # result does not fail pull-request checks.
+#
+# Note: GitHub only lists/schedules workflows that exist on the repository default
+# branch. Until this file is merged to main, `gh workflow list` will omit it and
+# the cron trigger will not run; use workflow_dispatch on a branch that contains
+# the file, or merge to main first.
 on:
   schedule:
     - cron: "17 6 * * 1"

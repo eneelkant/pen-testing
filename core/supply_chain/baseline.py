@@ -870,18 +870,7 @@ def verify_github_approvals(
                 return json.loads(response.read().decode("utf-8"))
 
     if fetch_bytes is None:
-        def fetch_bytes(url: str) -> bytes:
-            request = urllib.request.Request(
-                url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                    "User-Agent": "pen-testing-image-baseline-gate",
-                },
-            )
-            with urllib.request.urlopen(request, timeout=60) as response:
-                return response.read()
+        fetch_bytes = lambda url: _http_bytes(url, token)
 
     api_root = "https://api.github.com"
     run_cache: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}

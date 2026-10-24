@@ -24,7 +24,10 @@ The regression gate fails when any of these is true:
   - Its schema version is not supported.
   - A digest is malformed.
   - Provenance is missing: the source repository, CI run, commit, artifact path, and raw-evidence sha256 are all required.
-  - Approval is missing: `approved_by`, a GitHub PR or issue `approval_ref`, `approved_at`, and `expires_at` are all required.
+  - Approval is missing: `approved_by`, a GitHub PR `approval_ref`, `approved_at`, `expires_at`, and `reviewed_commit_sha` are all required.
+  - CI verifies that the named approver submitted an actual `APPROVED` review on `reviewed_commit_sha`; self-approval is rejected.
+  - The reviewed commit must be an ancestor of the current PR head, and the baseline entry must match the entry at that reviewed commit apart from approval metadata.
+  - CI verifies the original workflow run head SHA, downloads the source summary and raw Trivy artifact, checks the raw SHA-256, and reclassifies the exact finding rows. Self-asserted provenance fields are not sufficient.
   - An approval was given more than 7 days after the scan, or before it.
   - An expiry is more than **31 days** after approval.
   - An entry has expired.
@@ -56,7 +59,7 @@ Each finding is identified by `(vulnerability_id, pkg_name, pkg_path, installed_
 | `ref`, `platform`, `platform_digest` | Exact image identity |
 | `scanner_version`, `db_updated_at`, `scanned_at` | Scan provenance |
 | `source` | `repository`, `ci_run_id`, `commit`, `artifact`, `raw_path`, `raw_sha256` |
-| `approval` | `approved_by`, `approval_ref`, `approved_at`, `expires_at` |
+| `approval` | `approved_by`, `approval_ref`, `approved_at`, `expires_at`, `reviewed_commit_sha` |
 | `findings` | Each with `key`, `severity`, `fixed_version`, `gate_reason`, `remediation_status` |
 
 `remediation_status` is either:
@@ -81,15 +84,16 @@ Each finding is identified by `(vulnerability_id, pkg_name, pkg_path, installed_
 
    Candidates have `"approval": null`. The regression gate rejects them until an owner approves them.
 3. Open a PR that changes **only** the baseline. Do not change image pins in the same PR; the CI guard rejects that.
-4. **Owner review.** A code owner (see `.github/CODEOWNERS`) reviews the listed findings against the CI artifacts. If they agree, they approve on the PR and record the approval:
+4. **Independent review first.** A second maintainer reviews the candidate baseline and CI artifacts on a specific PR commit and submits an APPROVED review on that exact commit. Record that 40-character commit SHA as `reviewed_commit_sha`. The CI regression gate verifies the real review, PR ancestry, exact reviewed baseline content, and source CI artifacts.
 
    ```bash
    python -m core.supply_chain baseline approve --baseline core/supply_chain/image_baseline.json \
-     --approved-by <github-login> --approval-ref https://github.com/eneelkant/pen-testing/pull/<n> --expires-in-days 31
+     --approved-by <github-login> --approval-ref https://github.com/eneelkant/pen-testing/pull/<n> \\
+     --reviewed-commit-sha <full-40-hex-reviewed-commit> --expires-in-days 31
    ```
 
    `--expires-in-days` must be between 1 and 31. Approval must happen within 7 days of the scan.
-5. Commit the approved file to the same PR. Merge after the required checks pass.
+5. Commit the approved metadata to the same PR. Because that commit changes the PR head, obtain any final review required by branch protection on the latest head; the recorded baseline approval remains tied to `reviewed_commit_sha`. Merge only after live review verification and all required checks pass.
 
 ### Expiry
 

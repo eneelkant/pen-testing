@@ -28,12 +28,15 @@ inherits an older entry: entries match on the exact pinned reference.
 from __future__ import annotations
 
 import ast
+import base64
 import hashlib
+import io
 import json
 import re
 import subprocess
 import urllib.error
 import urllib.request
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -44,6 +47,7 @@ from core.supply_chain.images import (
     _KNOWN_SEVERITY,
     _MAX_EVIDENCE_AGE,
     _parse_time,
+    _enforce_scan_identity,
     classify_trivy_document,
     parse_image_ref,
 )
@@ -78,7 +82,7 @@ _ENTRY_FIELDS = {
     "findings",
 }
 _SOURCE_FIELDS = {"repository", "ci_run_id", "commit", "artifact", "raw_path", "raw_sha256"}
-_APPROVAL_FIELDS = {"approved_by", "approval_ref", "approved_at", "expires_at"}
+_APPROVAL_FIELDS = {"approved_by", "approval_ref", "approved_at", "expires_at", "reviewed_commit_sha"}
 _FINDING_FIELDS = {"key", "severity", "fixed_version", "gate_reason", "remediation_status"}
 GATE_REASONS = {"fixed-high-critical", "unscored"}
 REMEDIATION_STATUSES = {
@@ -781,6 +785,7 @@ def approve_entries(
     approved_by: str,
     approval_ref: str,
     expires_in_days: int,
+    reviewed_commit_sha: str,
     pin_names: Iterable[str] | None = None,
     now: datetime | None = None,
 ) -> int:
@@ -791,7 +796,9 @@ def approve_entries(
     if not _LOGIN_RE.match(approved_by or ""):
         raise ValueError("approved_by must be a GitHub login")
     if not _APPROVAL_REF_RE.match(approval_ref or ""):
-        raise ValueError("approval_ref must be a GitHub pull request or issue URL")
+        raise ValueError("approval_ref must be a GitHub pull request URL")
+    if not isinstance(reviewed_commit_sha, str) or not _COMMIT_RE.match(reviewed_commit_sha):
+        raise ValueError("reviewed_commit_sha must be the 40-hex commit reviewed by the approver")
     wanted = set(pin_names or [])
     count = 0
     for entry in document.get("entries") or []:
@@ -802,6 +809,7 @@ def approve_entries(
             "approval_ref": approval_ref,
             "approved_at": clock.isoformat(),
             "expires_at": (clock + timedelta(days=expires_in_days)).isoformat(),
+            "reviewed_commit_sha": reviewed_commit_sha,
         }
         count += 1
     return count

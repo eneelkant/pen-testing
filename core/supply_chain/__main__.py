@@ -50,11 +50,10 @@ def main(argv: list[str] | None = None) -> int:
     candidate.add_argument("--commit", required=True)
     candidate.add_argument("--artifact", default="image-scan-raw")
     candidate.add_argument("--output", required=True)
-    approve = baseline_sub.add_parser("approve", help="Record an owner approval on pending entries (human reviewer only)")
+    approve = baseline_sub.add_parser("approve", help="Prepare baseline reviewer metadata; the real GitHub review is verified in CI")
     approve.add_argument("--baseline", required=True)
     approve.add_argument("--approved-by", required=True)
     approve.add_argument("--approval-ref", required=True)
-    approve.add_argument("--reviewed-commit-sha", required=True, help="40-hex commit containing the reviewed baseline")
     approve.add_argument("--expires-in-days", type=int, required=True)
     approve.add_argument("--name", action="append", default=[])
     guard = baseline_sub.add_parser("guard", help="Reject a change set that moves a pin and edits its baseline entry")
@@ -182,7 +181,6 @@ def main(argv: list[str] | None = None) -> int:
                     approved_by=args.approved_by,
                     approval_ref=args.approval_ref,
                     expires_in_days=args.expires_in_days,
-                    reviewed_commit_sha=args.reviewed_commit_sha,
                     pin_names=args.name or None,
                 )
             except ValueError as exc:

@@ -923,15 +923,16 @@ def verify_github_approvals(
             if not approver or approver.lower() == author.lower():
                 errors.append(f"entries[{index}]: approver must differ from PR author {author!r}")
                 continue
-            review = next((
-                item for item in reversed(reviews)
+            reviewer_events = [
+                item for item in reviews
                 if isinstance(item, dict)
                 and str(((item.get("user") or {}).get("login")) or "").lower() == approver.lower()
-                and str(item.get("state") or "").upper() == "APPROVED"
                 and str(item.get("commit_id") or "").lower() == reviewed_sha.lower()
-            ), None)
-            if review is None:
-                errors.append(f"entries[{index}]: {approver!r} has no APPROVED review on {reviewed_sha}")
+                and item.get("submitted_at")
+            ]
+            review = max(reviewer_events, key=lambda item: str(item.get("submitted_at") or "")) if reviewer_events else None
+            if review is None or str(review.get("state") or "").upper() != "APPROVED":
+                errors.append(f"entries[{index}]: {approver!r} has no latest APPROVED review on {reviewed_sha}")
                 continue
             reviewed_at = _parse_time(str(review.get("submitted_at") or ""))
             approved_at = _parse_time(str(approval.get("approved_at") or ""))

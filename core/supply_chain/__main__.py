@@ -105,15 +105,14 @@ def main(argv: list[str] | None = None) -> int:
 
             document, load_errors = load_baseline(args.baseline)
             baseline_errors = list(load_errors)
-            if os.environ.get("REQUIRE_GITHUB_BASELINE_REVIEW") == "1":
-                baseline_errors.extend(
-                    verify_github_approvals(
-                        document,
-                        token=os.environ.get("GITHUB_TOKEN"),
-                        repository=os.environ.get("GITHUB_REPOSITORY"),
-                        required=True,
-                    )
+            baseline_errors.extend(
+                verify_github_approvals(
+                    document,
+                    token=os.environ.get("GITHUB_TOKEN"),
+                    repository=os.environ.get("GITHUB_REPOSITORY"),
+                    required=True,
                 )
+            )
             result = evaluate_regression_gate(report, document, pinned=selected, baseline_errors=baseline_errors)
             if args.raw_dir:
                 write_raw_evidence(report, args.raw_dir)

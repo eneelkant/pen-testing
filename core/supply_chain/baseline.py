@@ -456,16 +456,43 @@ def evaluate_regression_gate(
         }
         current_keys = {key_tuple(finding["key"]) for finding in current}
         new = [finding for finding in current if key_tuple(finding["key"]) not in baseline_by_key]
-        inherited = [
-            {**finding, "remediation_status": baseline_by_key[key_tuple(finding["key"])].get("remediation_status"),
-             "baseline_expires_at": approval.get("expires_at")}
-            for finding in current
-            if key_tuple(finding["key"]) in baseline_by_key
-        ]
+        changed: list[dict[str, Any]] = []
+        inherited: list[dict[str, Any]] = []
+        for finding in current:
+            identity = key_tuple(finding["key"])
+            old_finding = baseline_by_key.get(identity)
+            if old_finding is None:
+                continue
+            changed_fields = [
+                field for field in ("severity", "fixed_version", "gate_reason", "remediation_status")
+                if finding.get(field) != old_finding.get(field)
+            ]
+            if changed_fields:
+                changed.append({
+                    "key": finding["key"],
+                    "changed_fields": changed_fields,
+                    "baseline": old_finding,
+                    "current": finding,
+                })
+            else:
+                inherited.append({
+                    **finding,
+                    "remediation_status": old_finding.get("remediation_status"),
+                    "baseline_expires_at": approval.get("expires_at"),
+                })
         resolved = [finding for key, finding in baseline_by_key.items() if key not in current_keys]
-        item.update(new_blocking=new, inherited_blocking=inherited, resolved_baseline_findings=resolved)
+        item.update(
+            new_blocking=new,
+            changed_blocking=changed,
+            inherited_blocking=inherited,
+            resolved_baseline_findings=resolved,
+        )
         if new:
             problems.append(f"NEW_BLOCKING: {len(new)} blocking finding(s) not in the reviewed baseline")
+        if changed:
+            problems.append(
+                f"CHANGED_BLOCKING: {len(changed)} inherited finding(s) changed severity, fix, or gate metadata; review required"
+            )
         if resolved:
             warnings.append(f"{name}: {len(resolved)} baseline finding(s) no longer present; tighten the baseline")
         if problems:
@@ -494,6 +521,7 @@ def evaluate_regression_gate(
             "baseline_errors": errors,
             "warnings": warnings,
             "new_blocking_count": sum(len(item["new_blocking"]) for item in images_out),
+            "changed_blocking_count": sum(len(item.get("changed_blocking") or []) for item in images_out),
             "inherited_blocking_count": sum(len(item["inherited_blocking"]) for item in images_out),
             "resolved_baseline_count": sum(len(item["resolved_baseline_findings"]) for item in images_out),
         },
@@ -517,6 +545,7 @@ def summary_lines(result: dict[str, Any]) -> list[str]:
     absolute = result["absolute"]
     lines = [
         f"regression_gate: {gate['status']}  new_blocking={gate['new_blocking_count']} "
+        f"changed_blocking={gate.get('changed_blocking_count', 0)} "
         f"inherited_blocking={gate['inherited_blocking_count']} resolved_baseline={gate['resolved_baseline_count']}",
         f"absolute_image_gate: {absolute['status']} blocking={absolute['blocking_count']} "
         "(release gate; unchanged by the baseline)",

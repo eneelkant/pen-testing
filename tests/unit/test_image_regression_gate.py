@@ -398,9 +398,9 @@ def test_cli_images_baseline_exit_codes_and_output(tmp_path: Path, monkeypatch):
     real_scan = main_mod.scan_pinned_images
     monkeypatch.setattr(main_mod, "scan_pinned_images",
                         lambda **kw: real_scan(runner=_scan_runner({PIN["ref"]: BASE_RAW}), now=NOW, **kw))
+    monkeypatch.setattr(bl, "verify_github_approvals", lambda *args, **kwargs: [])
     baseline_path = tmp_path / "baseline.json"
-    entry = _entry(BASE_RAW, approval=_approval(approved_at=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),
-                                                expires_at=(datetime.now(timezone.utc) + timedelta(days=30)).isoformat()))
+    entry = _entry(BASE_RAW, approval=_approval(expires_at=(datetime.now(timezone.utc) + timedelta(days=30)).isoformat()))
     entry["scanned_at"] = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
     entry["db_updated_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     baseline_path.write_text(json.dumps(_doc(entry)), encoding="utf-8")

@@ -147,7 +147,18 @@ def test_doctor_strict_fails_when_encryption_is_required(tmp_path: Path, monkeyp
 def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
     assert all("@sha256:" in item["ref"] for item in PINNED_IMAGES)
     assert all("3.14-slim" not in item["ref"] for item in PINNED_IMAGES)
+    pin = PINNED_IMAGES[0]["ref"]
     document = {
+        "SchemaVersion": 2,
+        "ArtifactName": pin,
+        "CreatedAt": "2026-10-18T01:22:03Z",
+        "Metadata": {
+            "RepoDigests": [pin],
+            "VulnerabilityDB": {
+                "UpdatedAt": "2026-10-17T18:34:28Z",
+                "NextUpdate": "2026-10-18T18:34:28Z",
+            },
+        },
         "Results": [
             {
                 "Vulnerabilities": [
@@ -169,21 +180,87 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
             }
         ]
     }
-    report = classify_trivy_document(document, image="example@sha256:abc")
+    report = classify_trivy_document(document, image=pin, now=datetime(2026, 10, 18, tzinfo=timezone.utc))
     assert report["status"] == "FAIL"
     assert report["blocking_count"] == 1
     assert report["unfixed_count"] == 1
+    assert report["finding_row_count"] == 2
+    assert report["unique_cve_count"] == 2
+    assert report["findings"][0]["class"] == "fixed"
+    assert report["findings"][1]["class"] == "unfixed"
 
     class _Completed:
         returncode = 0
         stdout = "{}"
         stderr = ""
 
+    def _empty_runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return type("D", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        if "version" in args:
+            return type(
+                "V",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": json.dumps(
+                        {
+                            "Version": "0.76.0",
+                            "VulnerabilityDB": {"UpdatedAt": "2026-10-17T18:34:28Z"},
+                        }
+                    ),
+                    "stderr": "",
+                },
+            )()
+        return _Completed()
+
     scanned = scan_pinned_images(
-        runner=lambda args, timeout=600: _Completed(),
-        images=({"name": "one", "ref": PINNED_IMAGES[0]["ref"]},),
+        runner=_empty_runner,
+        images=({"name": "one", "ref": pin},),
     )
-    assert scanned["status"] == "PASS"
+    assert scanned["status"] == "NOT_VERIFIED"
+
+    clean_image = {
+        "SchemaVersion": 2,
+        "ArtifactName": pin,
+        "CreatedAt": "2026-10-18T01:22:03Z",
+        "Metadata": {"RepoDigests": [f"python@{pin.split('@', 1)[1]}"]},
+        "Results": [],
+    }
+
+    def _clean_runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return type("D", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        if "version" in args:
+            return type(
+                "V",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": json.dumps(
+                        {
+                            "Version": "0.76.0",
+                            "VulnerabilityDB": {
+                                "UpdatedAt": "2026-10-17T18:34:28Z",
+                                "NextUpdate": "2026-10-18T18:34:28Z",
+                                "DownloadedAt": "2026-10-18T01:00:00Z",
+                            },
+                        }
+                    ),
+                    "stderr": "",
+                },
+            )()
+        return type("C", (), {"returncode": 0, "stdout": json.dumps(clean_image), "stderr": ""})()
+
+    clean = scan_pinned_images(
+        runner=_clean_runner,
+        images=({"name": "one", "ref": pin},),
+        now=datetime(2026, 10, 18, tzinfo=timezone.utc),
+    )
+    assert clean["status"] == "PASS"
+    assert clean["blocking_count"] == 0
+    assert clean["database"]["updated_at"]
+    assert clean["images"][0]["database"]["updated_at"]
     monkeypatch.setattr("core.supply_chain.images.shutil.which", lambda _name: None)
     missing = scan_pinned_images()
     assert missing["status"] == "NOT_VERIFIED"

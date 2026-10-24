@@ -29,16 +29,29 @@ def encryption_enabled() -> bool:
 
 
 def encryption_status() -> dict[str, bool | str]:
-    """Status safe to print. Does not include the key."""
-    enabled = encryption_enabled()
+    """Status safe to print. Does not include the key.
+
+    ``enabled`` is true only for a key that Fernet accepts. A non-empty value
+    that is not a Fernet key is ``invalid-key`` and is not treated as plaintext.
+    """
+    raw = os.environ.get("PEN_DATA_KEY", "").strip()
     required = encryption_required()
-    if required and not enabled:
+    key_valid = False
+    if raw:
+        try:
+            Fernet(raw.encode("utf-8"))
+            key_valid = True
+        except (ValueError, TypeError):
+            key_valid = False
+    if raw and not key_valid:
+        state = "invalid-key"
+    elif required and not key_valid:
         state = "required-missing"
-    elif enabled:
+    elif key_valid:
         state = "enabled"
     else:
         state = "off"
-    return {"state": state, "required": required, "enabled": enabled}
+    return {"state": state, "required": required, "enabled": key_valid}
 
 
 def _fernet() -> Fernet:
@@ -56,6 +69,8 @@ def protect_text(text: str) -> str:
     status = encryption_status()
     if status["state"] == "required-missing":
         raise PermissionError("PEN_REQUIRE_DATA_ENCRYPTION is set but PEN_DATA_KEY is missing")
+    if status["state"] == "invalid-key":
+        raise PermissionError("PEN_DATA_KEY is not a valid Fernet key")
     if not status["enabled"]:
         return text
     token = _fernet().encrypt(text.encode("utf-8")).decode("ascii")

@@ -37,6 +37,12 @@ RENDER="$(docker compose --profile workers --profile live-workers config)"
 echo "$RENDER" | grep -q 'pen-scanner-isolated' || die "missing pen-scanner-isolated network"
 echo "$RENDER" | grep -q 'pen-scanner-live' || die "missing pen-scanner-live network"
 echo "$RENDER" | grep -q 'internal: true' || die "expected internal: true on isolated scanner network"
+echo "$RENDER" | grep -E 'PEN_REQUIRE_DATA_ENCRYPTION: ("true"|true)' >/dev/null \
+  || die "compose must require data encryption"
+echo "$RENDER" | grep -E 'PEN_DOCTOR_STRICT: ("true"|true)' >/dev/null \
+  || die "compose must run doctor in strict mode"
+echo "$RENDER" | grep -E 'PEN_ALLOW_SHANNON_FULL_PIPELINE: ("false"|false)' >/dev/null \
+  || die "compose must keep the Shannon full pipeline off"
 # Refuse accidental docker.sock mounts in any service definition we ship.
 if echo "$RENDER" | grep -E '/var/run/docker.sock|docker.sock:'; then
   die "docker.sock mount must not appear in compose render"
@@ -56,8 +62,19 @@ docker compose --progress=plain build
 docker compose --profile workers --progress=plain build briar
 docker compose --profile live-workers --progress=plain build briar-live egress-gateway
 
-log "== orchestrator smoke (compose service: orchestrator) =="
-docker compose run --rm --no-deps orchestrator
+log "== orchestrator strict doctor fails closed without PEN_DATA_KEY =="
+set +e
+env -u PEN_DATA_KEY docker compose run --rm --no-deps -e PEN_DATA_KEY= orchestrator
+strict_rc=$?
+set -e
+test "$strict_rc" -ne 0 || die "strict doctor exited 0 without PEN_DATA_KEY"
+echo "ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED"
+
+log "== orchestrator smoke with an ephemeral encryption key =="
+EPHEMERAL_KEY="$(python3 -c 'import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+PEN_DATA_KEY="$EPHEMERAL_KEY" docker compose run --rm --no-deps orchestrator
+unset EPHEMERAL_KEY
+echo "ORCHESTRATOR_STRICT_DOCTOR_OK"
 
 log "== briar isolated worker smoke (no external egress network) =="
 docker compose --profile workers run --rm --no-deps briar

@@ -38,6 +38,10 @@ Use before tagging a non-alpha release. Scorecard statuses are `PASS`, `PARTIAL`
   - Absence of `SHANNON_E2E_TEMPORAL_HOST_RECONNECT_FAILURE`
   - `MISSING_INTERNAL_CONFIG_BLOCKS`
 - [ ] No `docker.sock` in Compose render
+- [ ] Compose orchestrator sets `PEN_REQUIRE_DATA_ENCRYPTION`, `PEN_DOCTOR_STRICT`, and reads `PEN_DATA_KEY` from the environment
+- [ ] Runtime log contains `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED` and `ORCHESTRATOR_STRICT_DOCTOR_OK`
+- [ ] MCP entrypoint refuses `sse` and `streamable-http`
+- [ ] `PEN_DOCTOR_STRICT=1` fails when encryption is off or the Shannon full pipeline is enabled
 - [ ] Report path confinement + symlink-safe writes still pass
 - [ ] Assessment symlink read/write refusal still passes (`tests/unit/test_ops_data_protection.py`)
 - [ ] `pen-testing cleanup` dry-run does not delete; `--apply` does not follow symlinks

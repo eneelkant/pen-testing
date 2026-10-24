@@ -83,7 +83,7 @@ _ENTRY_FIELDS = {
     "findings",
 }
 _SOURCE_FIELDS = {"repository", "ci_run_id", "commit", "artifact", "raw_path", "raw_sha256"}
-_APPROVAL_FIELDS = {"approved_by", "approval_ref", "approved_at", "expires_at", "reviewed_commit_sha"}
+_APPROVAL_FIELDS = {"approved_by", "approval_ref", "expires_at"}
 _FINDING_FIELDS = {"key", "severity", "fixed_version", "gate_reason", "remediation_status"}
 GATE_REASONS = {"fixed-high-critical", "unscored"}
 REMEDIATION_STATUSES = {
@@ -259,24 +259,16 @@ def _validate_entry(entry: Any, index: int, now: datetime, errors: list[str]) ->
             errors.append(f"{where}.approval.approved_by: must be a GitHub login")
         if not isinstance(approval["approval_ref"], str) or not _APPROVAL_REF_RE.match(approval["approval_ref"]):
             errors.append(f"{where}.approval.approval_ref: must be a GitHub pull request URL")
-        if not isinstance(approval["reviewed_commit_sha"], str) or not _COMMIT_RE.match(approval["reviewed_commit_sha"]):
-            errors.append(f"{where}.approval.reviewed_commit_sha: must be a 40-hex reviewed commit")
-        approved = _time(approval["approved_at"], f"{where}.approval.approved_at", errors)
         expires = _time(approval["expires_at"], f"{where}.approval.expires_at", errors)
-        if approved:
-            if approved - now > _CLOCK_SKEW:
-                errors.append(f"{where}.approval.approved_at: is in the future")
-            if scanned and scanned - approved > _CLOCK_SKEW:
-                errors.append(f"{where}.approval.approved_at: precedes the scan it approves")
-            if scanned and approved - scanned > _MAX_EVIDENCE_AGE:
-                errors.append(f"{where}.approval: approved on stale scan evidence (older than {_MAX_EVIDENCE_AGE.days} days)")
-        if approved and expires:
-            if expires <= approved:
-                errors.append(f"{where}.approval.expires_at: must be after approved_at")
-            elif expires - approved > MAX_BASELINE_TTL:
-                errors.append(f"{where}.approval.expires_at: exceeds the {MAX_BASELINE_TTL.days}-day maximum")
-            if now >= expires:
-                errors.append(f"{where}: baseline entry expired at {approval['expires_at']}")
+        if expires and scanned:
+            if expires <= scanned:
+                errors.append(f"{where}.approval.expires_at: must be after the source scan")
+            elif expires - scanned > MAX_BASELINE_TTL + _MAX_EVIDENCE_AGE:
+                errors.append(
+                    f"{where}.approval.expires_at: exceeds 31 days plus the 7-day review window from the scan"
+                )
+        if expires and now >= expires:
+            errors.append(f"{where}: baseline entry expired at {approval['expires_at']}")
 
     findings = entry["findings"]
     if not isinstance(findings, list) or not findings:
@@ -838,12 +830,12 @@ def verify_github_approvals(
     fetch_json: Any = None,
     fetch_bytes: Any = None,
 ) -> list[str]:
-    """Verify a baseline entry against a real review of its exact reviewed content.
+    """Verify current-head GitHub approvals and the CI evidence behind each entry.
 
-    Approval metadata alone is never accepted as proof. The named approver must
-    have an APPROVED review for reviewed_commit_sha, the commit must be an
-    ancestor of the current PR head, and the entry at that reviewed commit must
-    match the current entry except for its approval metadata.
+    Approval metadata is prepared before review. The regression gate only treats
+    it as approved when the named person has a real APPROVED review of the exact
+    current PR head that contains the metadata. This avoids a commit-after-review
+    cycle and correctly fails after any new head commit until it is re-reviewed.
     """
     if not required:
         return []
@@ -866,7 +858,7 @@ def verify_github_approvals(
                     "User-Agent": "pen-testing-image-baseline-gate",
                 },
             )
-            with urllib.request.urlopen(request, timeout=15) as response:
+            with urllib.request.urlopen(request, timeout=20) as response:
                 return json.loads(response.read().decode("utf-8"))
 
     if fetch_bytes is None:
@@ -877,7 +869,8 @@ def verify_github_approvals(
     archive_cache: dict[tuple[int, str], bytes] = {}
     pull_cache: dict[tuple[str, int], tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     baseline_cache: dict[tuple[str, str], Any] = {}
-    compare_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+    clock = datetime.now(timezone.utc)
+
     for index, entry in enumerate(document["entries"]):
         if not isinstance(entry, dict):
             errors.append(f"entries[{index}]: malformed baseline entry")
@@ -900,12 +893,17 @@ def verify_github_approvals(
         if str(source.get("repository") or "").lower() != repository.lower():
             errors.append(f"entries[{index}]: evidence repository does not match {repository}")
             continue
+
         number = int(number_text)
         approver = str(approval.get("approved_by") or "")
-        reviewed_sha = str(approval.get("reviewed_commit_sha") or "")
-        if not _COMMIT_RE.match(reviewed_sha):
-            errors.append(f"entries[{index}]: reviewed_commit_sha is invalid")
+        expires = _parse_time(str(approval.get("expires_at") or ""))
+        if expires is None:
+            errors.append(f"entries[{index}]: expires_at is missing or invalid")
             continue
+        if clock >= expires:
+            errors.append(f"entries[{index}]: baseline entry expired at {approval.get('expires_at')}")
+            continue
+
         try:
             pkey = (pr_repo, number)
             if pkey not in pull_cache:
@@ -917,64 +915,70 @@ def verify_github_approvals(
             pull, reviews = pull_cache[pkey]
             author = str(((pull.get("user") or {}).get("login")) or "")
             head_sha = str(((pull.get("head") or {}).get("sha")) or "")
-            if pull.get("number") != number or not head_sha:
+            if pull.get("number") != number or not head_sha or pull.get("state") not in {"open", "closed"}:
                 errors.append(f"entries[{index}]: approval reference did not resolve to the expected pull request")
                 continue
             if not approver or approver.lower() == author.lower():
                 errors.append(f"entries[{index}]: approver must differ from PR author {author!r}")
                 continue
+
             reviewer_events = [
                 item for item in reviews
                 if isinstance(item, dict)
                 and str(((item.get("user") or {}).get("login")) or "").lower() == approver.lower()
-                and str(item.get("commit_id") or "").lower() == reviewed_sha.lower()
+                and str(item.get("commit_id") or "").lower() == head_sha.lower()
                 and item.get("submitted_at")
             ]
             review = max(reviewer_events, key=lambda item: str(item.get("submitted_at") or "")) if reviewer_events else None
             if review is None or str(review.get("state") or "").upper() != "APPROVED":
-                errors.append(f"entries[{index}]: {approver!r} has no latest APPROVED review on {reviewed_sha}")
-                continue
-            reviewed_at = _parse_time(str(review.get("submitted_at") or ""))
-            approved_at = _parse_time(str(approval.get("approved_at") or ""))
-            if reviewed_at is None or approved_at is None or approved_at < reviewed_at:
-                errors.append(f"entries[{index}]: approval metadata predates or lacks the actual review timestamp")
-                continue
-            if approved_at - reviewed_at > timedelta(days=1):
-                errors.append(f"entries[{index}]: approval metadata was recorded more than one day after its review")
-                continue
-
-            ckey = (pr_repo, reviewed_sha, head_sha)
-            if ckey not in compare_cache:
-                compare_cache[ckey] = fetch_json(
-                    f"{api_root}/repos/{pr_repo}/compare/{reviewed_sha}...{head_sha}"
+                errors.append(
+                    f"entries[{index}]: {approver!r} has no latest APPROVED review on current PR head {head_sha}"
                 )
-            comparison = compare_cache[ckey]
-            base_sha = str(((comparison.get("merge_base_commit") or {}).get("sha")) or "")
-            if comparison.get("status") not in {"ahead", "identical"} or base_sha.lower() != reviewed_sha.lower():
-                errors.append(f"entries[{index}]: reviewed commit is not an ancestor of the current PR head")
                 continue
 
-            bkey = (pr_repo, reviewed_sha)
-            if bkey not in baseline_cache:
+            reviewed_at = _parse_time(str(review.get("submitted_at") or ""))
+            scanned_at = _parse_time(str(entry.get("scanned_at") or ""))
+            if reviewed_at is None or scanned_at is None:
+                errors.append(f"entries[{index}]: review or scan timestamp is invalid")
+                continue
+            if reviewed_at < scanned_at:
+                errors.append(f"entries[{index}]: GitHub review predates the source scan")
+                continue
+            if reviewed_at - scanned_at > _MAX_EVIDENCE_AGE:
+                errors.append(
+                    f"entries[{index}]: GitHub review occurred more than {_MAX_EVIDENCE_AGE.days} days after the source scan"
+                )
+                continue
+            if expires <= reviewed_at or expires - reviewed_at > MAX_BASELINE_TTL:
+                errors.append(
+                    f"entries[{index}]: expiry must be after the actual review and no more than {MAX_BASELINE_TTL.days} days later"
+                )
+                continue
+
+            cache_key = (pr_repo, head_sha)
+            if cache_key not in baseline_cache:
                 response = fetch_json(
-                    f"{api_root}/repos/{pr_repo}/contents/{BASELINE_REPO_PATH}?ref={reviewed_sha}"
+                    f"{api_root}/repos/{pr_repo}/contents/{BASELINE_REPO_PATH}?ref={head_sha}"
                 )
                 if not isinstance(response, dict) or not isinstance(response.get("content"), str):
-                    raise ValueError("reviewed commit does not contain the baseline file")
+                    raise ValueError("current PR head does not contain the baseline file")
                 content = response["content"]
                 if response.get("encoding") == "base64":
                     content = base64.b64decode(content, validate=False).decode("utf-8")
-                baseline_cache[bkey] = json.loads(content)
-            reviewed_document = baseline_cache[bkey]
+                baseline_cache[cache_key] = json.loads(content)
+            reviewed_document = baseline_cache[cache_key]
             reviewed_entries = [
                 item for item in (reviewed_document.get("entries") or [])
                 if isinstance(item, dict)
                 and item.get("pin_name") == entry.get("pin_name")
                 and item.get("ref") == entry.get("ref")
             ] if isinstance(reviewed_document, dict) else []
-            if len(reviewed_entries) != 1 or _without_approval(reviewed_entries[0]) != _without_approval(entry):
-                errors.append(f"entries[{index}]: baseline entry differs from the exact content reviewed by {approver!r}")
+            if len(reviewed_entries) != 1 or reviewed_entries[0] != entry:
+                errors.append(
+                    f"entries[{index}]: baseline entry does not match the exact content of the reviewed PR head"
+                )
                 continue
+
             provenance_errors = verify_baseline_entry_ci_evidence(
                 entry,
                 token=token,
@@ -990,17 +994,18 @@ def verify_github_approvals(
     return errors
 
 
+
+
 def approve_entries(
     document: dict[str, Any],
     *,
     approved_by: str,
     approval_ref: str,
     expires_in_days: int,
-    reviewed_commit_sha: str,
     pin_names: Iterable[str] | None = None,
     now: datetime | None = None,
 ) -> int:
-    """Record an owner's approval on pending entries. Run by a human reviewer."""
+    """Prepare reviewer identity and expiry; only a real GitHub review approves it."""
     clock = now or datetime.now(timezone.utc)
     if not 1 <= expires_in_days <= MAX_BASELINE_TTL.days:
         raise ValueError(f"expires_in_days must be between 1 and {MAX_BASELINE_TTL.days}")
@@ -1008,8 +1013,6 @@ def approve_entries(
         raise ValueError("approved_by must be a GitHub login")
     if not _APPROVAL_REF_RE.match(approval_ref or ""):
         raise ValueError("approval_ref must be a GitHub pull request URL")
-    if not isinstance(reviewed_commit_sha, str) or not _COMMIT_RE.match(reviewed_commit_sha):
-        raise ValueError("reviewed_commit_sha must be the 40-hex commit reviewed by the approver")
     wanted = set(pin_names or [])
     count = 0
     for entry in document.get("entries") or []:
@@ -1018,9 +1021,7 @@ def approve_entries(
         entry["approval"] = {
             "approved_by": approved_by,
             "approval_ref": approval_ref,
-            "approved_at": clock.isoformat(),
             "expires_at": (clock + timedelta(days=expires_in_days)).isoformat(),
-            "reviewed_commit_sha": reviewed_commit_sha,
         }
         count += 1
     return count

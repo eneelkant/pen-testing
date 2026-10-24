@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   # Never cancel in-flight verification on main (rapid merges previously cancelled
@@ -286,6 +288,10 @@ jobs:
         run: python -m core.supply_chain baseline guard --base-ref "${{ github.event.pull_request.base.sha }}"
 
       - name: Regression gate against the reviewed baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          REQUIRE_GITHUB_BASELINE_REVIEW: "1"
         run: |
           python -m core.supply_chain images \
             --baseline core/supply_chain/image_baseline.json \

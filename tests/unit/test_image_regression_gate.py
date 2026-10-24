@@ -602,7 +602,6 @@ def _github_approval_fixture(tmp_path):
     repository = "eneelkant/pen-testing"
     run_id = 40119376385
     source_commit = "f7cbcc0b8dd219cd9dde15a0e3653bb00663c745"
-    reviewed_sha = "b" * 40
     current_head = "c" * 40
 
     summary = _artifact(tmp_path)
@@ -626,16 +625,13 @@ def _github_approval_fixture(tmp_path):
     candidate["source"]["ci_run_id"] = run_id
     candidate["source"]["raw_path"] = "upstream/00-trivy-scanner.trivy.json"
 
-    reviewed_document = _doc(copy.deepcopy(candidate))
     approved = copy.deepcopy(candidate)
     approved["approval"] = {
         "approved_by": "reviewer",
         "approval_ref": "https://github.com/eneelkant/pen-testing/pull/28",
-        "approved_at": "2026-10-24T18:20:00+00:00",
         "expires_at": "2026-11-24T18:20:00+00:00",
-        "reviewed_commit_sha": reviewed_sha,
     }
-    current_document = _doc(approved)
+    current_document = _doc(copy.deepcopy(approved))
 
     summary_bytes = json.dumps(summary).encode("utf-8")
     raw_zip = _zip_bytes({"upstream/00-trivy-scanner.trivy.json": raw_bytes})
@@ -649,15 +645,13 @@ def _github_approval_fixture(tmp_path):
             return [{
                 "user": {"login": "reviewer"},
                 "state": "APPROVED",
-                "commit_id": reviewed_sha,
-                "submitted_at": "2026-10-24T18:19:59Z",
+                "commit_id": current_head,
+                "submitted_at": "2026-10-24T18:20:00Z",
             }]
-        if url == api + "/compare/" + reviewed_sha + "..." + current_head:
-            return {"status": "ahead", "merge_base_commit": {"sha": reviewed_sha}}
-        if url == api + "/contents/core/supply_chain/image_baseline.json?ref=" + reviewed_sha:
+        if url == api + "/contents/core/supply_chain/image_baseline.json?ref=" + current_head:
             return {
                 "encoding": "base64",
-                "content": base64.b64encode(json.dumps(reviewed_document).encode("utf-8")).decode("ascii"),
+                "content": base64.b64encode(json.dumps(current_document).encode("utf-8")).decode("ascii"),
             }
         if url == api + "/actions/runs/" + str(run_id):
             return {

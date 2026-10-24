@@ -625,6 +625,13 @@ def build_candidate_entries(
 # ------------------------------------------------------------ GitHub approval proof
 
 
+
+def _without_approval(entry: dict[str, Any]) -> dict[str, Any]:
+    result = dict(entry)
+    result["approval"] = None
+    return result
+
+
 def verify_github_approvals(
     document: Any,
     *,
@@ -633,13 +640,12 @@ def verify_github_approvals(
     required: bool,
     fetch_json: Any = None,
 ) -> list[str]:
-    """Verify baseline approval against an actual, current GitHub PR review.
+    """Verify a baseline entry against a real review of its exact reviewed content.
 
-    The JSON approval fields are an audit record, not proof by themselves. In CI,
-    every approved baseline entry must point to a PR in this repository and the
-    named approver must have an APPROVED review of that PR's current head. The
-    approver cannot be the PR author. A missing token or API error fails closed.
-    fetch_json is injectable for deterministic unit tests.
+    Approval metadata alone is never accepted as proof. The named approver must
+    have an APPROVED review for reviewed_commit_sha, the commit must be an
+    ancestor of the current PR head, and the entry at that reviewed commit must
+    match the current entry except for its approval metadata.
     """
     if not required:
         return []
@@ -647,7 +653,7 @@ def verify_github_approvals(
     if not isinstance(document, dict) or not isinstance(document.get("entries"), list):
         return ["GitHub review verification: baseline document or entries are missing"]
     if not token:
-        return ["GitHub review verification: GITHUB_TOKEN is missing; approval cannot be authenticated"]
+        return ["GitHub review verification: GITHUB_TOKEN is missing"]
     if not isinstance(repository, str) or not _REPO_RE.match(repository):
         return ["GitHub review verification: GITHUB_REPOSITORY is missing or invalid"]
 
@@ -665,21 +671,25 @@ def verify_github_approvals(
             with urllib.request.urlopen(request, timeout=15) as response:
                 return json.loads(response.read().decode("utf-8"))
 
-    cache: dict[tuple[str, int], tuple[dict[str, Any], list[dict[str, Any]]]] = {}
-    checked: set[tuple[str, int, str]] = set()
+    api_root = "https://api.github.com"
+    pull_cache: dict[tuple[str, int], tuple[dict[str, Any], list[dict[str, Any]]]] = {}
+    baseline_cache: dict[tuple[str, str], Any] = {}
+    compare_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
     for index, entry in enumerate(document["entries"]):
         if not isinstance(entry, dict):
-            errors.append(f"entries[{index}]: cannot verify GitHub approval for malformed entry")
+            errors.append(f"entries[{index}]: malformed baseline entry")
             continue
         approval = entry.get("approval")
         if not isinstance(approval, dict):
             continue
-        ref = approval.get("approval_ref")
-        match = re.match(r"^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([1-9][0-9]*)$", str(ref or ""))
+        match = re.match(
+            r"^https://github\\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([1-9][0-9]*)$",
+            str(approval.get("approval_ref") or ""),
+        )
         if not match:
-            errors.append(f"entries[{index}]: approval_ref must identify a GitHub pull request whose review can be verified")
+            errors.append(f"entries[{index}]: approval_ref must identify a GitHub pull request")
             continue
-        pr_repo, pr_number_text = match.groups()
+        pr_repo, number_text = match.groups()
         if pr_repo.lower() != repository.lower():
             errors.append(f"entries[{index}]: approval PR belongs to {pr_repo}, not {repository}")
             continue
@@ -687,49 +697,81 @@ def verify_github_approvals(
         if str(source.get("repository") or "").lower() != repository.lower():
             errors.append(f"entries[{index}]: evidence repository does not match {repository}")
             continue
-        pr_number = int(pr_number_text)
-        approved_by = str(approval.get("approved_by") or "")
-        cache_key = (pr_repo, pr_number)
-        check_key = (pr_repo, pr_number, approved_by)
-        if check_key in checked:
+        number = int(number_text)
+        approver = str(approval.get("approved_by") or "")
+        reviewed_sha = str(approval.get("reviewed_commit_sha") or "")
+        if not _COMMIT_RE.match(reviewed_sha):
+            errors.append(f"entries[{index}]: reviewed_commit_sha is invalid")
             continue
-        checked.add(check_key)
         try:
-            if cache_key not in cache:
-                api_root = "https://api.github.com"
-                pull = fetch_json(f"{api_root}/repos/{pr_repo}/pulls/{pr_number}")
-                reviews = fetch_json(f"{api_root}/repos/{pr_repo}/pulls/{pr_number}/reviews?per_page=100")
+            pkey = (pr_repo, number)
+            if pkey not in pull_cache:
+                pull = fetch_json(f"{api_root}/repos/{pr_repo}/pulls/{number}")
+                reviews = fetch_json(f"{api_root}/repos/{pr_repo}/pulls/{number}/reviews?per_page=100")
                 if not isinstance(pull, dict) or not isinstance(reviews, list):
-                    raise ValueError("GitHub returned malformed pull request or review data")
-                cache[cache_key] = (pull, reviews)
-            pull, reviews = cache[cache_key]
-        except (OSError, TimeoutError, ValueError, json.JSONDecodeError, urllib.error.URLError) as exc:
-            errors.append(f"entries[{index}]: cannot verify approval PR #{pr_number}: {exc}")
-            continue
+                    raise ValueError("GitHub returned malformed PR or reviews")
+                pull_cache[pkey] = (pull, reviews)
+            pull, reviews = pull_cache[pkey]
+            author = str(((pull.get("user") or {}).get("login")) or "")
+            head_sha = str(((pull.get("head") or {}).get("sha")) or "")
+            if pull.get("number") != number or not head_sha:
+                errors.append(f"entries[{index}]: approval reference did not resolve to the expected pull request")
+                continue
+            if not approver or approver.lower() == author.lower():
+                errors.append(f"entries[{index}]: approver must differ from PR author {author!r}")
+                continue
+            review = next((
+                item for item in reversed(reviews)
+                if isinstance(item, dict)
+                and str(((item.get("user") or {}).get("login")) or "").lower() == approver.lower()
+                and str(item.get("state") or "").upper() == "APPROVED"
+                and str(item.get("commit_id") or "").lower() == reviewed_sha.lower()
+            ), None)
+            if review is None:
+                errors.append(f"entries[{index}]: {approver!r} has no APPROVED review on {reviewed_sha}")
+                continue
+            reviewed_at = _parse_time(str(review.get("submitted_at") or ""))
+            approved_at = _parse_time(str(approval.get("approved_at") or ""))
+            if reviewed_at is None or approved_at is None or approved_at < reviewed_at:
+                errors.append(f"entries[{index}]: approval metadata predates or lacks the actual review timestamp")
+                continue
+            if approved_at - reviewed_at > timedelta(days=1):
+                errors.append(f"entries[{index}]: approval metadata was recorded more than one day after its review")
+                continue
 
-        author = str(((pull.get("user") or {}).get("login")) or "")
-        head_sha = str(((pull.get("head") or {}).get("sha")) or "")
-        if pull.get("number") != pr_number or pull.get("state") not in {"open", "closed"}:
-            errors.append(f"entries[{index}]: GitHub approval reference did not resolve to the expected pull request")
-            continue
-        if not head_sha:
-            errors.append(f"entries[{index}]: GitHub approval PR has no head SHA")
-            continue
-        if not approved_by or approved_by.lower() == author.lower():
-            errors.append(f"entries[{index}]: baseline approver must be different from PR #{pr_number} author {author!r}")
-            continue
-        valid_review = any(
-            isinstance(review, dict)
-            and str(((review.get("user") or {}).get("login")) or "").lower() == approved_by.lower()
-            and str(review.get("state") or "").upper() == "APPROVED"
-            and str(review.get("commit_id") or "").lower() == head_sha.lower()
-            for review in reviews
-        )
-        if not valid_review:
-            errors.append(
-                f"entries[{index}]: {approved_by!r} has no APPROVED GitHub review on the current head "
-                f"of {pr_repo}#{pr_number} ({head_sha})"
-            )
+            ckey = (pr_repo, reviewed_sha, head_sha)
+            if ckey not in compare_cache:
+                compare_cache[ckey] = fetch_json(
+                    f"{api_root}/repos/{pr_repo}/compare/{reviewed_sha}...{head_sha}"
+                )
+            comparison = compare_cache[ckey]
+            base_sha = str(((comparison.get("merge_base_commit") or {}).get("sha")) or "")
+            if comparison.get("status") not in {"ahead", "identical"} or base_sha.lower() != reviewed_sha.lower():
+                errors.append(f"entries[{index}]: reviewed commit is not an ancestor of the current PR head")
+                continue
+
+            bkey = (pr_repo, reviewed_sha)
+            if bkey not in baseline_cache:
+                response = fetch_json(
+                    f"{api_root}/repos/{pr_repo}/contents/{BASELINE_REPO_PATH}?ref={reviewed_sha}"
+                )
+                if not isinstance(response, dict) or not isinstance(response.get("content"), str):
+                    raise ValueError("reviewed commit does not contain the baseline file")
+                content = response["content"]
+                if response.get("encoding") == "base64":
+                    content = base64.b64decode(content, validate=False).decode("utf-8")
+                baseline_cache[bkey] = json.loads(content)
+            reviewed_document = baseline_cache[bkey]
+            reviewed_entries = [
+                item for item in (reviewed_document.get("entries") or [])
+                if isinstance(item, dict)
+                and item.get("pin_name") == entry.get("pin_name")
+                and item.get("ref") == entry.get("ref")
+            ] if isinstance(reviewed_document, dict) else []
+            if len(reviewed_entries) != 1 or _without_approval(reviewed_entries[0]) != _without_approval(entry):
+                errors.append(f"entries[{index}]: baseline entry differs from the exact content reviewed by {approver!r}")
+        except (OSError, TimeoutError, ValueError, KeyError, TypeError, json.JSONDecodeError, urllib.error.URLError) as exc:
+            errors.append(f"entries[{index}]: GitHub review verification failed: {exc}")
     return errors
 
 

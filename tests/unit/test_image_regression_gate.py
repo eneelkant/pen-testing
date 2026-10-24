@@ -7,10 +7,13 @@ rules (exact digests, expiry, provenance, approval, new findings fail).
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
+import io
 import json
 import subprocess
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -591,3 +594,153 @@ def test_release_requires_absolute_image_gate():
     assert "python -m core.supply_chain images --raw-dir" in text
     assert "--baseline" not in text
     assert "continue-on-error" not in text
+
+
+def _zip_bytes(files: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path, content in files.items():
+            archive.writestr(path, content)
+    return buffer.getvalue()
+
+
+def _github_approval_fixture(tmp_path):
+    repository = "eneelkant/pen-testing"
+    run_id = 40119376385
+    source_commit = "f7cbcc0b8dd219cd9dde15a0e3653bb00663c745"
+    reviewed_sha = "b" * 40
+    current_head = "c" * 40
+
+    summary = _artifact(tmp_path)
+    summary["images"][0]["raw_evidence"]["path"] = "image-scan-raw/upstream/00-trivy-scanner.trivy.json"
+    raw_path = tmp_path / "raw" / "00-trivy-scanner.trivy.json"
+    raw_bytes = raw_path.read_bytes()
+    raw_sha = hashlib.sha256(raw_bytes).hexdigest()
+    summary["images"][0]["raw_evidence"]["sha256"] = raw_sha
+
+    candidate = bl.build_candidate_entries(
+        summary,
+        tmp_path / "raw",
+        repository=repository,
+        ci_run_id=run_id,
+        commit=source_commit,
+        artifact="image-scan-raw",
+        raw_prefix="upstream/",
+    )[0]
+    candidate["source"]["raw_sha256"] = raw_sha
+    candidate["source"]["commit"] = source_commit
+    candidate["source"]["ci_run_id"] = run_id
+    candidate["source"]["raw_path"] = "upstream/00-trivy-scanner.trivy.json"
+
+    reviewed_document = _doc(copy.deepcopy(candidate))
+    approved = copy.deepcopy(candidate)
+    approved["approval"] = {
+        "approved_by": "reviewer",
+        "approval_ref": "https://github.com/eneelkant/pen-testing/pull/28",
+        "approved_at": "2026-10-24T18:20:00+00:00",
+        "expires_at": "2026-11-24T18:20:00+00:00",
+        "reviewed_commit_sha": reviewed_sha,
+    }
+    current_document = _doc(approved)
+
+    summary_bytes = json.dumps(summary).encode("utf-8")
+    raw_zip = _zip_bytes({"upstream/00-trivy-scanner.trivy.json": raw_bytes})
+    summary_zip = _zip_bytes({"image-scan-upstream.json": summary_bytes})
+    api = "https://api.github.com/repos/" + repository
+
+    def fetch_json(url):
+        if url == api + "/pulls/28":
+            return {"number": 28, "state": "open", "user": {"login": "author"}, "head": {"sha": current_head}}
+        if url == api + "/pulls/28/reviews?per_page=100":
+            return [{
+                "user": {"login": "reviewer"},
+                "state": "APPROVED",
+                "commit_id": reviewed_sha,
+                "submitted_at": "2026-10-24T18:19:59Z",
+            }]
+        if url == api + "/compare/" + reviewed_sha + "..." + current_head:
+            return {"status": "ahead", "merge_base_commit": {"sha": reviewed_sha}}
+        if url == api + "/contents/core/supply_chain/image_baseline.json?ref=" + reviewed_sha:
+            return {
+                "encoding": "base64",
+                "content": base64.b64encode(json.dumps(reviewed_document).encode("utf-8")).decode("ascii"),
+            }
+        if url == api + "/actions/runs/" + str(run_id):
+            return {
+                "id": run_id,
+                "status": "completed",
+                "head_sha": source_commit,
+                "repository": {"full_name": repository},
+            }
+        if url == api + "/actions/runs/" + str(run_id) + "/artifacts?per_page=100":
+            return {"artifacts": [
+                {"name": "image-scan-raw", "expired": False, "archive_download_url": "raw.zip"},
+                {"name": "image-scan-upstream", "expired": False, "archive_download_url": "summary.zip"},
+            ]}
+        raise AssertionError("unexpected GitHub API URL: " + url)
+
+    def fetch_bytes(url):
+        if url == "raw.zip":
+            return raw_zip
+        if url == "summary.zip":
+            return summary_zip
+        raise AssertionError("unexpected artifact URL: " + url)
+
+    return current_document, fetch_json, fetch_bytes, approved
+
+
+def test_github_baseline_verification_requires_real_review_and_ci_artifacts(tmp_path):
+    document, fetch_json, fetch_bytes, _ = _github_approval_fixture(tmp_path)
+    assert bl.verify_github_approvals(
+        document,
+        token="test-token",
+        repository="eneelkant/pen-testing",
+        required=True,
+        fetch_json=fetch_json,
+        fetch_bytes=fetch_bytes,
+    ) == []
+
+
+def test_github_baseline_verification_rejects_self_approval(tmp_path):
+    document, fetch_json, fetch_bytes, approved = _github_approval_fixture(tmp_path)
+    approved["approval"]["approved_by"] = "author"
+    errors = bl.verify_github_approvals(
+        _doc(approved),
+        token="test-token",
+        repository="eneelkant/pen-testing",
+        required=True,
+        fetch_json=fetch_json,
+        fetch_bytes=fetch_bytes,
+    )
+    assert any("approver must differ from PR author" in error for error in errors)
+
+
+def test_github_baseline_verification_rejects_content_changed_after_review(tmp_path):
+    document, fetch_json, fetch_bytes, approved = _github_approval_fixture(tmp_path)
+    approved["findings"][0]["severity"] = "CRITICAL"
+    errors = bl.verify_github_approvals(
+        _doc(approved),
+        token="test-token",
+        repository="eneelkant/pen-testing",
+        required=True,
+        fetch_json=fetch_json,
+        fetch_bytes=fetch_bytes,
+    )
+    assert any("differs from the exact content reviewed" in error for error in errors)
+
+
+def test_github_baseline_verification_rejects_tampered_raw_artifact(tmp_path):
+    document, fetch_json, fetch_bytes, _ = _github_approval_fixture(tmp_path)
+    raw_zip = fetch_bytes("raw.zip")
+    altered_zip = _zip_bytes({"upstream/00-trivy-scanner.trivy.json": raw_zip + b"tampered"})
+    def tampered_fetch_bytes(url):
+        return altered_zip if url == "raw.zip" else fetch_bytes(url)
+    errors = bl.verify_github_approvals(
+        document,
+        token="test-token",
+        repository="eneelkant/pen-testing",
+        required=True,
+        fetch_json=fetch_json,
+        fetch_bytes=tampered_fetch_bytes,
+    )
+    assert any("raw evidence SHA-256 differs from authentic CI artifact" in error for error in errors)

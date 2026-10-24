@@ -303,9 +303,9 @@ def test_unscored_finding_is_not_downgraded_by_vendor_severity_hints():
     assert classified["status"] == "FAIL"
 
 
-def test_production_pins_unchanged_by_this_fix():
+def test_production_pins_match_reviewed_values():
     refs = {item["name"]: item["ref"] for item in PINNED_IMAGES}
-    assert refs["python-3.12-probe"].endswith("34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258")
+    assert refs["python-3.12-probe"].endswith("b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d")
     assert refs["shannon-worker"].endswith("4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e")
     assert refs["temporal"].endswith("9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4")
     assert refs["gitleaks"].endswith("0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46")

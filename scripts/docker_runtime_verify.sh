@@ -93,7 +93,7 @@ echo "PEN_SCANNER_ISOLATED_INTERNAL=true"
 # Probe uses the same Python base image already pulled for builds; no third-party scan.
 # Expect connection failure (egress blocked by internal:true).
 set +e
-PROBE_OUT="$(docker run --rm --network "$ISO_NET" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
+PROBE_OUT="$(docker run --rm --network "$ISO_NET" python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d \
   python -c 'import socket,sys
 try:
     socket.create_connection(("1.1.1.1", 443), timeout=3)
@@ -125,7 +125,7 @@ done
 test "$ready" -eq 1 || die "fixture-headers did not become ready"
 CTRL_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-control$' | head -n1 || true)"
 test -n "$CTRL_NET" || die "could not locate pen-control docker network"
-CTRL_OUT="$(docker run --rm --network "$CTRL_NET" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
+CTRL_OUT="$(docker run --rm --network "$CTRL_NET" python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d \
   python -c 'import socket,sys
 s=socket.create_connection(("fixture-headers",8080), timeout=5)
 s.close()

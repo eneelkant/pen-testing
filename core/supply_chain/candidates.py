@@ -57,6 +57,12 @@ CANDIDATE_WATCH = (
         "image": "python",
     },
     {
+        "name": "python-3.12-alpine3.24",
+        "hub_repository": "library/python",
+        "tag": "3.12-alpine3.24",
+        "image": "python",
+    },
+    {
         "name": "python-3.13-slim-bookworm",
         "hub_repository": "library/python",
         "tag": "3.13-slim-bookworm",

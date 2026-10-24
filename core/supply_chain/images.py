@@ -25,13 +25,13 @@ from typing import Any, Callable
 PINNED_IMAGES = (
     {
         "name": "python-3.12-probe",
-        "ref": "python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258",
-        "platform_digest": "sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d",
+        "ref": "python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d",
+        "platform_digest": "sha256:9b98a8d37794ca093ba8d5afe1ffac52f5a15168b9b4e67594d86c20e14fa681",
     },
     {
         "name": "python-3.12-orchestrator",
-        "ref": "python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258",
-        "platform_digest": "sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d",
+        "ref": "python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d",
+        "platform_digest": "sha256:9b98a8d37794ca093ba8d5afe1ffac52f5a15168b9b4e67594d86c20e14fa681",
     },
     {
         "name": "shannon-worker",

@@ -247,7 +247,9 @@ def _validate_entry(entry: Any, index: int, now: datetime, errors: list[str]) ->
         if not isinstance(approval["approved_by"], str) or not _LOGIN_RE.match(approval["approved_by"]):
             errors.append(f"{where}.approval.approved_by: must be a GitHub login")
         if not isinstance(approval["approval_ref"], str) or not _APPROVAL_REF_RE.match(approval["approval_ref"]):
-            errors.append(f"{where}.approval.approval_ref: must be a GitHub pull request or issue URL")
+            errors.append(f"{where}.approval.approval_ref: must be a GitHub pull request URL")
+        if not isinstance(approval["reviewed_commit_sha"], str) or not _COMMIT_RE.match(approval["reviewed_commit_sha"]):
+            errors.append(f"{where}.approval.reviewed_commit_sha: must be a 40-hex reviewed commit")
         approved = _time(approval["approved_at"], f"{where}.approval.approved_at", errors)
         expires = _time(approval["expires_at"], f"{where}.approval.expires_at", errors)
         if approved:

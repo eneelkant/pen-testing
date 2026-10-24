@@ -6,6 +6,13 @@
 
 **Gate:** zero fixed HIGH/CRITICAL + zero unscored. Candidate evidence reuse requires exact digest, `linux/amd64`, scanner `0.76.0`, fresh CreatedAt/DB UpdatedAt, and a **live** `trivy version` DB probe (age alone is not enough). Pre-classified `PASS` without raw Trivy `Results` is rejected. Missing or mismatched evidence is `NOT_VERIFIED`, not a pass. Platform is never invented when omitted.
 
+## Gate structure (approved 2026-10-24)
+
+- **Merges:** the CI job "Pinned image regression gate" fails on any blocking finding that is not in the reviewed baseline `core/supply_chain/image_baseline.json`, on unknown digests, on invalid or expired baselines, and on unverified scans (policy Option B).
+- **Releases:** the release workflow requires the absolute gate, zero blocking findings in every pinned image (policy Option A).
+- The absolute CI job "Pinned image vulnerability scans" keeps running on every PR and stays red while inherited findings remain.
+- Baseline entries record inherited risk with an expiry. They are not waivers. See `docs/IMAGE_BASELINE.md`.
+
 ## Current status: PR #28 head `0812b53`, CI run 40115310455
 
 Source: GitHub Actions run [40115310455](https://github.com/eneelkant/pen-testing/actions/runs/40115310455) (push, 2026-10-24T17:15Z), job "Pinned image vulnerability scans" log and its `image-scan-python`, `image-scan-upstream` and `image-scan-raw` artifacts. Scanner Trivy **0.76.0** (report `Trivy.Version` and probe agree). DB `UpdatedAt` **2026-10-24T13:07:23.340317483Z**. Every raw file's sha256 matches `raw_evidence.sha256` in its summary, and each report names the exact pinned index digest with `linux/amd64`.

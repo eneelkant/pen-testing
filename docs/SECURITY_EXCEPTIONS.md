@@ -8,6 +8,8 @@
 
 **Owner:** repository maintainer. **Next review:** 2026-11-18.
 
+**Merge regression baseline:** `core/supply_chain/image_baseline.json` lists the blocking findings already present in the current upstream pins so that merges can be blocked on *new* findings only (policy Option B; procedure in `docs/IMAGE_BASELINE.md`). It is not a waiver either. Its entries are digest-bound, expire within 31 days, need owner approval, and leave the absolute result unchanged. The absolute gate, which fails on every finding listed here, remains the release gate (Option A).
+
 Counsel review of `docs/LICENSING_REVIEW.md` is still pending. That is a legal question, not a CVE exception.
 
 ## Reproduction on 2026-10-18

@@ -49,6 +49,7 @@ Use before tagging a non-alpha release. Scorecard statuses are `PASS`, `PARTIAL`
 - [ ] `python -m core.supply_chain vuln` recorded for the release SHA (`PASS`, `FAIL`, or `NOT VERIFIED`). A metadata audit is not a CVE result. Blocking findings stay visible
 - [ ] Non-dry-run scans honor `rate_limit_rps` and `PEN_MAX_INFLIGHT_SCANS` in-process
 - [ ] Gitleaks CI still green on the release SHA (do not waive findings)
+- [ ] Release workflow job "Absolute pinned image gate (release)" passed for the tag: zero blocking findings in every pinned image. A passing merge regression gate (`images --baseline`) does **not** satisfy this item
 
 ## Quality
 

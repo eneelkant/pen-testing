@@ -43,7 +43,7 @@
 | Plaintext assessments on the supported deployment | Compose sets `PEN_REQUIRE_DATA_ENCRYPTION` and strict doctor | Local CLI without those variables still writes plaintext |
 | Backup or restore escapes the data directories | Symlinks skipped; `..` manifest paths rejected | The operator chooses the archive directory and the key |
 | Claim of forensic deletion | None. Overwrite-before-unlink is documented as not forensic | Snapshots and SSDs can retain bytes |
-| Known fixed vulnerabilities in upstream images | Digest pins; Trivy classification fails closed on fixed HIGH/CRITICAL | Shannon, Temporal, Gitleaks, and the Trivy scanner image currently fail that classification. Pins were not moved. See `docs/SECURITY_EXCEPTIONS.md` |
+| Known fixed vulnerabilities in upstream images | Digest pins; Trivy classification fails closed on fixed HIGH/CRITICAL and unscored findings. Merges: regression gate fails on any blocking finding outside the reviewed, digest-bound, 31-day baseline (`docs/IMAGE_BASELINE.md`). Releases: absolute gate in `.github/workflows/release.yml` requires zero blocking findings | Shannon, Temporal, Gitleaks, and the Trivy scanner image currently fail the absolute gate. Their existing findings are tracked in the baseline, not waived; a green regression gate does not mean those images are free of vulnerabilities. Baseline review depends on code-owner review being enforced on `main` |
 | AGPL / license obligations | `docs/LICENSING_REVIEW.md` lists the questions | Counsel has not answered them |
 
 ## Explicit non-claims

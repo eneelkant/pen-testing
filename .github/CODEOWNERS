@@ -1,0 +1,12 @@
+# Code owners for the image security gates.
+#
+# The baseline records inherited risk for the merge regression gate. Changes to
+# it, to the gate code, or to the workflows that enforce it need review from the
+# repository owner. CODEOWNERS only takes effect when branch protection (or a
+# ruleset) on `main` enables "Require review from Code Owners"; see
+# docs/IMAGE_BASELINE.md for the required administrator settings.
+
+/core/supply_chain/image_baseline.json @eneelkant
+/core/supply_chain/baseline.py @eneelkant
+/core/supply_chain/images.py @eneelkant
+/.github/ @eneelkant

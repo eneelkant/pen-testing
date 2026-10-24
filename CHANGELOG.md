@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Supply chain
+
+- Merge regression gate for pinned images (policy Option B): `python -m core.supply_chain images --baseline core/supply_chain/image_baseline.json` fails on blocking findings outside a reviewed, digest-bound baseline whose entries expire within 31 days and need owner approval; it also fails on unknown digests, platform or scanner changes, invalid baselines and unverified scans. New CI job "Pinned image regression gate". The absolute result is reported unchanged
+- `baseline candidate` builds entries only from verified CI artifacts (raw sha256, re-classification, identity, DB freshness); `baseline approve` records an owner approval; `baseline guard` rejects a PR that changes an image pin together with its baseline entry
+- Release workflow now runs the absolute image gate (policy Option A) and publishes only if it passes
+- `.github/CODEOWNERS` covers the baseline, gate code and workflows. Effective only once branch protection requires code-owner review (`docs/IMAGE_BASELINE.md`)
+
 ## 0.2.0a18 — 2026-10-23
 
 ### Security

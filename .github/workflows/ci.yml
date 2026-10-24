@@ -256,6 +256,52 @@ jobs:
           test "${PYTHON_IMAGE_SCAN_EXIT}" -eq 0
           test "${UPSTREAM_IMAGE_SCAN_EXIT}" -eq 0
 
+  # Merge regression gate (policy Option B). Fails on any blocking finding that is
+  # not in the reviewed, digest-bound, unexpired baseline, on unknown digests, on
+  # invalid baselines, and on unverified scans. It never changes the absolute
+  # result above, which stays visible here and is the release gate (Option A).
+  # A green regression gate does not mean the images are free of vulnerabilities.
+  image-regression-gate:
+    name: Pinned image regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Reject pin and baseline changes in the same pull request
+        if: github.event_name == 'pull_request'
+        run: python -m core.supply_chain baseline guard --base-ref "${{ github.event.pull_request.base.sha }}"
+
+      - name: Regression gate against the reviewed baseline
+        run: |
+          python -m core.supply_chain images \
+            --baseline core/supply_chain/image_baseline.json \
+            --raw-dir image-regression-raw \
+            --output image-regression.json
+
+      - name: Upload regression gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-regression-gate
+          path: |
+            image-regression.json
+            image-regression-raw/
+          if-no-files-found: warn
+
   secret-scan:
     name: Secret scanning (gitleaks)
     runs-on: ubuntu-latest

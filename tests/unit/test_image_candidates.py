@@ -13,8 +13,10 @@ from core.supply_chain.candidates import (
     evidence_reusable,
     monitor_candidates,
     resolve_hub_tag,
+    validate_live_database,
+    verify_fresh_scan,
 )
-from core.supply_chain.images import PINNED_IMAGES
+from core.supply_chain.images import PINNED_IMAGES, scan_pinned_images
 
 
 NOW = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
@@ -32,6 +34,50 @@ def _hub(digest: str, last_updated: str = "2026-10-24T00:00:00.000000Z") -> dict
     }
 
 
+def _vuln(vid: str, severity: str, fixed: str = "") -> dict:
+    return {
+        "VulnerabilityID": vid,
+        "PkgName": "pkg",
+        "InstalledVersion": "1.0.0",
+        "FixedVersion": fixed,
+        "Severity": severity,
+    }
+
+
+def _raw_trivy(
+    ref: str,
+    *,
+    vulns: list | None = None,
+    arch: str = "amd64",
+    os_name: str = "linux",
+    version: str | None = "0.76.0",
+    created_at: str = "2026-10-24T01:00:00Z",
+    repo_digest: str | None = None,
+    artifact: str | None = None,
+) -> dict:
+    """Minimal raw ``trivy image --format json`` document for ``ref``."""
+    digest = ref.split("@", 1)[1]
+    repo = ref.split("@", 1)[0].rsplit(":", 1)[0]
+    document = {
+        "SchemaVersion": 2,
+        "CreatedAt": created_at,
+        "ArtifactName": artifact if artifact is not None else ref,
+        "ArtifactType": "container_image",
+        "Metadata": {
+            "ImageConfig": {"architecture": arch, "os": os_name},
+            "RepoDigests": [f"{repo}@{repo_digest or digest}"],
+        },
+        "Results": [{"Target": "image", "Vulnerabilities": list(vulns or [])}],
+    }
+    if version is not None:
+        document["Trivy"] = {"Version": version}
+    return document
+
+
+def _unscored_vulns(count: int) -> list:
+    return [_vuln(f"CVE-UNSCORED-{index}", "UNKNOWN") for index in range(count)]
+
+
 def _pass_row(ref: str) -> dict:
     identity_digest = ref.split("@", 1)[1]
     return {
@@ -47,13 +93,16 @@ def _pass_row(ref: str) -> dict:
         "platform": "linux/amd64",
         "scanner_version": "0.76.0",
         "database": {"updated_at": "2026-10-24T01:18:19Z"},
+        "tool_version": "0.76.0",
         "error": "",
+        "raw_document": _raw_trivy(ref),
     }
 
 
 def _fail_row(ref: str, *, blocking: int = 1) -> dict:
     row = _pass_row(ref)
     row.update(ok=False, status="FAIL", blocking_count=blocking, unscored_count=blocking)
+    row["raw_document"] = _raw_trivy(ref, vulns=_unscored_vulns(blocking))
     return row
 
 
@@ -357,7 +406,7 @@ def test_evidence_reusable_requires_live_database_probe():
         base, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=None
     )
     assert ok is False
-    assert "live vulnerability database probe is required" in reason
+    assert "live probe required" in reason
 
 
 def test_monitor_rescans_when_scanner_metadata_mismatches(tmp_path: Path):
@@ -472,7 +521,7 @@ def test_monitor_rejects_scan_missing_platform_as_not_verified():
 
     def scan(ref: str) -> dict:
         row = _pass_row(ref)
-        row.pop("platform")
+        row["raw_document"]["Metadata"]["ImageConfig"] = {}
         return row
 
     report = monitor_candidates(
@@ -536,7 +585,9 @@ def test_pass_row_with_unscored_count_is_rejected():
 
     def scan(ref: str) -> dict:
         row = _pass_row(ref)
-        row["unscored_count"] = 3
+        row["raw_document"] = _raw_trivy(ref, vulns=_unscored_vulns(3))
+        row.pop("blocking_count")
+        row.pop("unscored_count")
         return row
 
     report = monitor_candidates(
@@ -796,3 +847,354 @@ def test_reject_inventory_includes_python_31213_and_temporal_173():
         assert item.get("platform") == "linux/amd64"
         assert item.get("scanner_version") == REQUIRED_SCANNER_VERSION
         assert (item.get("database") or {}).get("updated_at")
+
+
+# --- Regression tests: fresh-scan acceptance must come from raw findings ---------------
+
+TRIVY_WATCH = (
+    {
+        "name": "trivy-tip",
+        "hub_repository": "aquasec/trivy",
+        "tag": "latest",
+        "image": "aquasec/trivy",
+    },
+)
+REF_B = f"aquasec/trivy:latest@{DIGEST_B}"
+
+
+def _run(scan, *, database=LIVE_DB, **kwargs):
+    return monitor_candidates(
+        watch=TRIVY_WATCH,
+        fetcher=lambda _url: _hub(DIGEST_B),
+        scanner=scan,
+        now=NOW,
+        database=database,
+        **kwargs,
+    )
+
+
+def _assert_not_accepted(report, *, status="NOT_VERIFIED", error_fragment=""):
+    assert report["status"] == status
+    assert report["ok"] is False
+    assert report["acceptable"] == []
+    if error_fragment:
+        assert error_fragment in report["candidates"][0]["error"], report["candidates"][0]["error"]
+
+
+def test_summary_pass_without_raw_findings_is_not_accepted():
+    def scan(ref):
+        row = _pass_row(ref)
+        row.pop("raw_document")
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="raw Trivy findings are missing")
+
+
+def test_summary_pass_with_raw_fixed_critical_is_reclassified_fail():
+    def scan(ref):
+        row = _pass_row(ref)
+        row.pop("blocking_count")
+        row.pop("unscored_count")
+        row["raw_document"] = _raw_trivy(ref, vulns=[_vuln("CVE-CRIT-1", "CRITICAL", fixed="1.2.3")])
+        return row
+
+    report = _run(scan)
+    _assert_not_accepted(report, status="NO_ACCEPTABLE_CANDIDATE")
+    assert report["candidates"][0]["status"] == "FAIL"
+    assert report["candidates"][0]["blocking_count"] == 1
+
+
+def test_summary_counts_disagreeing_with_raw_fail_closed():
+    def scan(ref):
+        row = _pass_row(ref)  # claims blocking_count=0
+        row["raw_document"] = _raw_trivy(ref, vulns=[_vuln("CVE-HIGH-1", "HIGH", fixed="2.0")])
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="disagrees with raw reclassification")
+
+
+def test_summary_findings_list_is_ignored_in_favor_of_raw():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["findings"] = [{"id": "CVE-X", "severity": "CRITICAL", "fixed": "1", "blocking": True}]
+        row.pop("raw_document")
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="raw Trivy findings are missing")
+
+
+def test_raw_wrong_scanner_version_is_not_verified():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["tool_version"] = "0.75.0"
+        row["raw_document"] = _raw_trivy(ref, version="0.75.0")
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="does not match required '0.76.0'")
+
+
+def test_raw_scanner_version_disagreeing_with_probe_is_not_verified():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["raw_document"] = _raw_trivy(ref, version="0.76.1")
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="disagrees with probed scanner")
+
+
+def test_summary_scanner_version_cannot_override_raw():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["tool_version"] = ""
+        row["scanner_version"] = ""
+        row["raw_document"] = _raw_trivy(ref, version="0.58.1")
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="'0.58.1'")
+
+
+def test_raw_wrong_platform_is_not_verified_even_if_summary_says_amd64():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["platform"] = "linux/amd64"
+        row["raw_document"] = _raw_trivy(ref, arch="arm64")
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="'linux/arm64' does not match")
+
+
+def test_raw_report_with_other_digest_is_not_verified():
+    def scan(ref):
+        row = _pass_row(ref)
+        other = f"aquasec/trivy:latest@{DIGEST_A}"
+        row["raw_document"] = _raw_trivy(other)
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="exact resolved digest")
+
+
+def test_raw_report_without_any_digest_is_not_verified():
+    def scan(ref):
+        row = _pass_row(ref)
+        raw = _raw_trivy(ref, artifact="aquasec/trivy:latest")
+        raw["Metadata"].pop("RepoDigests")
+        row["raw_document"] = raw
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="exact resolved digest")
+
+
+def test_digest_only_in_layer_ids_does_not_count_as_identity():
+    def scan(ref):
+        row = _pass_row(ref)
+        raw = _raw_trivy(ref, artifact="aquasec/trivy:latest")
+        raw["Metadata"].pop("RepoDigests")
+        raw["Metadata"]["DiffIDs"] = [DIGEST_B]
+        raw["Metadata"]["ImageID"] = DIGEST_B
+        row["raw_document"] = raw
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="exact resolved digest")
+
+
+def test_scan_database_stale_is_not_verified():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["database"] = {"updated_at": "2026-09-01T00:00:00Z"}
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="stale")
+
+
+def test_scan_database_older_than_live_probe_is_not_verified():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["database"] = {"updated_at": "2026-10-23T01:18:19Z"}
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="older than the live")
+
+
+def test_raw_created_at_missing_or_stale_is_not_verified():
+    def missing(ref):
+        row = _pass_row(ref)
+        row["raw_document"].pop("CreatedAt")
+        return row
+
+    def stale(ref):
+        row = _pass_row(ref)
+        row["raw_document"]["CreatedAt"] = "2026-09-01T00:00:00Z"
+        return row
+
+    _assert_not_accepted(_run(missing), error_fragment="CreatedAt")
+    _assert_not_accepted(_run(stale), error_fragment="CreatedAt is stale")
+
+
+def test_live_probe_failures_are_not_verified():
+    for database in (None, {}, {"updated_at": ""}, {"updated_at": "not-a-date"},
+                     {"updated_at": "2026-09-01T00:00:00Z"}, {"updated_at": "2027-01-01T00:00:00Z"}):
+        calls: list[str] = []
+        report = _run(lambda ref: calls.append(ref) or _pass_row(ref), database=database)
+        assert report["status"] == "NOT_VERIFIED", database
+        assert report["acceptable"] == [], database
+        assert calls == [], database
+
+
+def test_validate_live_database_reasons():
+    ok, error = validate_live_database(LIVE_DB, now=NOW, max_age=timedelta(days=7))
+    assert ok is not None and error == ""
+    assert "not a valid timestamp" in validate_live_database(
+        {"updated_at": "garbage"}, now=NOW, max_age=timedelta(days=7))[1]
+    assert "stale" in validate_live_database(
+        {"updated_at": "2026-09-01T00:00:00Z"}, now=NOW, max_age=timedelta(days=7))[1]
+    assert "future" in validate_live_database(
+        {"updated_at": "2026-10-25T12:00:00Z"}, now=NOW, max_age=timedelta(days=7))[1]
+
+
+def test_live_probe_optional_mode_can_never_accept():
+    report = _run(lambda ref: _pass_row(ref), database=None, require_live_database=False)
+    _assert_not_accepted(report, error_fragment="live probe required before accepting")
+
+
+def test_missing_or_malformed_raw_results_are_not_verified():
+    mutations = {
+        "no Results": lambda raw: raw.pop("Results"),
+        "Results not a list": lambda raw: raw.__setitem__("Results", {"x": 1}),
+        "non-object result": lambda raw: raw.__setitem__("Results", ["oops"]),
+        "Vulnerabilities not a list": lambda raw: raw["Results"][0].__setitem__("Vulnerabilities", "x"),
+        "finding without id": lambda raw: raw["Results"][0].__setitem__(
+            "Vulnerabilities", [{"Severity": "LOW"}]),
+    }
+    for label, mutate in mutations.items():
+        def scan(ref, mutate=mutate):
+            row = _pass_row(ref)
+            mutate(row["raw_document"])
+            return row
+
+        report = _run(scan)
+        assert report["status"] == "NOT_VERIFIED", label
+        assert report["acceptable"] == [], label
+
+
+def test_nonzero_scanner_exit_with_clean_raw_is_not_verified():
+    def scan(ref):
+        row = _pass_row(ref)
+        row["exit_code"] = 1
+        return row
+
+    _assert_not_accepted(_run(scan), error_fragment="nonzero")
+
+
+def test_scanner_exception_fails_closed():
+    def scan(_ref):
+        raise ValueError("unexpected scanner payload")
+
+    _assert_not_accepted(_run(scan), error_fragment="scanner error: ValueError")
+
+
+def test_scanner_returning_non_object_fails_closed():
+    _assert_not_accepted(_run(lambda _ref: ["not", "a", "dict"]), error_fragment="non-object")
+
+
+def test_unscored_raw_finding_blocks_acceptance():
+    def scan(ref):
+        row = _pass_row(ref)
+        row.pop("blocking_count")
+        row.pop("unscored_count")
+        row["raw_document"] = _raw_trivy(ref, vulns=[_vuln("CVE-NEW-1", "UNKNOWN")])
+        return row
+
+    report = _run(scan)
+    _assert_not_accepted(report, status="NO_ACCEPTABLE_CANDIDATE")
+    assert report["candidates"][0]["unscored_count"] == 1
+
+
+def test_unfixed_high_does_not_block_but_stays_visible():
+    def scan(ref):
+        row = _pass_row(ref)
+        row.pop("blocking_count")
+        row.pop("unscored_count")
+        row["raw_document"] = _raw_trivy(ref, vulns=[_vuln("CVE-UNFIXED-1", "HIGH")])
+        return row
+
+    report = _run(scan)
+    assert report["status"] == "ACCEPTABLE_CANDIDATE"
+    assert report["candidates"][0]["finding_row_count"] == 1
+
+
+def test_reused_fail_evidence_rejects_and_never_accepts(tmp_path: Path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    (evidence / "prior.json").write_text(json.dumps(_fail_row(REF_B, blocking=2)), encoding="utf-8")
+    calls: list[str] = []
+    report = monitor_candidates(
+        watch=TRIVY_WATCH,
+        fetcher=lambda _url: _hub(DIGEST_B),
+        scanner=lambda ref: calls.append(ref) or _pass_row(ref),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == []
+    assert report["candidates"][0]["reused_evidence"] is True
+    _assert_not_accepted(report, status="NO_ACCEPTABLE_CANDIDATE")
+
+
+def test_reused_raw_pass_evidence_forces_fresh_scan(tmp_path: Path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    planted = {
+        **_raw_trivy(REF_B),
+        "digest": DIGEST_B,
+        "platform": "linux/amd64",
+        "scanner_version": "0.76.0",
+        "created_at": "2026-10-24T01:00:00Z",
+        "database": {"updated_at": "2026-10-24T01:18:19Z"},
+    }
+    (evidence / "raw-pass.json").write_text(json.dumps(planted), encoding="utf-8")
+    calls: list[str] = []
+    report = monitor_candidates(
+        watch=TRIVY_WATCH,
+        fetcher=lambda _url: _hub(DIGEST_B),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=3),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == [REF_B]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert "rescanning" in report["candidates"][0]["reuse_rejected"]
+    assert report["candidates"][0]["blocking_count"] == 3
+
+
+def test_verify_fresh_scan_ignores_summary_status():
+    from datetime import datetime as _dt
+
+    live = _dt(2026, 10, 24, 1, 18, 19, tzinfo=timezone.utc)
+    row = _fail_row(REF_B, blocking=0)
+    row.update(status="FAIL", ok=False)  # summary says FAIL, raw is clean and consistent
+    classified = verify_fresh_scan(
+        row, ref=REF_B, digest=DIGEST_B, now=NOW, max_age=timedelta(days=7), live_updated=live
+    )
+    assert classified["status"] == "PASS"
+
+
+def test_scan_pinned_images_include_raw_attaches_unmodified_document():
+    raw = _raw_trivy(REF_B)
+
+    class Done:
+        def __init__(self, stdout, returncode=0):
+            self.stdout = stdout
+            self.returncode = returncode
+
+    def runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return Done("")
+        if "version" in args:
+            return Done(json.dumps({"Version": "0.76.0", "VulnerabilityDB": {"UpdatedAt": "2026-10-24T01:18:19Z"}}))
+        return Done(json.dumps(raw))
+
+    with_raw = scan_pinned_images(runner=runner, images=({"name": "c", "ref": REF_B},), now=NOW, include_raw=True)
+    without = scan_pinned_images(runner=runner, images=({"name": "c", "ref": REF_B},), now=NOW)
+    assert with_raw["images"][0]["raw_document"] == raw
+    assert "raw_document" not in without["images"][0]

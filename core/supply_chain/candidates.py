@@ -1,9 +1,22 @@
 """Watch official image tags for digests that could replace fail-closed pins.
 
 This module never mutates ``PINNED_IMAGES``. It resolves Hub tags to immutable
-digests, reuses prior evidence only when identity and freshness checks pass,
-scans genuinely new digests, and reports ``NO_ACCEPTABLE_CANDIDATE`` when
-nothing passes the existing fixed-HIGH/CRITICAL + unscored gate.
+digests, may reuse prior ``FAIL`` evidence to *reject* a digest without
+rescanning, scans every other digest, and reports ``NO_ACCEPTABLE_CANDIDATE``
+when nothing passes the existing fixed-HIGH/CRITICAL + unscored gate.
+
+Acceptance rules (all must hold, otherwise the candidate fails closed):
+
+* A successful live ``trivy version`` probe whose DB ``UpdatedAt`` parses, is
+  not in the future, and is within the evidence age limit.
+* A fresh scan in this run (never reused evidence) that carries the raw Trivy
+  JSON document. Scanner-supplied ``status`` / ``blocking_count`` summaries are
+  ignored; the raw findings are re-classified with ``classify_trivy_document``.
+* The raw report names the exact resolved digest (``ArtifactName`` or
+  ``Metadata.RepoDigests``), reports ``linux/amd64``, was produced by scanner
+  ``0.76.0``, has a present and fresh ``CreatedAt``, and its vulnerability DB is
+  fresh and not older than the live probe.
+* Zero fixed HIGH/CRITICAL findings and zero unscored findings.
 """
 
 from __future__ import annotations
@@ -18,8 +31,11 @@ from typing import Any, Callable
 from core.supply_chain.images import (
     PINNED_IMAGES,
     TRIVY_IMAGE,
+    _DIGEST_RE,
     _MAX_EVIDENCE_AGE,
+    _not_verified,
     _parse_time,
+    _scanner_version,
     classify_trivy_document,
     parse_image_ref,
     read_trivy_version_document,
@@ -29,6 +45,8 @@ from core.supply_chain.images import (
 # Evidence may be reused only when it was produced by this scanner identity.
 REQUIRED_SCANNER_VERSION = parse_image_ref(TRIVY_IMAGE).get("tag") or "0.76.0"
 REQUIRED_PLATFORM = "linux/amd64"
+# Tolerated clock skew before a live DB timestamp is treated as "in the future".
+_CLOCK_SKEW = timedelta(minutes=5)
 
 # Official tags to watch. Digests are resolved at runtime; pins are not updated.
 CANDIDATE_WATCH = (
@@ -72,6 +90,15 @@ CANDIDATE_WATCH = (
 
 Fetcher = Callable[[str], dict[str, Any]]
 Scanner = Callable[[str], dict[str, Any]]
+
+_POLICY = (
+    "PASS requires zero fixed HIGH/CRITICAL and zero unscored findings, re-classified "
+    "from raw Trivy JSON produced by a fresh scan in this run with exact digest, "
+    "linux/amd64, scanner 0.76.0, fresh CreatedAt, and a vulnerability DB that is fresh "
+    "and not older than a successful live trivy version probe. Stored or reused PASS "
+    "summaries never authorize acceptance; reused FAIL evidence may only reject. "
+    "This monitor never updates PINNED_IMAGES or merges PRs."
+)
 
 
 def _pinned_digests() -> set[str]:
@@ -151,8 +178,9 @@ def _index_document(index: dict[str, dict[str, Any]], document: dict[str, Any], 
 def _evidence_index(evidence_dir: Path | None) -> dict[str, dict[str, Any]]:
     """Index prior Trivy/classified JSON evidence by image digest.
 
-    Always loads the committed reject inventory so unchanged digests are not
-    rescanned. Optional ``evidence_dir`` overlays fresher local/CI artifacts.
+    Always loads the committed reject inventory so unchanged rejected digests
+    are not rescanned. Optional ``evidence_dir`` overlays fresher artifacts.
+    Indexed evidence can only ever reject a candidate, never accept one.
     """
     index: dict[str, dict[str, Any]] = {}
     if _DEFAULT_REJECTS.is_file():
@@ -181,6 +209,31 @@ def _evidence_index(evidence_dir: Path | None) -> dict[str, dict[str, Any]]:
     return index
 
 
+def validate_live_database(
+    database: dict[str, str] | None,
+    *,
+    now: datetime,
+    max_age: timedelta,
+) -> tuple[datetime | None, str]:
+    """Validate the live ``trivy version`` probe. Returns (UpdatedAt, error).
+
+    A missing, unparseable, stale, or future-dated UpdatedAt is a failed probe.
+    """
+    if not isinstance(database, dict):
+        return None, "live vulnerability database probe failed or UpdatedAt is missing"
+    raw = str(database.get("updated_at") or "")
+    if not raw:
+        return None, "live vulnerability database probe failed or UpdatedAt is missing"
+    updated = _parse_time(raw)
+    if updated is None:
+        return None, f"live vulnerability database UpdatedAt {raw!r} is not a valid timestamp"
+    if updated - now > _CLOCK_SKEW:
+        return None, "live vulnerability database UpdatedAt is in the future"
+    if now - updated > max_age:
+        return None, "live vulnerability database UpdatedAt is stale"
+    return updated, ""
+
+
 def evidence_reusable(
     document: dict[str, Any],
     *,
@@ -192,12 +245,12 @@ def evidence_reusable(
     live_database: dict[str, str] | None = None,
     require_live_database: bool = True,
 ) -> tuple[bool, str]:
-    """Return whether prior evidence may replace a fresh scan for ``digest``.
+    """Return whether prior evidence may be used to *reject* ``digest``.
 
     Reuse requires an exact digest match, the required platform and scanner
     version, present CreatedAt / vulnerability-DB UpdatedAt timestamps within
-    ``max_age``, and a live DB probe whose UpdatedAt is not newer than the
-    evidence DB. Age alone is never enough when ``require_live_database`` is set.
+    ``max_age``, and (by default) a valid live DB probe whose UpdatedAt is not
+    newer than the evidence DB. Stored PASS is never reusable.
     """
     if not isinstance(document, dict):
         return False, "evidence document is not an object"
@@ -221,9 +274,6 @@ def evidence_reusable(
         )
     if document.get("status") == "NOT_VERIFIED":
         return False, "evidence status is NOT_VERIFIED"
-    # Stored PASS is never reusable. Acceptance requires a fresh scan whose
-    # findings are classified by classify_trivy_document — never stored PASS
-    # status or stored blocker counts alone.
     if document.get("status") == "PASS":
         return False, "PASS evidence cannot be reused; require a fresh scan"
     created_at = str(document.get("created_at") or document.get("CreatedAt") or "")
@@ -239,22 +289,12 @@ def evidence_reusable(
         return False, "evidence vulnerability database UpdatedAt is missing"
     if now - db_updated > max_age:
         return False, "evidence vulnerability database UpdatedAt is stale"
-    if require_live_database:
-        if not live_database or not str(live_database.get("updated_at") or ""):
-            return False, "live vulnerability database probe is required for evidence reuse"
-        live_raw = str(live_database.get("updated_at") or "")
-        live_updated = _parse_time(live_raw)
+    if require_live_database or live_database:
+        live_updated, live_error = validate_live_database(live_database, now=now, max_age=max_age)
         if live_updated is None:
-            return False, "live vulnerability database UpdatedAt is missing"
-        if db_updated < live_updated:
-            return False, (
-                "evidence vulnerability database UpdatedAt is older than the live "
-                "trivy version probe"
-            )
-    elif live_database:
-        live_raw = str(live_database.get("updated_at") or "")
-        live_updated = _parse_time(live_raw)
-        if live_raw and live_updated is not None and db_updated < live_updated:
+            if require_live_database:
+                return False, f"live probe required for evidence reuse: {live_error}"
+        elif db_updated < live_updated:
             return False, (
                 "evidence vulnerability database UpdatedAt is older than the live "
                 "trivy version probe"
@@ -262,19 +302,18 @@ def evidence_reusable(
     return True, ""
 
 
-def _classify_from_evidence(
+def _classify_reused_evidence(
     document: dict[str, Any],
     *,
     ref: str,
     now: datetime,
     database: dict[str, str] | None,
 ) -> dict[str, Any]:
-    """Materialize classification from stored evidence without trusting PASS alone.
+    """Materialize stored evidence for rejection only.
 
-    Raw Trivy documents (``Results`` present) always go through
-    ``classify_trivy_document``. Pre-classified PASS is never trusted here.
-    FAIL reject-inventory summaries may be rebound for rejection-only reuse
-    after ``evidence_reusable`` has already passed.
+    Raw Trivy documents (``Results`` present) are re-classified. A stored
+    summary is honoured only when it says FAIL. Anything else becomes
+    NOT_VERIFIED so the caller rescans instead of trusting it.
     """
     identity = parse_image_ref(ref)
     if "Results" in document:
@@ -287,43 +326,160 @@ def _classify_from_evidence(
             classified["platform"] = str(document.get("platform") or "")
         return classified
 
-    status = str(document.get("status") or "")
-    if status == "PASS":
-        return {
-            "ok": False,
-            "status": "NOT_VERIFIED",
-            "image": ref,
-            "name": identity["repository"],
-            "tag": identity["tag"],
-            "digest": identity["digest"] or str(document.get("digest") or ""),
-            "platform": str(document.get("platform") or ""),
-            "blocking_count": 0,
-            "unscored_count": 0,
-            "finding_row_count": 0,
-            "unique_cve_count": 0,
-            "created_at": str(document.get("created_at") or ""),
-            "scanner_version": str(document.get("scanner_version") or document.get("tool_version") or ""),
-            "database": document.get("database") if isinstance(document.get("database"), dict) else {},
-            "error": "stored PASS status is not trusted; require a fresh scan",
-        }
-
-    if status in {"FAIL", "NOT_VERIFIED"} and "blocking_count" in document:
+    if str(document.get("status") or "") == "FAIL" and "blocking_count" in document:
         rebound = dict(document)
         rebound["image"] = ref
         rebound["name"] = identity["repository"]
         rebound["tag"] = identity["tag"]
         if identity["digest"]:
             rebound["digest"] = identity["digest"]
-        # Never invent a platform when the evidence omitted it.
-        if "platform" not in rebound or rebound.get("platform") is None:
+        if rebound.get("platform") is None:
             rebound["platform"] = ""
         return rebound
 
-    return classify_trivy_document(document, image=ref, now=now, database=database)
+    return _not_verified(ref, "stored evidence is not a FAIL summary or raw Trivy report; rescan required")
+
+
+def _manifest_digests(document: dict[str, Any]) -> set[str]:
+    """Digests that identify the scanned manifest (not layers or config)."""
+    found: set[str] = set(_DIGEST_RE.findall(str(document.get("ArtifactName") or "")))
+    metadata = document.get("Metadata") if isinstance(document.get("Metadata"), dict) else {}
+    repo_digests = metadata.get("RepoDigests")
+    if isinstance(repo_digests, str):
+        found.update(_DIGEST_RE.findall(repo_digests))
+    elif isinstance(repo_digests, list):
+        for item in repo_digests:
+            found.update(_DIGEST_RE.findall(str(item)))
+    return found
+
+
+def _raw_findings_error(document: dict[str, Any]) -> str:
+    """Return an error if raw Trivy findings are absent or malformed."""
+    results = document.get("Results")
+    if not isinstance(results, list):
+        return "raw Trivy Results is missing or not a list"
+    for result in results:
+        if not isinstance(result, dict):
+            return "raw Trivy Results contains a non-object entry"
+        vulns = result.get("Vulnerabilities")
+        if vulns is None:
+            continue
+        if not isinstance(vulns, list):
+            return "raw Trivy Vulnerabilities is not a list"
+        for vuln in vulns:
+            if not isinstance(vuln, dict) or not str(vuln.get("VulnerabilityID") or ""):
+                return "raw Trivy finding is malformed or missing VulnerabilityID"
+    return ""
+
+
+def verify_fresh_scan(
+    result: Any,
+    *,
+    ref: str,
+    digest: str,
+    now: datetime,
+    max_age: timedelta,
+    live_updated: datetime,
+    required_scanner_version: str = REQUIRED_SCANNER_VERSION,
+    required_platform: str = REQUIRED_PLATFORM,
+) -> dict[str, Any]:
+    """Independently classify a fresh scan from its raw Trivy document.
+
+    The scanner's own ``status``, counts, ``platform`` and ``findings`` are
+    ignored. Only ``raw_document``, the scanner-probed ``database`` metadata,
+    ``tool_version`` (fallback when the raw report omits ``Trivy.Version``) and
+    ``exit_code`` are read from ``result``.
+    """
+    if not isinstance(result, dict):
+        return _not_verified(ref, "scanner returned a non-object result")
+    if result.get("status") == "NOT_VERIFIED":
+        return _not_verified(ref, str(result.get("error") or "scan was not verified"))
+    raw = result.get("raw_document")
+    if not isinstance(raw, dict) or not raw:
+        return _not_verified(
+            ref, "raw Trivy findings are missing; scanner summaries are not trusted for acceptance"
+        )
+    malformed = _raw_findings_error(raw)
+    if malformed:
+        return _not_verified(ref, malformed)
+    if digest not in _manifest_digests(raw):
+        return _not_verified(
+            ref,
+            "raw Trivy report does not name the exact resolved digest",
+            reported_digests=sorted(_manifest_digests(raw)),
+        )
+
+    scan_db = result.get("database") if isinstance(result.get("database"), dict) else {}
+    exit_code = result.get("exit_code")
+    classified = classify_trivy_document(
+        raw,
+        image=ref,
+        now=now,
+        max_age=max_age,
+        exit_code=exit_code if isinstance(exit_code, int) else None,
+        database=scan_db,
+    )
+    if classified.get("status") == "NOT_VERIFIED":
+        return classified
+    # A scanner summary that disagrees with the raw reclassification means the
+    # evidence is internally inconsistent; fail closed rather than pick one.
+    for key in ("blocking_count", "unscored_count"):
+        if key in result:
+            try:
+                claimed = int(result.get(key) or 0)
+            except (TypeError, ValueError):
+                return _not_verified(ref, f"scanner summary {key} is not an integer")
+            if claimed != int(classified.get(key) or 0):
+                return _not_verified(
+                    ref,
+                    f"scanner summary {key}={claimed} disagrees with raw reclassification "
+                    f"{key}={int(classified.get(key) or 0)}",
+                )
+
+    created = _parse_time(str(classified.get("created_at") or ""))
+    if created is None:
+        return _not_verified(ref, "raw Trivy report CreatedAt is missing or invalid")
+    if created - now > _CLOCK_SKEW:
+        return _not_verified(ref, "raw Trivy report CreatedAt is in the future")
+
+    raw_version = _scanner_version(raw)
+    probed_version = str(result.get("tool_version") or result.get("scanner_version") or "")
+    if raw_version and probed_version and raw_version != probed_version:
+        return _not_verified(
+            ref, f"raw report scanner {raw_version!r} disagrees with probed scanner {probed_version!r}"
+        )
+    scanner_version = raw_version or probed_version
+    if scanner_version != required_scanner_version:
+        return _not_verified(
+            ref,
+            f"scanner_version {scanner_version!r} does not match required {required_scanner_version!r}",
+            scanner_version=scanner_version,
+        )
+    classified["scanner_version"] = scanner_version
+
+    platform = str(classified.get("platform") or "")
+    if platform != required_platform:
+        return _not_verified(
+            ref,
+            f"platform {platform!r} does not match required {required_platform!r}"
+            if platform
+            else "platform is missing from raw Trivy report",
+            platform=platform,
+        )
+
+    db_meta = classified.get("database") if isinstance(classified.get("database"), dict) else {}
+    db_updated = _parse_time(str(db_meta.get("updated_at") or ""))
+    if db_updated is None:
+        return _not_verified(ref, "scan vulnerability database UpdatedAt is missing or invalid")
+    if db_updated < live_updated:
+        return _not_verified(
+            ref, "scan vulnerability database UpdatedAt is older than the live trivy version probe"
+        )
+    return classified
 
 
 def _default_scanner(ref: str) -> dict[str, Any]:
-    scanned = scan_pinned_images(images=({"name": "candidate", "ref": ref},))
+    scanned = scan_pinned_images(images=({"name": "candidate", "ref": ref},), include_raw=True)
     images = scanned.get("images") or []
     if images:
         row = dict(images[0])
@@ -356,48 +512,47 @@ def monitor_candidates(
     required_platform: str = REQUIRED_PLATFORM,
     require_live_database: bool = True,
 ) -> dict[str, Any]:
-    """Resolve watched tags, reuse fresh evidence, scan new digests, never pin.
+    """Resolve watched tags, reject via fresh FAIL evidence, scan the rest, never pin.
 
     Returns a report whose ``status`` is one of:
     ``ACCEPTABLE_CANDIDATE``, ``NO_ACCEPTABLE_CANDIDATE``, or ``NOT_VERIFIED``.
 
-    When ``require_live_database`` is true (default), evidence reuse and candidate
-    acceptance both require a live vulnerability-DB probe with ``updated_at``.
+    A validated live DB probe is always required for acceptance.
+    ``require_live_database`` additionally governs whether FAIL evidence may be
+    reused without one; setting it to False can never make a candidate acceptable.
     """
     clock = now or datetime.now(timezone.utc)
     age_limit = max_age if max_age is not None else _MAX_EVIDENCE_AGE
     selected = watch if watch is not None else CANDIDATE_WATCH
     scan = scanner or _default_scanner
-    evidence = _evidence_index(evidence_dir)
     pinned = _pinned_digests()
-    rows: list[dict[str, Any]] = []
-    acceptable: list[dict[str, Any]] = []
-    unresolved = False
+    live_updated, live_error = validate_live_database(database, now=clock, max_age=age_limit)
 
-    live_ok = bool(database and str(database.get("updated_at") or ""))
-    if require_live_database and not live_ok:
+    base = {
+        "pinned_digests": sorted(pinned),
+        "tool": "trivy",
+        "tool_version": required_scanner_version,
+        "database": database or {},
+        "required_scanner_version": required_scanner_version,
+        "required_platform": required_platform,
+        "scan_timestamp": clock.isoformat(),
+        "policy": _POLICY,
+    }
+    if require_live_database and live_updated is None:
         return {
             "ok": False,
             "status": "NOT_VERIFIED",
             "candidates": [],
             "acceptable": [],
-            "pinned_digests": sorted(pinned),
-            "tool": "trivy",
-            "tool_version": required_scanner_version,
-            "database": database or {},
-            "required_scanner_version": required_scanner_version,
-            "required_platform": required_platform,
-            "scan_timestamp": clock.isoformat(),
-            "error": "live vulnerability database probe failed or UpdatedAt is missing",
-            "note": (
-                "Incomplete live DB metadata is not treated as clean; candidates were not accepted."
-            ),
-            "policy": (
-                "PASS requires zero fixed HIGH/CRITICAL and zero unscored findings with valid "
-                "fresh scan metadata. Reused evidence must match digest, platform, scanner "
-                "version, and live DB freshness. This monitor never updates PINNED_IMAGES."
-            ),
+            **base,
+            "error": live_error,
+            "note": "Incomplete live DB metadata is not treated as clean; candidates were not accepted.",
         }
+
+    evidence = _evidence_index(evidence_dir)
+    rows: list[dict[str, Any]] = []
+    acceptable: list[dict[str, Any]] = []
+    unresolved = False
 
     for item in selected:
         hub_repository = item["hub_repository"]
@@ -406,21 +561,22 @@ def monitor_candidates(
         name = item["name"]
         resolved = resolve_hub_tag(hub_repository, tag, fetcher=fetcher)
         if not resolved.get("ok"):
-            row = {
-                "name": name,
-                "image": image,
-                "tag": tag,
-                "ref": "",
-                "digest": "",
-                "status": "NOT_VERIFIED",
-                "error": resolved.get("error") or "digest resolution failed",
-                "reused_evidence": False,
-                "reuse_rejected": "",
-                "blocking_count": 0,
-                "platform": "",
-                "provenance": f"https://hub.docker.com/r/{hub_repository}/tags",
-            }
-            rows.append(row)
+            rows.append(
+                {
+                    "name": name,
+                    "image": image,
+                    "tag": tag,
+                    "ref": "",
+                    "digest": "",
+                    "status": "NOT_VERIFIED",
+                    "error": resolved.get("error") or "digest resolution failed",
+                    "reused_evidence": False,
+                    "reuse_rejected": "",
+                    "blocking_count": 0,
+                    "platform": "",
+                    "provenance": f"https://hub.docker.com/r/{hub_repository}/tags",
+                }
+            )
             unresolved = True
             continue
         digest = str(resolved["digest"])
@@ -469,133 +625,46 @@ def monitor_candidates(
                 require_live_database=require_live_database,
             )
             if ok_reuse:
-                classified = _classify_from_evidence(
-                    prior["document"],
-                    ref=ref,
-                    now=clock,
-                    database=database,
+                candidate = _classify_reused_evidence(
+                    prior["document"], ref=ref, now=clock, database=database
                 )
-                # Never accept via reuse. PASS (including empty Results that
-                # classify clean) forces a fresh scan. FAIL reject inventory may
-                # be reused. NOT_VERIFIED materialization also forces a rescan.
-                if classified.get("status") == "PASS":
-                    reuse_error = "PASS evidence requires a fresh scan; stored PASS is never accepted via reuse"
-                    classified = None
-                elif classified.get("status") == "NOT_VERIFIED":
-                    reuse_error = str(classified.get("error") or reuse_error or "reused evidence not verified")
-                    classified = None
-                else:
+                # Reuse may only reject. Anything other than FAIL forces a rescan.
+                if candidate.get("status") == "FAIL":
+                    classified = candidate
                     reused = True
+                elif candidate.get("status") == "PASS":
+                    reuse_error = "reused evidence classified PASS; reuse never accepts, rescanning"
+                else:
+                    reuse_error = str(candidate.get("error") or "reused evidence not verified")
 
         if classified is None:
             try:
-                classified = scan(ref)
-            except (OSError, TimeoutError, RuntimeError) as exc:
-                classified = {
-                    "ok": False,
-                    "status": "NOT_VERIFIED",
-                    "image": ref,
-                    "error": str(exc),
-                    "blocking_count": 0,
-                    "platform": "",
-                }
-            if not classified.get("digest"):
-                classified["digest"] = digest
-            if not classified.get("image"):
-                classified["image"] = ref
-            if reuse_error and not classified.get("error"):
-                classified["reuse_rejected"] = reuse_error
+                result = scan(ref)
+            except Exception as exc:  # scanner is an untrusted boundary: fail closed
+                result = _not_verified(ref, f"scanner error: {type(exc).__name__}: {exc}")
+            if live_updated is None:
+                classified = _not_verified(
+                    ref, f"live probe required before accepting a candidate: {live_error}"
+                )
+            else:
+                classified = verify_fresh_scan(
+                    result,
+                    ref=ref,
+                    digest=digest,
+                    now=clock,
+                    max_age=age_limit,
+                    live_updated=live_updated,
+                    required_scanner_version=required_scanner_version,
+                    required_platform=required_platform,
+                )
 
         status = str(classified.get("status") or "NOT_VERIFIED")
-        db_meta = classified.get("database") if isinstance(classified.get("database"), dict) else {}
-        db_updated = _parse_time(str(db_meta.get("updated_at") or ""))
-        if status != "NOT_VERIFIED" and (not db_meta.get("updated_at") or db_updated is None):
-            status = "NOT_VERIFIED"
-            classified = {
-                **classified,
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "error": "trivy vulnerability database UpdatedAt is missing",
-            }
-        if status != "NOT_VERIFIED" and db_updated is not None and clock - db_updated > age_limit:
-            status = "NOT_VERIFIED"
-            classified = {
-                **classified,
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "error": "trivy vulnerability database UpdatedAt is stale",
-            }
-        if (
-            status != "NOT_VERIFIED"
-            and require_live_database
-            and database
-            and db_updated is not None
-        ):
-            live_updated = _parse_time(str(database.get("updated_at") or ""))
-            if live_updated is not None and db_updated < live_updated:
-                status = "NOT_VERIFIED"
-                classified = {
-                    **classified,
-                    "ok": False,
-                    "status": "NOT_VERIFIED",
-                    "error": (
-                        "scan vulnerability database UpdatedAt is older than the live "
-                        "trivy version probe"
-                    ),
-                }
-        created = _parse_time(str(classified.get("created_at") or ""))
-        if status != "NOT_VERIFIED" and (not classified.get("created_at") or created is None):
-            status = "NOT_VERIFIED"
-            classified = {
-                **classified,
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "error": "scan CreatedAt is missing",
-            }
-        if status != "NOT_VERIFIED" and created is not None and clock - created > age_limit:
-            status = "NOT_VERIFIED"
-            classified = {
-                **classified,
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "error": "scan CreatedAt is stale",
-            }
-        scanner_version = str(classified.get("scanner_version") or classified.get("tool_version") or "")
-        if status != "NOT_VERIFIED" and scanner_version != required_scanner_version:
-            status = "NOT_VERIFIED"
-            classified = {
-                **classified,
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "error": (
-                    f"scanner_version {scanner_version!r} does not match "
-                    f"required {required_scanner_version!r}"
-                ),
-            }
-        platform = str(classified.get("platform") or "")
-        if status != "NOT_VERIFIED" and platform != required_platform:
-            status = "NOT_VERIFIED"
-            classified = {
-                **classified,
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "error": (
-                    f"platform {platform!r} does not match required {required_platform!r}"
-                    if platform
-                    else "platform is missing"
-                ),
-            }
-
         blocking_count = int(classified.get("blocking_count") or 0)
         unscored_count = int(classified.get("unscored_count") or 0)
-        if status == "PASS" and unscored_count > 0:
+        if status == "PASS" and (blocking_count or unscored_count):
+            # Defensive: the canonical classifier never emits this combination.
             status = "FAIL"
-            classified = {
-                **classified,
-                "ok": False,
-                "status": "FAIL",
-                "error": "PASS row reported unscored findings; treated as FAIL",
-            }
+        db_meta = classified.get("database") if isinstance(classified.get("database"), dict) else {}
 
         row = {
             "name": name,
@@ -611,10 +680,10 @@ def monitor_candidates(
             "unscored_count": unscored_count,
             "finding_row_count": int(classified.get("finding_row_count") or 0),
             "unique_cve_count": int(classified.get("unique_cve_count") or 0),
-            "scanner_version": scanner_version,
+            "scanner_version": str(classified.get("scanner_version") or classified.get("tool_version") or ""),
             "database": db_meta,
             "created_at": classified.get("created_at") or "",
-            "platform": platform,
+            "platform": str(classified.get("platform") or ""),
             "provenance": provenance,
             "required_scanner_version": required_scanner_version,
             "required_platform": required_platform,
@@ -622,19 +691,8 @@ def monitor_candidates(
         rows.append(row)
         if status == "NOT_VERIFIED":
             unresolved = True
-        elif status == "PASS" and blocking_count == 0 and unscored_count == 0:
-            if reused:
-                row["status"] = "NOT_VERIFIED"
-                row["error"] = "reused evidence cannot make a candidate acceptable"
-                rows[-1] = row
-                unresolved = True
-            elif require_live_database and not live_ok:
-                row["status"] = "NOT_VERIFIED"
-                row["error"] = "live vulnerability database probe required before accepting a candidate"
-                rows[-1] = row
-                unresolved = True
-            else:
-                acceptable.append(row)
+        elif status == "PASS" and not reused and live_updated is not None:
+            acceptable.append(row)
 
     if unresolved and not acceptable:
         overall = "NOT_VERIFIED"
@@ -642,8 +700,8 @@ def monitor_candidates(
     elif acceptable:
         overall = "ACCEPTABLE_CANDIDATE"
         note = (
-            "At least one watched digest passed the fixed HIGH/CRITICAL and unscored gate. "
-            "Pins are not changed automatically; run compatibility tests before adopting."
+            "At least one watched digest passed the fixed HIGH/CRITICAL and unscored gate on a "
+            "fresh raw scan. Pins are not changed automatically; run compatibility tests before adopting."
         )
     else:
         overall = "NO_ACCEPTABLE_CANDIDATE"
@@ -654,21 +712,8 @@ def monitor_candidates(
         "status": overall,
         "candidates": rows,
         "acceptable": acceptable,
-        "pinned_digests": sorted(pinned),
-        "tool": "trivy",
-        "tool_version": required_scanner_version,
-        "database": database or {},
-        "required_scanner_version": required_scanner_version,
-        "required_platform": required_platform,
-        "scan_timestamp": clock.isoformat(),
+        **base,
         "note": note,
-        "policy": (
-            "PASS requires zero fixed HIGH/CRITICAL and zero unscored findings with valid "
-            "fresh scan metadata. Reused evidence must match digest, platform, scanner "
-            "0.76.0, and live DB freshness. Stored PASS is never reused or accepted; only "
-            "a fresh scan classified by classify_trivy_document may become acceptable. "
-            "This monitor never updates PINNED_IMAGES or merges PRs."
-        ),
     }
 
 

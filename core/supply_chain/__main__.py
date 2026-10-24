@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -53,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     approve.add_argument("--baseline", required=True)
     approve.add_argument("--approved-by", required=True)
     approve.add_argument("--approval-ref", required=True)
+    approve.add_argument("--reviewed-commit-sha", required=True, help="40-hex commit containing the reviewed baseline")
     approve.add_argument("--expires-in-days", type=int, required=True)
     approve.add_argument("--name", action="append", default=[])
     guard = baseline_sub.add_parser("guard", help="Reject a change set that moves a pin and edits its baseline entry")
@@ -100,10 +102,20 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
         report = scan_pinned_images(images=selected, include_raw=bool(args.raw_dir or args.baseline))
         if args.baseline:
-            from core.supply_chain.baseline import evaluate_regression_gate, load_baseline, summary_lines
+            from core.supply_chain.baseline import evaluate_regression_gate, load_baseline, summary_lines, verify_github_approvals
 
             document, load_errors = load_baseline(args.baseline)
-            result = evaluate_regression_gate(report, document, pinned=selected, baseline_errors=load_errors)
+            baseline_errors = list(load_errors)
+            if os.environ.get("REQUIRE_GITHUB_BASELINE_REVIEW") == "1":
+                baseline_errors.extend(
+                    verify_github_approvals(
+                        document,
+                        token=os.environ.get("GITHUB_TOKEN"),
+                        repository=os.environ.get("GITHUB_REPOSITORY"),
+                        required=True,
+                    )
+                )
+            result = evaluate_regression_gate(report, document, pinned=selected, baseline_errors=baseline_errors)
             if args.raw_dir:
                 write_raw_evidence(report, args.raw_dir)
             else:
@@ -170,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                     approved_by=args.approved_by,
                     approval_ref=args.approval_ref,
                     expires_in_days=args.expires_in_days,
+                    reviewed_commit_sha=args.reviewed_commit_sha,
                     pin_names=args.name or None,
                 )
             except ValueError as exc:

@@ -151,7 +151,9 @@ jobs:
       - name: Pinned base image vulnerability scan
         run: |
           set +e
-          python -m core.supply_chain images --name python-3.12-probe --output image-scan-python.json
+          python -m core.supply_chain images --name python-3.12-probe \
+            --raw-dir image-scan-raw/python \
+            --output image-scan-python.json
           code=$?
           echo "PYTHON_IMAGE_SCAN_EXIT=${code}" >> "$GITHUB_ENV"
           test -f image-scan-python.json
@@ -192,6 +194,7 @@ jobs:
             --name temporal \
             --name gitleaks \
             --name trivy-scanner \
+            --raw-dir image-scan-raw/upstream \
             --output image-scan-upstream.json
           code=$?
           echo "UPSTREAM_IMAGE_SCAN_EXIT=${code}" >> "$GITHUB_ENV"
@@ -228,6 +231,18 @@ jobs:
         with:
           name: image-scan-upstream
           path: image-scan-upstream.json
+          if-no-files-found: error
+
+      # Canonical JSON serialized from each image's parsed Trivy document (not the
+      # original stdout bytes). The summaries above record the SHA-256 of each file's
+      # exact on-disk bytes under images[].raw_evidence so reviewers can re-classify
+      # raw findings instead of trusting the summary.
+      - name: Upload raw Trivy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan-raw
+          path: image-scan-raw/
           if-no-files-found: error
 
       - name: Enforce pinned image scan gates

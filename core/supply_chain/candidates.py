@@ -30,7 +30,8 @@ from typing import Any, Callable
 
 from core.supply_chain.images import (
     PINNED_IMAGES,
-    TRIVY_IMAGE,
+    REQUIRED_PLATFORM,
+    REQUIRED_SCANNER_VERSION,
     _DIGEST_RE,
     _MAX_EVIDENCE_AGE,
     _not_verified,
@@ -42,9 +43,8 @@ from core.supply_chain.images import (
     scan_pinned_images,
 )
 
-# Evidence may be reused only when it was produced by this scanner identity.
-REQUIRED_SCANNER_VERSION = parse_image_ref(TRIVY_IMAGE).get("tag") or "0.76.0"
-REQUIRED_PLATFORM = "linux/amd64"
+# REQUIRED_SCANNER_VERSION / REQUIRED_PLATFORM are defined once in images.py and
+# re-exported here so pinned scans and candidate acceptance cannot drift apart.
 # Tolerated clock skew before a live DB timestamp is treated as "in the future".
 _CLOCK_SKEW = timedelta(minutes=5)
 
@@ -102,11 +102,19 @@ _POLICY = (
 
 
 def _pinned_digests() -> set[str]:
+    """Index digests of every pin plus each pin's linux/amd64 child digest.
+
+    Hub tags resolve to per-platform digests, so the child digest is what
+    identifies "this candidate is already the pinned image".
+    """
     digests: set[str] = set()
     for item in PINNED_IMAGES:
         digest = parse_image_ref(item["ref"]).get("digest") or ""
         if digest:
             digests.add(digest)
+        platform_digest = str(item.get("platform_digest") or "")
+        if platform_digest:
+            digests.add(platform_digest)
     return digests
 
 
@@ -387,8 +395,9 @@ def verify_fresh_scan(
 
     The scanner's own ``status``, counts, ``platform`` and ``findings`` are
     ignored. Only ``raw_document``, the scanner-probed ``database`` metadata,
-    ``tool_version`` (fallback when the raw report omits ``Trivy.Version``) and
-    ``exit_code`` are read from ``result``.
+    ``tool_version`` / ``scanner_version`` (diagnostics; never a substitute for
+    missing ``Trivy.Version`` in the raw report) and ``exit_code`` are read from
+    ``result``.
     """
     if not isinstance(result, dict):
         return _not_verified(ref, "scanner returned a non-object result")
@@ -443,19 +452,24 @@ def verify_fresh_scan(
         return _not_verified(ref, "raw Trivy report CreatedAt is in the future")
 
     raw_version = _scanner_version(raw)
+    if not raw_version:
+        return _not_verified(
+            ref,
+            "scanner version is missing from the Trivy report; the local probe is not accepted as a substitute",
+            scanner_version="",
+        )
     probed_version = str(result.get("tool_version") or result.get("scanner_version") or "")
-    if raw_version and probed_version and raw_version != probed_version:
+    if probed_version and raw_version != probed_version:
         return _not_verified(
             ref, f"raw report scanner {raw_version!r} disagrees with probed scanner {probed_version!r}"
         )
-    scanner_version = raw_version or probed_version
-    if scanner_version != required_scanner_version:
+    if raw_version != required_scanner_version:
         return _not_verified(
             ref,
-            f"scanner_version {scanner_version!r} does not match required {required_scanner_version!r}",
-            scanner_version=scanner_version,
+            f"scanner_version {raw_version!r} does not match required {required_scanner_version!r}",
+            scanner_version=raw_version,
         )
-    classified["scanner_version"] = scanner_version
+    classified["scanner_version"] = raw_version
 
     platform = str(classified.get("platform") or "")
     if platform != required_platform:

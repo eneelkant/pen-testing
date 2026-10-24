@@ -332,7 +332,11 @@ def test_scan_injects_trivy_version_database_into_image_reports():
         "SchemaVersion": 2,
         "ArtifactName": PIN,
         "CreatedAt": "2026-10-18T01:22:03Z",
-        "Metadata": {"RepoDigests": [f"python@{DIGEST}"]},
+        "Metadata": {
+            "RepoDigests": [f"python@{DIGEST}"],
+            "ImageConfig": {"architecture": "amd64", "os": "linux"},
+        },
+        "Trivy": {"Version": "0.76.0"},
         "Results": [],
     }
     seen: list[str] = []

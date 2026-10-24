@@ -11,7 +11,7 @@ from core.paths import safe_write_text
 from core.supply_chain.audit import audit_dependencies
 from core.supply_chain.sbom import build_sbom, validate_sbom_document
 from core.supply_chain.candidates import monitor_candidates
-from core.supply_chain.images import PINNED_IMAGES, scan_pinned_images
+from core.supply_chain.images import PINNED_IMAGES, scan_pinned_images, write_raw_evidence
 from core.supply_chain.vuln import scan_components
 
 
@@ -27,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     images = sub.add_parser("images", help="Scan pinned container images with Trivy when available")
     images.add_argument("--output", help="Write the JSON report to this path")
     images.add_argument("--name", action="append", default=[], help="Scan only this pinned image name")
+    images.add_argument(
+        "--raw-dir",
+        help="Write each image's parsed Trivy document as canonical JSON here and record the sha256 of the written bytes",
+    )
     candidates = sub.add_parser(
         "candidates",
         help="Watch official image tags for digests that pass the fail-closed gate (never updates pins)",
@@ -68,7 +72,9 @@ def main(argv: list[str] | None = None) -> int:
             if len(selected) != len(set(args.name)):
                 print(json.dumps({"ok": False, "error": "unknown image name", "names": args.name}))
                 return 2
-        report = scan_pinned_images(images=selected)
+        report = scan_pinned_images(images=selected, include_raw=bool(args.raw_dir))
+        if args.raw_dir:
+            write_raw_evidence(report, args.raw_dir)
         text = json.dumps(report, indent=2)
         if args.output:
             safe_write_text(args.output, text + "\n")

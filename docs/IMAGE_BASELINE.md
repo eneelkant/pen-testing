@@ -117,4 +117,4 @@ The checks below are only *required* when GitHub enforces them. As of 2026-10-25
   - `Secret scanning (gitleaks)`
   - `Dependency metadata check`
 - **Do not** make `Pinned image vulnerability scans` a required merge check. It stays visible on every PR and is enforced at release by `.github/workflows/release.yml`.
-- **Code-owner approval needs a second account.** GitHub does not let a PR author approve their own PR. With `@eneelkant` as the only code owner and the author of the open PRs, a code-owner approval needs a second maintainer, or a different PR author.
+- **Code-owner approval needs an independent code owner.** GitHub does not let a PR author approve their own PR. With `@eneelkant` as the only code owner and the author of PR #28, an administrator must add the selected second maintainer to `.github/CODEOWNERS` before requiring code-owner review. An ordinary review from someone who is not a code owner does not satisfy that requirement.

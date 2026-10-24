@@ -2,9 +2,9 @@
 
 **Status:** Inventory of findings this repository has actually scanned. Nothing in this file is a waiver, an ignore-file entry, or an acceptance signature.
 
-**Scanner:** Trivy 0.76.0. Vulnerability DB `UpdatedAt` 2026-10-17 18:34:28Z, downloaded 2026-10-18 01:15:57Z for the inventory below. Image sources were the registry (`--image-src remote`) for the upstream images. Docker and Trivy were not installed in the `0.2.0a18` authoring environment, so a fresh local rescan is `NOT_VERIFIED` here; CI artifacts on the PR head are the live evidence.
+**Scanner:** Trivy 0.76.0. Fresh local inventory below used vulnerability DB `UpdatedAt` 2026-10-23T19:15:43.7344174Z (`NextUpdate` 2026-10-24T19:15:43Z, `DownloadedAt` 2026-10-24T01:09:38Z). Image JSON from Trivy does not embed `VulnerabilityDB`; the classifier requires `UpdatedAt` from the report or from a `trivy version --format json` probe. Historical CI inventory on `85ac470` used an earlier DB snapshot (see tables). There is no `.trivyignore`.
 
-**Gate:** `python -m core.supply_chain images` fails on fixed HIGH or CRITICAL findings and on unscored findings. Unfixed findings are printed and do not by themselves fail the command. Empty, schema-only, digest-mismatched, stale `CreatedAt`, stale vulnerability-database, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`. There is no `.trivyignore`. A vendor status such as `not_affected` is not a waiver. No finding below is marked verified non-applicable. Reports distinguish `finding_row_count` from `unique_cve_count`.
+**Gate:** `python -m core.supply_chain images` fails on fixed HIGH or CRITICAL findings and on unscored findings. Unfixed findings are printed and do not by themselves fail the command. Empty, schema-only, digest-mismatched, stale `CreatedAt`, missing or stale vulnerability-database `UpdatedAt`, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`. A vendor status such as `not_affected` is not a waiver. No finding below is marked verified non-applicable. Reports distinguish `finding_row_count` from `unique_cve_count`.
 
 **Owner:** repository maintainer. **Next review:** 2026-11-18.
 
@@ -25,18 +25,23 @@ Shannon `3.4.0` index `sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca55
 
 npm `@keygraph/shannon` `latest` is `3.4.0`. There is no newer worker tag to test. Shannon's own `package/infra/compose.yml` runs `temporalio/temporal:1.7.0` with `server start-dev`. A newer Temporal tag was not substituted, because every scanned candidate still fails the fixed-finding gate and the `--validate-model` path was not run against it.
 
-| Candidate | Index digest | CreatedAt | Fixed HIGH/CRITICAL | Decision |
-|---|---|---|---|---|
-| `zricethezav/gitleaks:v8.30.1` | `sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f` | 2026-10-18T02:06:04.096333618Z | 60 (2 CRITICAL, 58 HIGH), including `CVE-2026-31789` | Rejected. The `8.30.1` binary accepts `detect --source --no-git --report-format json` and returned exit 0 on this tree, but the image is not cleaner than `v8.21.2` |
-| `temporalio/temporal:1.7.3` | `sha256:906f9765cde508333ef191aab908bc724657b5f736cb5ead13921d9a45b33622` | 2026-10-18T02:06:06.48785756Z | 25 HIGH | Rejected. Still failing, and the Shannon E2E was not run against it |
-| `temporalio/temporal:1.9.1` | `sha256:ad4c82c97bd12b417d1ea942610dbcd511afb250c4d5ed26c694009533df447e` | 2026-10-18T02:06:07.527976093Z | 7 HIGH (`CVE-2026-14456`, `CVE-2026-102941`, `CVE-2026-78669`, `CVE-2026-78667`, `CVE-2026-97031`) | Rejected. Still failing. `start-dev` compatibility with Shannon 3.4.0 was not demonstrated |
-| `aquasec/trivy:0.76.0` | same pin as above | same as above | 1 HIGH | No newer stable tag on Docker Hub. `canary` was not adopted |
+Rescan 2026-10-24 (Trivy 0.76.0, DB `UpdatedAt` 2026-10-23T19:15:43Z, host `trivy image`, no severity filter). Digests below are the immutable digests that were scanned. None passed zero fixed HIGH/CRITICAL and zero unscored.
 
-Gitleaks `v8.30.1` CLI check used the GitHub release binary `gitleaks_8.30.1_linux_x64.tar.gz`, not the container. Command: `gitleaks detect --source /workspace --no-git --verbose --report-format json --report-path /tmp/gitleaks-830.json`. Exit 0. No leaks. That does not clear the image.
+| Candidate | Immutable digest | CreatedAt | Fixed HIGH/CRITICAL | Unscored | Blocking | Decision |
+|---|---|---|---|---|---|---|
+| `python:3.12-slim-bookworm` (current tag tip) | `sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0` | 2026-10-24T01:12:19Z | 0 | 2 (`CVE-2026-82560`, `DLA-4854-1`) | 2 | Rejected. Still fails unscored gate; not a clean upgrade from the pin |
+| `zricethezav/gitleaks:v8.30.1` | `sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb` | 2026-10-24T01:12:26Z | 72 (2 CRITICAL, 70 HIGH) | 6 | 78 | Rejected. Worse than pinned `v8.21.2` |
+| `temporalio/temporal:1.7.3` | `sha256:1683f097876c2af71ba833bd9418910601be12d4a25422f2c4ebec45113e1bc2` | 2026-10-24T01:12:25Z | 27 HIGH | 3 | 30 | Rejected. Still failing; Shannon `--validate-model` not run against it |
+| `temporalio/temporal:1.9.1` | `sha256:150d6208d7b24371e4080f49780e6061611f6279cd6908236e9a34ae5746c1b5` | 2026-10-24T01:12:23Z | 8 HIGH | 3 | 11 | Rejected. Still failing; `start-dev` compatibility with Shannon 3.4.0 not demonstrated |
+| `aquasec/trivy:latest` | `sha256:2e6c00d711ab4ae41d8a30c2c1fd3bd3b62704c177bb120f95012e939edfb3df` | 2026-10-24T01:12:20Z | 1 HIGH | 3 | 4 | Rejected. Still fails; floating `latest` is not an acceptable pin |
+
+Historical 2026-10-18 candidate digests and counts remain in git history; the table above is the current evidence.
 
 ## Python base — fixed HIGH/CRITICAL still zero; unscored now visible
 
 Image: `python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258`
+
+Local rescan 2026-10-24 with host Trivy 0.76.0, DB `UpdatedAt` 2026-10-23T19:15:43Z, report `CreatedAt` `2026-10-24T01:12:18.954095875Z`, platform `linux/amd64`. Result: `FAIL`. `blocking_count` **3**, all `unscored` / `UNKNOWN`: `DLA-4845-1` (`ca-certificates` 20250419~deb12u1 → 20250419~deb12u2), `CVE-2026-82560` (`perl-base`, empty fixed version), `DLA-4854-1` (`tzdata` 2026c-0+deb12u1 → 2026e-0+deb12u1). Fixed HIGH/CRITICAL remains 0. Full report: `finding_row_count` 290, `unique_cve_count` 131, `unfixed_count` 281. Gate not waived.
 
 CI on `85ac470` (PR run `40005558585`), report `CreatedAt` `2026-10-23T18:46:24.556020881Z`. Result: `FAIL`. `blocking_count` 2, both `unscored` / `UNKNOWN` severity (`DLA-4845-1` on `ca-certificates` with a fixed version, and `CVE-2026-82560` on `perl-base` with an empty fixed version). Fixed HIGH/CRITICAL count remains 0. Unfixed HIGH/CRITICAL package rows remain 63. Full report without a severity pre-filter: `finding_row_count` 289, `unique_cve_count` 130. Earlier inventories that scanned only `HIGH,CRITICAL` reported `PASS` with `blocking_count` 0 because UNKNOWN rows were never emitted. That is not a waiver of the unscored gate.
 
@@ -61,14 +66,23 @@ The orchestrator container is user `10001`, `cap_drop: ALL`, `no-new-privileges`
 
 ## Upstream images — fixed findings, pins unchanged
 
+Local rescan 2026-10-24 with host Trivy 0.76.0, DB `UpdatedAt` 2026-10-23T19:15:43Z, no severity pre-filter. Status `FAIL` for each image. Aggregate upstream `blocking_count` **1069** = **642** fixed HIGH/CRITICAL + **427** unscored. Digests unchanged. No ignore file.
+
+| Image | Report CreatedAt | Fixed HIGH/CRITICAL | Unscored | Blocking | Rows / unique ids |
+|---|---|---|---|---|---|
+| `keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e` | 2026-10-24T01:12:26.998699302Z | 548 (37 CRITICAL, 511 HIGH) | 419 | 967 | 1785 / 1769 |
+| `temporalio/temporal:1.7.0@sha256:9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4` | 2026-10-24T01:12:23.115117206Z | 51 HIGH | 4 | 55 | 135 / 99 |
+| `zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46` | 2026-10-24T01:12:26.361570298Z | 40 (1 CRITICAL, 39 HIGH) | 1 | 41 | 124 / 107 |
+| `aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222` | 2026-10-24T01:12:20.448492501Z | 3 HIGH | 3 | 6 | 7 / 6 |
+
 CI on `85ac470` (PR run `40005558585`), Trivy 0.76.0, no severity pre-filter. Status `FAIL` for each image. Top-level `blocking_count` **1068** = **641** fixed HIGH/CRITICAL + **427** unscored UNKNOWN. Digests unchanged. Artifact `image-scan-upstream`. Historical HIGH/CRITICAL-only count on `ac712a4` was 612; the increase is from a fresher vulnerability DB (fixed HIGH/CRITICAL alone is now 641) plus previously hidden UNKNOWN rows.
 
-| Image | Report CreatedAt | Fixed HIGH/CRITICAL | Unscored | Rows / unique ids |
+| Image (CI `85ac470`) | Report CreatedAt | Fixed HIGH/CRITICAL | Unscored | Rows / unique ids |
 |---|---|---|---|---|
-| `keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e` | 2026-10-23T18:46:54.910207566Z | 548 (37 CRITICAL, 511 HIGH) | 419 | 1785 / 1769 |
-| `temporalio/temporal:1.7.0@sha256:9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4` | 2026-10-23T18:47:06.638250792Z | 51 HIGH | 4 | 135 / 99 |
-| `zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46` | 2026-10-23T18:47:14.960844558Z | 40 (1 CRITICAL, 39 HIGH) | 1 | 124 / 107 |
-| `aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222` | 2026-10-23T18:47:24.645779064Z | 2 HIGH (`CVE-2026-77214`, `CVE-2026-111943`) | 3 | 6 / 5 |
+| Shannon `3.4.0` (same digest) | 2026-10-23T18:46:54.910207566Z | 548 (37 CRITICAL, 511 HIGH) | 419 | 1785 / 1769 |
+| Temporal `1.7.0` (same digest) | 2026-10-23T18:47:06.638250792Z | 51 HIGH | 4 | 135 / 99 |
+| Gitleaks `v8.21.2` (same digest) | 2026-10-23T18:47:14.960844558Z | 40 (1 CRITICAL, 39 HIGH) | 1 | 124 / 107 |
+| Trivy `0.76.0` (same digest) | 2026-10-23T18:47:24.645779064Z | 2 HIGH (`CVE-2026-77214`, `CVE-2026-111943`) | 3 | 6 / 5 |
 
 The Shannon and Temporal tags are the ones the `--validate-model` path starts. Replacing them changes the worker that CI isolation tests run. CI on `85ac470` still printed Docker runtime success before the image gate. The Gitleaks tag is the CI `detect` image. The Trivy tag is the scanner image the supply-chain command runs when the `trivy` binary is absent. The adapter pins in `integrations/scanners/trivy.py` (`0.58.1`) and the Gitleaks adapter were not bumped.
 

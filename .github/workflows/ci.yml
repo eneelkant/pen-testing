@@ -166,6 +166,8 @@ jobs:
               "blocking=", report.get("blocking_count"),
               "rows=", report.get("finding_row_count"),
               "unique=", report.get("unique_cve_count"),
+              "tool=", report.get("tool_version"),
+              "db=", (report.get("database") or {}).get("updated_at"),
               "exit=", os.environ.get("SCAN_EXIT"),
           )
           PY
@@ -205,6 +207,8 @@ jobs:
               "blocking=", report.get("blocking_count"),
               "rows=", report.get("finding_row_count"),
               "unique=", report.get("unique_cve_count"),
+              "tool=", report.get("tool_version"),
+              "db=", (report.get("database") or {}).get("updated_at"),
               "exit=", os.environ.get("SCAN_EXIT"),
           )
           for image in report.get("images") or []:
@@ -214,6 +218,7 @@ jobs:
                   "blocking=", image.get("blocking_count"),
                   "unscored=", image.get("unscored_count"),
                   "status=", image.get("status"),
+                  "db=", (image.get("database") or {}).get("updated_at"),
               )
           PY
 

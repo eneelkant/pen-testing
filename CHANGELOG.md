@@ -12,12 +12,15 @@
 ### Supply chain
 
 - Image scan reports record repository, tag, digest, platform, scanner version, vulnerability-database metadata, scan timestamp, exit code, finding row counts, and unique CVE counts
-- Empty, schema-only, digest-mismatched, stale `CreatedAt`, stale vulnerability-database, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`
+- Empty, schema-only, digest-mismatched, stale `CreatedAt`, missing or stale vulnerability-database `UpdatedAt`, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`
+- `scan_pinned_images` probes `trivy version --format json` and injects vulnerability-DB timestamps into classification, because Trivy image JSON does not embed `VulnerabilityDB`
+- Docker-backed Trivy runs share a named cache volume so the version probe and image scans use the same database download
 - Trivy is invoked without a severity pre-filter so UNKNOWN/unscored rows remain visible to the classifier
 - CI runs the Python and upstream image scans independently, uploads both artifacts, then fails if either gate exits nonzero
 - Image vulnerability scans run in a separate CI job from Docker Compose runtime verification so a gate failure is not reported as a runtime defect
 - Branch includes merged `main` after PR #24 (`pluggy==1.7.0`)
 - Digests were not changed. The fixed HIGH/CRITICAL and unscored gates remain fail-closed
+- Candidate tags rescanned on 2026-10-24 with Trivy 0.76.0 (DB `UpdatedAt` 2026-10-23T19:15:43Z) still fail the gate; no pin moved
 
 ### Notes
 

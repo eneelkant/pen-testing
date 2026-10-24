@@ -128,10 +128,40 @@ def _scanner_version(document: dict[str, Any]) -> str:
 
 def _database_metadata(document: dict[str, Any]) -> dict[str, str]:
     metadata = document.get("Metadata") if isinstance(document.get("Metadata"), dict) else {}
+    trivy = document.get("Trivy") if isinstance(document.get("Trivy"), dict) else {}
     db = metadata.get("VulnerabilityDB") if isinstance(metadata.get("VulnerabilityDB"), dict) else {}
+    if not db:
+        db = trivy.get("VulnerabilityDB") if isinstance(trivy.get("VulnerabilityDB"), dict) else {}
     if not db:
         db = document.get("VulnerabilityDB") if isinstance(document.get("VulnerabilityDB"), dict) else {}
     return {
+        "updated_at": str(db.get("UpdatedAt") or db.get("updated_at") or ""),
+        "next_update": str(db.get("NextUpdate") or db.get("next_update") or ""),
+        "downloaded_at": str(db.get("DownloadedAt") or db.get("downloaded_at") or ""),
+    }
+
+
+def _merge_database_metadata(document: dict[str, Any], injected: dict[str, str] | None) -> dict[str, str]:
+    """Prefer report-embedded DB timestamps; fall back to ``trivy version`` data."""
+    embedded = _database_metadata(document)
+    if embedded.get("updated_at"):
+        return embedded
+    if not injected:
+        return embedded
+    return {
+        "updated_at": str(injected.get("updated_at") or ""),
+        "next_update": str(injected.get("next_update") or ""),
+        "downloaded_at": str(injected.get("downloaded_at") or ""),
+    }
+
+
+def read_trivy_version_document(document: dict[str, Any] | None) -> tuple[str, dict[str, str]]:
+    """Parse ``trivy version --format json`` into tool version and DB timestamps."""
+    if not isinstance(document, dict):
+        return "", {"updated_at": "", "next_update": "", "downloaded_at": ""}
+    version = str(document.get("Version") or "")
+    db = document.get("VulnerabilityDB") if isinstance(document.get("VulnerabilityDB"), dict) else {}
+    return version, {
         "updated_at": str(db.get("UpdatedAt") or db.get("updated_at") or ""),
         "next_update": str(db.get("NextUpdate") or db.get("next_update") or ""),
         "downloaded_at": str(db.get("DownloadedAt") or db.get("downloaded_at") or ""),
@@ -180,6 +210,7 @@ def classify_trivy_document(
     now: datetime | None = None,
     max_age: timedelta | None = None,
     exit_code: int | None = None,
+    database: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     identity = parse_image_ref(image)
     if not isinstance(document, dict) or not _complete_trivy_document(document):
@@ -225,8 +256,16 @@ def classify_trivy_document(
             exit_code=exit_code,
             created_at=created_at,
         )
-    db_meta = _database_metadata(document)
+    db_meta = _merge_database_metadata(document, database)
     db_updated = _parse_time(db_meta.get("updated_at"))
+    if not db_meta.get("updated_at"):
+        return _not_verified(
+            image,
+            "trivy vulnerability database UpdatedAt is missing",
+            exit_code=exit_code,
+            created_at=created_at,
+            database=db_meta,
+        )
     if db_updated is not None and clock - db_updated > age_limit:
         return _not_verified(
             image,
@@ -322,6 +361,24 @@ def classify_trivy_document(
     }
 
 
+def _trivy_invoke_prefix(*, use_docker: bool) -> list[str]:
+    """Build the argv prefix for host Trivy or the pinned Trivy container.
+
+    Docker runs share a named cache volume so ``trivy version`` and subsequent
+    ``trivy image`` calls see the same vulnerability database download.
+    """
+    if not use_docker:
+        return ["trivy"]
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        "pen-testing-trivy-cache:/root/.cache/",
+        TRIVY_IMAGE,
+    ]
+
+
 def scan_pinned_images(
     *,
     runner: Callable[..., Any] | None = None,
@@ -331,10 +388,14 @@ def scan_pinned_images(
     """Scan pinned images with a local trivy binary or a pinned trivy container.
 
     ``runner`` is a test hook. It receives the argument list and returns an
-    object with ``returncode`` and ``stdout``.
+    object with ``returncode`` and ``stdout``. Image JSON from Trivy does not
+    embed vulnerability-DB timestamps; this function probes
+    ``trivy version --format json`` and injects that metadata before
+    classification so missing DB freshness cannot be treated as a clean pass.
     """
     selected = images if images is not None else PINNED_IMAGES
     tool_version = "0.76.0"
+    database_meta = {"updated_at": "", "next_update": "", "downloaded_at": ""}
     scan_timestamp = (now or datetime.now(timezone.utc)).isoformat()
     if runner is None:
         if shutil.which("trivy"):
@@ -344,7 +405,7 @@ def scan_pinned_images(
                 completed = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
                 return completed
             invoke = runner
-            prefix: list[str] = ["trivy"]
+            prefix = _trivy_invoke_prefix(use_docker=False)
         elif shutil.which("docker"):
             def runner(args, timeout=600):  # type: ignore[no-redef]
                 import subprocess
@@ -352,7 +413,7 @@ def scan_pinned_images(
                 completed = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
                 return completed
             invoke = runner
-            prefix = ["docker", "run", "--rm", TRIVY_IMAGE]
+            prefix = _trivy_invoke_prefix(use_docker=True)
         else:
             return {
                 "ok": False,
@@ -364,11 +425,57 @@ def scan_pinned_images(
                 "unique_cve_count": 0,
                 "tool": "trivy",
                 "tool_version": "",
+                "database": database_meta,
                 "scan_timestamp": scan_timestamp,
             }
     else:
         invoke = runner
         prefix = ["trivy"]
+
+    try:
+        version_completed = invoke([*prefix, "version", "--format", "json"], timeout=120)
+    except TypeError:
+        # Test runners may accept only the argv list.
+        try:
+            version_completed = invoke([*prefix, "version", "--format", "json"])
+        except (OSError, TimeoutError) as exc:
+            return {
+                "ok": False,
+                "status": "NOT_VERIFIED",
+                "error": f"trivy version probe failed: {exc}",
+                "images": [],
+                "blocking_count": 0,
+                "finding_row_count": 0,
+                "unique_cve_count": 0,
+                "tool": "trivy",
+                "tool_version": "",
+                "database": database_meta,
+                "scan_timestamp": scan_timestamp,
+            }
+    except (OSError, TimeoutError) as exc:
+        return {
+            "ok": False,
+            "status": "NOT_VERIFIED",
+            "error": f"trivy version probe failed: {exc}",
+            "images": [],
+            "blocking_count": 0,
+            "finding_row_count": 0,
+            "unique_cve_count": 0,
+            "tool": "trivy",
+            "tool_version": "",
+            "database": database_meta,
+            "scan_timestamp": scan_timestamp,
+        }
+    version_stdout = getattr(version_completed, "stdout", "") or ""
+    try:
+        version_document = json.loads(version_stdout) if version_stdout.strip() else {}
+    except json.JSONDecodeError:
+        version_document = {}
+    probed_version, database_meta = read_trivy_version_document(
+        version_document if isinstance(version_document, dict) else {}
+    )
+    if probed_version:
+        tool_version = probed_version
 
     reports = []
     blocking_count = 0
@@ -398,6 +505,7 @@ def scan_pinned_images(
                 "unique_cve_count": len(unique_cves),
                 "tool": "trivy",
                 "tool_version": tool_version,
+                "database": database_meta,
                 "scan_timestamp": scan_timestamp,
             }
         exit_code = getattr(completed, "returncode", None)
@@ -415,6 +523,7 @@ def scan_pinned_images(
                 "unique_cve_count": len(unique_cves),
                 "tool": "trivy",
                 "tool_version": tool_version,
+                "database": database_meta,
                 "scan_timestamp": scan_timestamp,
                 "exit_code": exit_code,
             }
@@ -423,6 +532,7 @@ def scan_pinned_images(
             image=image["ref"],
             now=now,
             exit_code=exit_code if isinstance(exit_code, int) else None,
+            database=database_meta,
         )
         if not classified.get("scanner_version"):
             classified["scanner_version"] = tool_version
@@ -444,6 +554,7 @@ def scan_pinned_images(
                 "unique_cve_count": len(unique_cves),
                 "tool": "trivy",
                 "tool_version": tool_version,
+                "database": database_meta,
                 "scan_timestamp": scan_timestamp,
             }
     return {
@@ -456,6 +567,7 @@ def scan_pinned_images(
         "unique_cve_count": len(unique_cves),
         "tool": "trivy",
         "tool_version": tool_version,
+        "database": database_meta,
         "scan_timestamp": scan_timestamp,
         "note": (
             "PASS means no fixed HIGH or CRITICAL finding and no unscored finding "

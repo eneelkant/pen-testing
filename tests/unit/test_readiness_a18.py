@@ -257,13 +257,124 @@ def test_scan_records_exit_code_and_rejects_empty_json():
         stdout = ""
         stderr = "pull failed"
 
+    def _runner(args, timeout=600):
+        if "version" in args:
+            return type(
+                "V",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": json.dumps(
+                        {
+                            "Version": "0.76.0",
+                            "VulnerabilityDB": {"UpdatedAt": "2026-10-17T18:34:28Z"},
+                        }
+                    ),
+                    "stderr": "",
+                },
+            )()
+        return _Empty()
+
     scanned = scan_pinned_images(
-        runner=lambda args, timeout=600: _Empty(),
+        runner=_runner,
         images=({"name": "one", "ref": PIN},),
         now=NOW,
     )
     assert scanned["status"] == "NOT_VERIFIED"
     assert scanned["images"][0]["status"] == "NOT_VERIFIED"
+
+
+def test_missing_database_updated_at_is_not_verified():
+    doc = _trivy_doc()
+    del doc["Metadata"]["VulnerabilityDB"]
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+    assert "UpdatedAt is missing" in report["error"]
+
+
+def test_version_document_injects_database_metadata():
+    from core.supply_chain.images import read_trivy_version_document
+
+    version, db = read_trivy_version_document(
+        {
+            "Version": "0.76.0",
+            "VulnerabilityDB": {
+                "UpdatedAt": "2026-10-17T18:34:28Z",
+                "NextUpdate": "2026-10-18T18:34:28Z",
+                "DownloadedAt": "2026-10-18T01:00:00Z",
+            },
+        }
+    )
+    assert version == "0.76.0"
+    doc = _trivy_doc()
+    del doc["Metadata"]["VulnerabilityDB"]
+    report = classify_trivy_document(doc, image=PIN, now=NOW, database=db)
+    assert report["status"] == "PASS"
+    assert report["database"]["updated_at"] == "2026-10-17T18:34:28Z"
+
+
+def test_scan_injects_trivy_version_database_into_image_reports():
+    image_doc = {
+        "SchemaVersion": 2,
+        "ArtifactName": PIN,
+        "CreatedAt": "2026-10-18T01:22:03Z",
+        "Metadata": {"RepoDigests": [f"python@{DIGEST}"]},
+        "Results": [],
+    }
+
+    def _runner(args, timeout=600):
+        if "version" in args:
+            return type(
+                "V",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": json.dumps(
+                        {
+                            "Version": "0.76.0",
+                            "VulnerabilityDB": {
+                                "UpdatedAt": "2026-10-17T18:34:28Z",
+                                "DownloadedAt": "2026-10-18T01:00:00Z",
+                            },
+                        }
+                    ),
+                    "stderr": "",
+                },
+            )()
+        return type("C", (), {"returncode": 0, "stdout": json.dumps(image_doc), "stderr": ""})()
+
+    scanned = scan_pinned_images(
+        runner=_runner,
+        images=({"name": "python-3.12-probe", "ref": PIN},),
+        now=NOW,
+    )
+    assert scanned["status"] == "PASS"
+    assert scanned["tool_version"] == "0.76.0"
+    assert scanned["database"]["updated_at"] == "2026-10-17T18:34:28Z"
+    assert scanned["images"][0]["database"]["updated_at"] == "2026-10-17T18:34:28Z"
+
+
+def test_scan_without_version_database_is_not_verified():
+    image_doc = {
+        "SchemaVersion": 2,
+        "ArtifactName": PIN,
+        "CreatedAt": "2026-10-18T01:22:03Z",
+        "Metadata": {"RepoDigests": [f"python@{DIGEST}"]},
+        "Results": [],
+    }
+
+    def _runner(args, timeout=600):
+        if "version" in args:
+            return type("V", (), {"returncode": 0, "stdout": json.dumps({"Version": "0.76.0"}), "stderr": ""})()
+        return type("C", (), {"returncode": 0, "stdout": json.dumps(image_doc), "stderr": ""})()
+
+    scanned = scan_pinned_images(
+        runner=_runner,
+        images=({"name": "python-3.12-probe", "ref": PIN},),
+        now=NOW,
+    )
+    assert scanned["status"] == "NOT_VERIFIED"
+    assert "UpdatedAt is missing" in (scanned.get("error") or "")
 
 
 def test_ci_separates_docker_runtime_from_image_scan_gate():

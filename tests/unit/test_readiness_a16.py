@@ -142,6 +142,12 @@ def test_image_report_fails_closed_on_missing_and_unscored_data():
             "SchemaVersion": 2,
             "ArtifactName": "example@sha256:abc",
             "CreatedAt": "2026-10-18T00:00:00Z",
+            "Metadata": {
+                "VulnerabilityDB": {
+                    "UpdatedAt": "2026-10-17T18:34:28Z",
+                    "NextUpdate": "2026-10-18T18:34:28Z",
+                }
+            },
             "Results": [
                 {
                     "Vulnerabilities": [

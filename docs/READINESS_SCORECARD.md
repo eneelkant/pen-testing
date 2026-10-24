@@ -1,10 +1,10 @@
 # Readiness scorecard
 
-Review date: **2026-10-23** (Asia/Calcutta).
+Review date: **2026-10-24** (Asia/Calcutta).
 Parent of this change: `origin/main` `9c02a031d05e1915393fa4e8db2f169739d51a69` (merge of PR #24, pluggy 1.7.0; earlier PR #22 was `312d858`).
-This document describes `0.2.0a18` on PR #23 (`cursor/readiness-gaps-87c9`). Local unit commands were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine and Trivy are not installed in the environment that produced the local numbers, so Compose runtime markers and a fresh local image rescan are `NOT_VERIFIED` here.
+This document describes `0.2.0a18` on PR #23 (`cursor/readiness-gaps-87c9`). Local unit commands and host-Trivy image rescans were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine and gitleaks are not installed here, so Compose runtime markers remain `NOT_VERIFIED` locally.
 
-**Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images have fixed HIGH/CRITICAL findings and their digests were not changed.
+**Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images have fixed HIGH/CRITICAL findings and their digests were not changed. Classification: **`BLOCKED_BY_SECURITY_GATE`**.
 
 Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
@@ -13,7 +13,7 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 ### 1. Authorization and scope — PARTIAL
 
 - Implemented: scope engine, egress independent of scope skip, in-process rate and concurrency limits, CLI dry-run unless `--live`. MCP transports other than stdio raise `PermissionError` before a listener starts.
-- Tests: `tests/unit/test_scope.py`, `tests/unit/test_rate_limit.py`, `tests/unit/test_readiness_followup.py`, `tests/unit/test_readiness_a16.py`, `tests/unit/test_readiness_a18.py`. Full unit suite on this tree: `221 passed` (no skips in `tests/unit`).
+- Tests: `tests/unit/test_scope.py`, `tests/unit/test_rate_limit.py`, `tests/unit/test_readiness_followup.py`, `tests/unit/test_readiness_a16.py`, `tests/unit/test_readiness_a18.py`. Full unit suite on this tree: `226 passed` (no skips in `tests/unit`).
 - Outstanding: limits are process-local. There is no multi-user authentication. The operator still maintains `scopes/registry.yaml`.
 - Next action: do not expose the CLI or MCP server as a shared service. A multi-user design needs its own review.
 
@@ -39,10 +39,11 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
 ### 5. Supply chain — FAIL
 
-- Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Local re-run on this tree: audit 0, emit 0, vuln `PASS` blocking 0.
-- `python:3.12-slim-bookworm` on CI `85ac470` / PR run `40005558585`: `FAIL`, `blocking_count` 2 (unscored UNKNOWN: `DLA-4845-1`, `CVE-2026-82560`). Fixed HIGH/CRITICAL remains 0. Unfixed HIGH/CRITICAL rows remain 63. Full report: 289 rows / 130 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
-- Shannon, Temporal, Gitleaks, and Trivy images on the same run: `FAIL`, top-level `blocking_count` **1068** (641 fixed HIGH/CRITICAL + 427 unscored). Per image: Shannon 548 fixed + 419 unscored; Temporal 51 + 4; Gitleaks 40 + 1; Trivy scanner 2 + 3. Digests were not moved. No ignore file was added. Historical HIGH/CRITICAL-only count on `ac712a4` was 612.
-- `0.2.0a18` records digest/platform/scanner/DB/exit metadata, unique CVE vs row counts, and treats empty, schema-only, mismatched, stale, and nonzero-exit-with-clean-body reports as `NOT_VERIFIED`. CI runs both scans before the gate so both artifacts upload.
+- Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Local re-run on this tree: audit 24 components, emit CycloneDX 1.5 with 24 components, vuln `PASS` blocking 0.
+- Local host-Trivy rescan 2026-10-24 (Trivy 0.76.0, DB `UpdatedAt` 2026-10-23T19:15:43Z): pinned Python `FAIL`, `blocking_count` **3** unscored (`DLA-4845-1`, `CVE-2026-82560`, `DLA-4854-1`). Fixed HIGH/CRITICAL remains 0. Full report: 290 rows / 131 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
+- Same local rescan of Shannon, Temporal, Gitleaks, and Trivy pins: `FAIL`, aggregate upstream `blocking_count` **1069** (642 fixed HIGH/CRITICAL + 427 unscored). Per image blocking: Shannon 967; Temporal 55; Gitleaks 41; Trivy 6. Digests were not moved. No ignore file was added.
+- Candidate tags for Python tip, Gitleaks `v8.30.1`, Temporal `1.7.3` / `1.9.1`, and Trivy `latest` were rescanned on the same DB and all still fail; none were adopted.
+- Reporting fix: Trivy image JSON omits `VulnerabilityDB`. Classification now requires DB `UpdatedAt` (from the report or a `trivy version --format json` probe). Missing DB metadata is `NOT_VERIFIED`, not PASS. CI logs print tool version and DB timestamps.
 - Counsel review is pending.
 - Next action: wait for images with zero fixed HIGH/CRITICAL and zero unscored findings, then run the Shannon `--validate-model` path and the unit suite before changing a pin. Do not add a Trivy ignore to turn CI green.
 
@@ -56,16 +57,29 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
 | Command | Exit | Result |
 |---|---|---|
-| `python3 -m pytest -q tests/unit` on this `0.2.0a18` tree | 0 | 221 passed |
+| `python3 -m pytest -q tests/unit` on this `0.2.0a18` tree | 0 | 226 passed |
 | `python3 -m compileall core integrations providers mcp_server installers` | 0 | compiled |
-| gitleaks | `NOT_VERIFIED` locally | Docker/gitleaks image not available in this environment |
+| gitleaks | `NOT_VERIFIED` locally | gitleaks binary not installed in this environment |
 | `python3 -m core.supply_chain audit` | 0 | 24 components; metadata only |
-| `python3 -m core.supply_chain emit` | 0 | CycloneDX 1.5, 24 components, no `vulnerabilities` array |
-| `python3 -m core.supply_chain vuln` | 0 | `PASS`, `blocking_count` 0, `generated_at` `2026-10-23T18:36:18.771506+00:00` |
-| `python3 -m core.supply_chain images` | 2 | `NOT_VERIFIED` locally (`trivy and docker are unavailable`) |
-| `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` succeeded for the runtime script markers listed above |
+| `python3 -m core.supply_chain emit --output /tmp/sbom.json` | 0 | CycloneDX 1.5, 24 components, no `vulnerabilities` array |
+| `python3 -m core.supply_chain vuln` | 0 | `PASS`, `blocking_count` 0, `generated_at` `2026-10-24T01:22:01.554129+00:00` |
+| `python3 -m core.supply_chain images --name python-3.12-probe` | 1 | `FAIL`, blocking 3 unscored; tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z (injected from `trivy version`) |
+| Host Trivy rescan of all pinned upstream images | 1 (expected) | Aggregate blocking 1069; see `docs/SECURITY_EXCEPTIONS.md` |
+| `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` / `79a6dea` succeeded for the runtime script markers |
 
-## CI on `46ef944` (current PR head)
+## CI on `79a6dea` (previous PR head before DB-metadata fix)
+
+PR run `40008170156` and push run `40008162945`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Genuine unscored/fixed findings. Artifacts uploaded. Gate not waived |
+
+## CI on `46ef944` (historical after job split)
 
 PR run `40007096658` and push run `40007085301`:
 

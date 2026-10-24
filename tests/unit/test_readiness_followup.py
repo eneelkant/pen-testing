@@ -152,7 +152,13 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
         "SchemaVersion": 2,
         "ArtifactName": pin,
         "CreatedAt": "2026-10-18T01:22:03Z",
-        "Metadata": {"RepoDigests": [pin]},
+        "Metadata": {
+            "RepoDigests": [pin],
+            "VulnerabilityDB": {
+                "UpdatedAt": "2026-10-17T18:34:28Z",
+                "NextUpdate": "2026-10-18T18:34:28Z",
+            },
+        },
         "Results": [
             {
                 "Vulnerabilities": [
@@ -188,32 +194,69 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
         stdout = "{}"
         stderr = ""
 
+    def _empty_runner(args, timeout=600):
+        if "version" in args:
+            return type(
+                "V",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": json.dumps(
+                        {
+                            "Version": "0.76.0",
+                            "VulnerabilityDB": {"UpdatedAt": "2026-10-17T18:34:28Z"},
+                        }
+                    ),
+                    "stderr": "",
+                },
+            )()
+        return _Completed()
+
     scanned = scan_pinned_images(
-        runner=lambda args, timeout=600: _Completed(),
+        runner=_empty_runner,
         images=({"name": "one", "ref": pin},),
     )
     assert scanned["status"] == "NOT_VERIFIED"
 
-    class _Clean:
-        returncode = 0
-        stdout = json.dumps(
-            {
-                "SchemaVersion": 2,
-                "ArtifactName": pin,
-                "CreatedAt": "2026-10-18T01:22:03Z",
-                "Metadata": {"RepoDigests": [f"python@{pin.split('@', 1)[1]}"]},
-                "Results": [],
-            }
-        )
-        stderr = ""
+    clean_image = {
+        "SchemaVersion": 2,
+        "ArtifactName": pin,
+        "CreatedAt": "2026-10-18T01:22:03Z",
+        "Metadata": {"RepoDigests": [f"python@{pin.split('@', 1)[1]}"]},
+        "Results": [],
+    }
+
+    def _clean_runner(args, timeout=600):
+        if "version" in args:
+            return type(
+                "V",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": json.dumps(
+                        {
+                            "Version": "0.76.0",
+                            "VulnerabilityDB": {
+                                "UpdatedAt": "2026-10-17T18:34:28Z",
+                                "NextUpdate": "2026-10-18T18:34:28Z",
+                                "DownloadedAt": "2026-10-18T01:00:00Z",
+                            },
+                        }
+                    ),
+                    "stderr": "",
+                },
+            )()
+        return type("C", (), {"returncode": 0, "stdout": json.dumps(clean_image), "stderr": ""})()
 
     clean = scan_pinned_images(
-        runner=lambda args, timeout=600: _Clean(),
+        runner=_clean_runner,
         images=({"name": "one", "ref": pin},),
         now=datetime(2026, 10, 18, tzinfo=timezone.utc),
     )
     assert clean["status"] == "PASS"
     assert clean["blocking_count"] == 0
+    assert clean["database"]["updated_at"]
+    assert clean["images"][0]["database"]["updated_at"]
     monkeypatch.setattr("core.supply_chain.images.shutil.which", lambda _name: None)
     missing = scan_pinned_images()
     assert missing["status"] == "NOT_VERIFIED"

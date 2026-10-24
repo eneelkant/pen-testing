@@ -432,26 +432,50 @@ def scan_pinned_images(
         invoke = runner
         prefix = ["trivy"]
 
-    try:
-        version_completed = invoke([*prefix, "version", "--format", "json"], timeout=120)
-    except TypeError:
-        # Test runners may accept only the argv list.
+    def _invoke(args: list[str], *, timeout: int = 600) -> Any:
         try:
-            version_completed = invoke([*prefix, "version", "--format", "json"])
-        except (OSError, TimeoutError) as exc:
-            return {
-                "ok": False,
-                "status": "NOT_VERIFIED",
-                "error": f"trivy version probe failed: {exc}",
-                "images": [],
-                "blocking_count": 0,
-                "finding_row_count": 0,
-                "unique_cve_count": 0,
-                "tool": "trivy",
-                "tool_version": "",
-                "database": database_meta,
-                "scan_timestamp": scan_timestamp,
-            }
+            return invoke(args, timeout=timeout)
+        except TypeError:
+            # Test runners may accept only the argv list.
+            return invoke(args)
+
+    # Image JSON omits VulnerabilityDB. Download the DB first so ``trivy version``
+    # can report UpdatedAt on a cold cache (CI docker volume or empty host cache).
+    try:
+        download_completed = _invoke([*prefix, "image", "--download-db-only"], timeout=300)
+    except (OSError, TimeoutError) as exc:
+        return {
+            "ok": False,
+            "status": "NOT_VERIFIED",
+            "error": f"trivy vulnerability database download failed: {exc}",
+            "images": [],
+            "blocking_count": 0,
+            "finding_row_count": 0,
+            "unique_cve_count": 0,
+            "tool": "trivy",
+            "tool_version": tool_version,
+            "database": database_meta,
+            "scan_timestamp": scan_timestamp,
+        }
+    download_code = getattr(download_completed, "returncode", None)
+    if download_code not in {0, None}:
+        return {
+            "ok": False,
+            "status": "NOT_VERIFIED",
+            "error": "trivy vulnerability database download exited nonzero",
+            "images": [],
+            "blocking_count": 0,
+            "finding_row_count": 0,
+            "unique_cve_count": 0,
+            "tool": "trivy",
+            "tool_version": tool_version,
+            "database": database_meta,
+            "scan_timestamp": scan_timestamp,
+            "exit_code": download_code,
+        }
+
+    try:
+        version_completed = _invoke([*prefix, "version", "--format", "json"], timeout=120)
     except (OSError, TimeoutError) as exc:
         return {
             "ok": False,
@@ -476,6 +500,20 @@ def scan_pinned_images(
     )
     if probed_version:
         tool_version = probed_version
+    if not database_meta.get("updated_at"):
+        return {
+            "ok": False,
+            "status": "NOT_VERIFIED",
+            "error": "trivy vulnerability database UpdatedAt is missing after download",
+            "images": [],
+            "blocking_count": 0,
+            "finding_row_count": 0,
+            "unique_cve_count": 0,
+            "tool": "trivy",
+            "tool_version": tool_version,
+            "database": database_meta,
+            "scan_timestamp": scan_timestamp,
+        }
 
     reports = []
     blocking_count = 0
@@ -493,7 +531,7 @@ def scan_pinned_images(
             image["ref"],
         ]
         try:
-            completed = invoke(args)
+            completed = _invoke(args, timeout=600)
         except (OSError, TimeoutError) as exc:
             return {
                 "ok": False,

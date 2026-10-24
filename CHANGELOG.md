@@ -13,8 +13,8 @@
 
 - Image scan reports record repository, tag, digest, platform, scanner version, vulnerability-database metadata, scan timestamp, exit code, finding row counts, and unique CVE counts
 - Empty, schema-only, digest-mismatched, stale `CreatedAt`, missing or stale vulnerability-database `UpdatedAt`, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`
-- `scan_pinned_images` probes `trivy version --format json` and injects vulnerability-DB timestamps into classification, because Trivy image JSON does not embed `VulnerabilityDB`
-- Docker-backed Trivy runs share a named cache volume so the version probe and image scans use the same database download
+- `scan_pinned_images` runs `trivy image --download-db-only`, then probes `trivy version --format json`, and injects vulnerability-DB timestamps into classification, because Trivy image JSON does not embed `VulnerabilityDB`
+- A cold cache that has not downloaded the DB yet is `NOT_VERIFIED` rather than a clean pass; Docker-backed Trivy runs share a named cache volume so download, version, and image scans use the same database
 - Trivy is invoked without a severity pre-filter so UNKNOWN/unscored rows remain visible to the classifier
 - CI runs the Python and upstream image scans independently, uploads both artifacts, then fails if either gate exits nonzero
 - Image vulnerability scans run in a separate CI job from Docker Compose runtime verification so a gate failure is not reported as a runtime defect

@@ -13,7 +13,7 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 ### 1. Authorization and scope — PARTIAL
 
 - Implemented: scope engine, egress independent of scope skip, in-process rate and concurrency limits, CLI dry-run unless `--live`. MCP transports other than stdio raise `PermissionError` before a listener starts.
-- Tests: `tests/unit/test_scope.py`, `tests/unit/test_rate_limit.py`, `tests/unit/test_readiness_followup.py`, `tests/unit/test_readiness_a16.py`, `tests/unit/test_readiness_a18.py`. Full unit suite on this tree: `226 passed` (no skips in `tests/unit`).
+- Tests: `tests/unit/test_scope.py`, `tests/unit/test_rate_limit.py`, `tests/unit/test_readiness_followup.py`, `tests/unit/test_readiness_a16.py`, `tests/unit/test_readiness_a18.py`. Full unit suite on this tree: `227 passed` (no skips in `tests/unit`).
 - Outstanding: limits are process-local. There is no multi-user authentication. The operator still maintains `scopes/registry.yaml`.
 - Next action: do not expose the CLI or MCP server as a shared service. A multi-user design needs its own review.
 
@@ -66,6 +66,20 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 | `python3 -m core.supply_chain images --name python-3.12-probe` | 1 | `FAIL`, blocking 3 unscored; tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z (injected from `trivy version`) |
 | Host Trivy rescan of all pinned upstream images | 1 (expected) | Aggregate blocking 1069; see `docs/SECURITY_EXCEPTIONS.md` |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` / `79a6dea` succeeded for the runtime script markers |
+
+## CI on `abfd437` (DB inject without cold-cache download)
+
+PR run `40049776184` and push run `40049772354` on `abfd437de02046c69c08bca126be4b3130913cef`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Python step `NOT_VERIFIED` (`UpdatedAt` missing: version probe ran on empty cache before DB download). Upstream step `FAIL` blocking **1069** with DB `UpdatedAt` 2026-10-23T19:15:43Z after the first scan warmed the shared cache. Gate not waived |
+
+Follow-up on this tree adds `--download-db-only` before the version probe so cold CI caches record real FAIL findings instead of hiding them behind missing DB metadata.
 
 ## CI on `79a6dea` (previous PR head before DB-metadata fix)
 

@@ -251,6 +251,31 @@ def test_image_unique_cve_count_distinct_from_rows():
     assert report["digest"] == DIGEST
 
 
+def _version_ok():
+    return type(
+        "V",
+        (),
+        {
+            "returncode": 0,
+            "stdout": json.dumps(
+                {
+                    "Version": "0.76.0",
+                    "VulnerabilityDB": {
+                        "UpdatedAt": "2026-10-17T18:34:28Z",
+                        "NextUpdate": "2026-10-18T18:34:28Z",
+                        "DownloadedAt": "2026-10-18T01:00:00Z",
+                    },
+                }
+            ),
+            "stderr": "",
+        },
+    )()
+
+
+def _download_ok():
+    return type("D", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+
 def test_scan_records_exit_code_and_rejects_empty_json():
     class _Empty:
         returncode = 1
@@ -258,21 +283,10 @@ def test_scan_records_exit_code_and_rejects_empty_json():
         stderr = "pull failed"
 
     def _runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return _download_ok()
         if "version" in args:
-            return type(
-                "V",
-                (),
-                {
-                    "returncode": 0,
-                    "stdout": json.dumps(
-                        {
-                            "Version": "0.76.0",
-                            "VulnerabilityDB": {"UpdatedAt": "2026-10-17T18:34:28Z"},
-                        }
-                    ),
-                    "stderr": "",
-                },
-            )()
+            return _version_ok()
         return _Empty()
 
     scanned = scan_pinned_images(
@@ -321,26 +335,16 @@ def test_scan_injects_trivy_version_database_into_image_reports():
         "Metadata": {"RepoDigests": [f"python@{DIGEST}"]},
         "Results": [],
     }
+    seen: list[str] = []
 
     def _runner(args, timeout=600):
+        if "--download-db-only" in args:
+            seen.append("download")
+            return _download_ok()
         if "version" in args:
-            return type(
-                "V",
-                (),
-                {
-                    "returncode": 0,
-                    "stdout": json.dumps(
-                        {
-                            "Version": "0.76.0",
-                            "VulnerabilityDB": {
-                                "UpdatedAt": "2026-10-17T18:34:28Z",
-                                "DownloadedAt": "2026-10-18T01:00:00Z",
-                            },
-                        }
-                    ),
-                    "stderr": "",
-                },
-            )()
+            seen.append("version")
+            return _version_ok()
+        seen.append("image")
         return type("C", (), {"returncode": 0, "stdout": json.dumps(image_doc), "stderr": ""})()
 
     scanned = scan_pinned_images(
@@ -348,6 +352,7 @@ def test_scan_injects_trivy_version_database_into_image_reports():
         images=({"name": "python-3.12-probe", "ref": PIN},),
         now=NOW,
     )
+    assert seen[:2] == ["download", "version"]
     assert scanned["status"] == "PASS"
     assert scanned["tool_version"] == "0.76.0"
     assert scanned["database"]["updated_at"] == "2026-10-17T18:34:28Z"
@@ -355,18 +360,12 @@ def test_scan_injects_trivy_version_database_into_image_reports():
 
 
 def test_scan_without_version_database_is_not_verified():
-    image_doc = {
-        "SchemaVersion": 2,
-        "ArtifactName": PIN,
-        "CreatedAt": "2026-10-18T01:22:03Z",
-        "Metadata": {"RepoDigests": [f"python@{DIGEST}"]},
-        "Results": [],
-    }
-
     def _runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return _download_ok()
         if "version" in args:
             return type("V", (), {"returncode": 0, "stdout": json.dumps({"Version": "0.76.0"}), "stderr": ""})()
-        return type("C", (), {"returncode": 0, "stdout": json.dumps(image_doc), "stderr": ""})()
+        raise AssertionError("image scan must not run without database UpdatedAt")
 
     scanned = scan_pinned_images(
         runner=_runner,
@@ -375,6 +374,22 @@ def test_scan_without_version_database_is_not_verified():
     )
     assert scanned["status"] == "NOT_VERIFIED"
     assert "UpdatedAt is missing" in (scanned.get("error") or "")
+    assert scanned["images"] == []
+
+
+def test_scan_download_db_failure_is_not_verified():
+    def _runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return type("D", (), {"returncode": 1, "stdout": "", "stderr": "network"})()
+        raise AssertionError("version/image must not run after download failure")
+
+    scanned = scan_pinned_images(
+        runner=_runner,
+        images=({"name": "python-3.12-probe", "ref": PIN},),
+        now=NOW,
+    )
+    assert scanned["status"] == "NOT_VERIFIED"
+    assert "download" in (scanned.get("error") or "").lower()
 
 
 def test_ci_separates_docker_runtime_from_image_scan_gate():

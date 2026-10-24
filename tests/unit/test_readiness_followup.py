@@ -195,6 +195,8 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
         stderr = ""
 
     def _empty_runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return type("D", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         if "version" in args:
             return type(
                 "V",
@@ -227,6 +229,8 @@ def test_image_scan_classifies_fixed_findings_and_missing_tools(monkeypatch):
     }
 
     def _clean_runner(args, timeout=600):
+        if "--download-db-only" in args:
+            return type("D", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         if "version" in args:
             return type(
                 "V",

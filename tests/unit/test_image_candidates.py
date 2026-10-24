@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from core.supply_chain.candidates import CANDIDATE_WATCH, monitor_candidates, resolve_hub_tag
+from core.supply_chain.candidates import (
+    CANDIDATE_WATCH,
+    REQUIRED_PLATFORM,
+    REQUIRED_SCANNER_VERSION,
+    evidence_reusable,
+    monitor_candidates,
+    resolve_hub_tag,
+)
 from core.supply_chain.images import PINNED_IMAGES
 
 
@@ -14,6 +21,7 @@ NOW = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
 DIGEST_A = "sha256:" + ("a" * 64)
 DIGEST_B = "sha256:" + ("b" * 64)
 DIGEST_PIN = PINNED_IMAGES[0]["ref"].split("@", 1)[1]
+LIVE_DB = {"updated_at": "2026-10-24T01:18:19Z"}
 
 
 def _hub(digest: str, last_updated: str = "2026-10-24T00:00:00.000000Z") -> dict:
@@ -49,6 +57,17 @@ def _fail_row(ref: str, *, blocking: int = 1) -> dict:
     return row
 
 
+def _watch(name: str = "python-tip", tag: str = "3.12-slim-bookworm", image: str = "python") -> tuple:
+    return (
+        {
+            "name": name,
+            "hub_repository": f"library/{image}" if image == "python" else image,
+            "tag": tag,
+            "image": image,
+        },
+    )
+
+
 def test_resolve_hub_tag_selects_amd64_digest():
     resolved = resolve_hub_tag(
         "library/python",
@@ -75,14 +94,7 @@ def test_resolve_hub_failure_is_not_ok():
 
 
 def test_monitor_reports_no_acceptable_candidate_without_rescanning_known_digest(tmp_path: Path):
-    watch = (
-        {
-            "name": "python-tip",
-            "hub_repository": "library/python",
-            "tag": "3.12-slim-bookworm",
-            "image": "python",
-        },
-    )
+    watch = _watch()
     evidence = tmp_path / "evidence"
     evidence.mkdir()
     ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
@@ -95,13 +107,14 @@ def test_monitor_reports_no_acceptable_candidate_without_rescanning_known_digest
         scanner=lambda ref: calls.append(ref) or _fail_row(ref),
         evidence_dir=evidence,
         now=NOW,
-        database={"updated_at": "2026-10-24T01:18:19Z"},
+        database=LIVE_DB,
     )
     assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
     assert report["ok"] is False
     assert calls == []
     assert report["candidates"][0]["reused_evidence"] is True
     assert report["candidates"][0]["blocking_count"] == 3
+    assert report["tool_version"] == REQUIRED_SCANNER_VERSION
 
 
 def test_monitor_scans_new_digest_and_can_report_acceptable():
@@ -120,7 +133,7 @@ def test_monitor_scans_new_digest_and_can_report_acceptable():
         fetcher=lambda _url: _hub(DIGEST_B),
         scanner=lambda ref: calls.append(ref) or _pass_row(ref),
         now=NOW,
-        database={"updated_at": "2026-10-24T01:18:19Z"},
+        database=LIVE_DB,
     )
     assert calls == [f"aquasec/trivy:latest@{DIGEST_B}"]
     assert report["status"] == "ACCEPTABLE_CANDIDATE"
@@ -130,20 +143,14 @@ def test_monitor_scans_new_digest_and_can_report_acceptable():
 
 
 def test_monitor_skips_current_pin_digest():
-    watch = (
-        {
-            "name": "python-pin",
-            "hub_repository": "library/python",
-            "tag": "3.12-slim-bookworm",
-            "image": "python",
-        },
-    )
+    watch = _watch(name="python-pin")
     calls: list[str] = []
     report = monitor_candidates(
         watch=watch,
         fetcher=lambda _url: _hub(DIGEST_PIN),
         scanner=lambda ref: calls.append(ref) or _pass_row(ref),
         now=NOW,
+        database=LIVE_DB,
     )
     assert calls == []
     assert report["candidates"][0]["status"] == "SKIPPED_PINNED"
@@ -151,33 +158,20 @@ def test_monitor_skips_current_pin_digest():
 
 
 def test_monitor_hub_failure_is_not_verified():
-    watch = (
-        {
-            "name": "python-tip",
-            "hub_repository": "library/python",
-            "tag": "3.12-slim-bookworm",
-            "image": "python",
-        },
-    )
+    watch = _watch()
     report = monitor_candidates(
         watch=watch,
         fetcher=lambda _url: (_ for _ in ()).throw(TimeoutError("no hub")),
         scanner=lambda ref: _pass_row(ref),
         now=NOW,
+        database=LIVE_DB,
     )
     assert report["status"] == "NOT_VERIFIED"
     assert report["candidates"][0]["status"] == "NOT_VERIFIED"
 
 
 def test_monitor_stale_reused_evidence_is_not_verified(tmp_path: Path):
-    watch = (
-        {
-            "name": "python-tip",
-            "hub_repository": "library/python",
-            "tag": "3.12-slim-bookworm",
-            "image": "python",
-        },
-    )
+    watch = _watch()
     evidence = tmp_path / "evidence"
     evidence.mkdir()
     ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
@@ -197,6 +191,7 @@ def test_monitor_stale_reused_evidence_is_not_verified(tmp_path: Path):
             "error": "scanner unavailable",
             "blocking_count": 0,
             "database": {},
+            "platform": "",
         }
 
     report = monitor_candidates(
@@ -205,6 +200,7 @@ def test_monitor_stale_reused_evidence_is_not_verified(tmp_path: Path):
         scanner=scan,
         evidence_dir=evidence,
         now=NOW,
+        database=LIVE_DB,
     )
     assert calls == [ref]
     assert report["status"] == "NOT_VERIFIED"
@@ -221,10 +217,14 @@ def test_watch_list_covers_pinned_families():
 
 def test_cli_candidates_writes_report(tmp_path: Path, monkeypatch):
     from core.supply_chain import __main__ as main_mod
+    import shutil
+    import subprocess
 
     output = tmp_path / "out.json"
+    seen: dict = {}
 
-    def fake_monitor(**_kwargs):
+    def fake_monitor(**kwargs):
+        seen.update(kwargs)
         return {
             "ok": False,
             "status": "NO_ACCEPTABLE_CANDIDATE",
@@ -234,11 +234,45 @@ def test_cli_candidates_writes_report(tmp_path: Path, monkeypatch):
             "policy": "pins unchanged",
         }
 
+    class Completed:
+        returncode = 0
+        stdout = json.dumps(
+            {
+                "Version": "0.76.0",
+                "VulnerabilityDB": {"UpdatedAt": "2026-10-24T01:18:19Z"},
+            }
+        )
+
     monkeypatch.setattr(main_mod, "monitor_candidates", fake_monitor)
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/trivy" if name == "trivy" else None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: Completed())
     code = main_mod.main(["candidates", "--output", str(output)])
     assert code == 1
+    assert seen.get("require_live_database") is True
+    assert (seen.get("database") or {}).get("updated_at") == "2026-10-24T01:18:19Z"
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == "NO_ACCEPTABLE_CANDIDATE"
 
+
+def test_cli_without_live_db_probe_is_not_verified(tmp_path: Path, monkeypatch):
+    from core.supply_chain import __main__ as main_mod
+    import shutil
+
+    output = tmp_path / "out.json"
+    calls: list[str] = []
+
+    def fake_monitor(**_kwargs):
+        calls.append("monitor")
+        return {"ok": True, "status": "ACCEPTABLE_CANDIDATE", "candidates": [], "acceptable": [{"x": 1}]}
+
+    monkeypatch.setattr(main_mod, "monitor_candidates", fake_monitor)
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    code = main_mod.main(["candidates", "--output", str(output)])
+    assert code == 2
+    assert calls == []
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "NOT_VERIFIED"
+    assert payload["acceptable"] == []
+    assert "live" in payload["error"].lower()
 
 def test_workflow_is_manual_and_scheduled_not_on_pull_request():
     text = (Path(__file__).resolve().parents[2] / ".github/workflows/image-candidate-monitor.yml").read_text(
@@ -256,15 +290,220 @@ def test_workflow_is_manual_and_scheduled_not_on_pull_request():
     assert all(item.get("digest", "").startswith("sha256:") for item in payload)
 
 
-def test_failing_candidate_with_unscored_is_not_acceptable():
-    watch = (
-        {
-            "name": "python-tip",
-            "hub_repository": "library/python",
-            "tag": "3.12-slim-bookworm",
-            "image": "python",
-        },
+def test_evidence_reusable_requires_digest_platform_scanner_and_freshness():
+    base = _fail_row(f"python:3.12-slim-bookworm@{DIGEST_A}", blocking=2)
+    ok, reason = evidence_reusable(
+        base, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=LIVE_DB
     )
+    assert ok is True
+    assert reason == ""
+
+    mismatched = dict(base, digest=DIGEST_B)
+    ok, reason = evidence_reusable(
+        mismatched, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=LIVE_DB
+    )
+    assert ok is False
+    assert "digest" in reason
+
+    wrong_platform = dict(base, platform="linux/arm64")
+    ok, reason = evidence_reusable(
+        wrong_platform, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=LIVE_DB
+    )
+    assert ok is False
+    assert "platform" in reason
+
+    missing_platform = dict(base)
+    missing_platform.pop("platform")
+    ok, reason = evidence_reusable(
+        missing_platform, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=LIVE_DB
+    )
+    assert ok is False
+    assert "platform is missing" in reason
+
+    wrong_scanner = dict(base, scanner_version="0.75.0")
+    ok, reason = evidence_reusable(
+        wrong_scanner, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=LIVE_DB
+    )
+    assert ok is False
+    assert "scanner_version" in reason
+
+    stale = dict(base, created_at="2019-01-01T00:00:00Z", database={"updated_at": "2019-01-01T00:00:00Z"})
+    ok, reason = evidence_reusable(
+        stale, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=LIVE_DB
+    )
+    assert ok is False
+    assert "stale" in reason
+
+
+def test_evidence_reusable_rejects_older_than_live_database_within_age_limit():
+    base = _fail_row(f"python:3.12-slim-bookworm@{DIGEST_A}")
+    # Within 7-day age window relative to NOW, but older than the live probe.
+    base["database"] = {"updated_at": "2026-10-23T01:00:00Z"}
+    base["created_at"] = "2026-10-23T02:00:00Z"
+    ok, reason = evidence_reusable(
+        base,
+        digest=DIGEST_A,
+        now=NOW,
+        max_age=timedelta(days=7),
+        live_database={"updated_at": "2026-10-24T01:18:19Z"},
+    )
+    assert ok is False
+    assert "older than the live" in reason
+
+
+def test_evidence_reusable_requires_live_database_probe():
+    base = _fail_row(f"python:3.12-slim-bookworm@{DIGEST_A}")
+    ok, reason = evidence_reusable(
+        base, digest=DIGEST_A, now=NOW, max_age=timedelta(days=7), live_database=None
+    )
+    assert ok is False
+    assert "live vulnerability database probe is required" in reason
+
+
+def test_monitor_rescans_when_scanner_metadata_mismatches(tmp_path: Path):
+    watch = _watch()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    prior = _fail_row(ref, blocking=9)
+    prior["scanner_version"] = "0.58.1"
+    (evidence / "prior.json").write_text(json.dumps(prior), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=2),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == [ref]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert "scanner_version" in report["candidates"][0]["reuse_rejected"]
+    assert report["candidates"][0]["blocking_count"] == 2
+    assert report["required_platform"] == REQUIRED_PLATFORM
+
+
+def test_monitor_rescans_when_platform_mismatches(tmp_path: Path):
+    watch = _watch()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    prior = _fail_row(ref, blocking=9)
+    prior["platform"] = "linux/arm64"
+    (evidence / "prior.json").write_text(json.dumps(prior), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=5),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == [ref]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert "platform" in report["candidates"][0]["reuse_rejected"]
+    assert report["candidates"][0]["blocking_count"] == 5
+
+
+def test_monitor_rescans_when_digest_mismatches_recorded_evidence(tmp_path: Path):
+    watch = _watch()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    # Index under DIGEST_A via filename content, but recorded digest is DIGEST_B.
+    prior = _fail_row(f"python:3.12-slim-bookworm@{DIGEST_B}", blocking=9)
+    prior["digest"] = DIGEST_B
+    # Force index key to DIGEST_A by also listing it under images — _index_document
+    # uses digest field; write with digest A in a wrapper that indexes A but body says B.
+    # Put digest A in ArtifactName-style and B as primary — simplest: store under digest A
+    # key by setting digest to A in index but evidence_reusable compares document digest.
+    planted = dict(prior)
+    planted["digest"] = DIGEST_B
+    # Manually place so index key is DIGEST_A:
+    planted_for_index = dict(planted)
+    planted_for_index["digest"] = DIGEST_A
+    # After load, change file to have wrong digest while still keyed... evidence index
+    # uses document digest field as key. So write document with digest=A in file for
+    # indexing then the reusable check uses recorded digest — we need recorded != resolved.
+    # Resolve to A; evidence document.digest = B but also include A in images so indexed under A.
+    planted = {
+        **_fail_row(f"python:3.12-slim-bookworm@{DIGEST_B}", blocking=9),
+        "digest": DIGEST_B,
+        "images": [{"digest": DIGEST_A}],
+    }
+    (evidence / "prior.json").write_text(json.dumps(planted), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=1),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == [f"python:3.12-slim-bookworm@{DIGEST_A}"]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert "digest" in report["candidates"][0]["reuse_rejected"]
+
+
+def test_monitor_fresh_scan_path_when_no_evidence():
+    watch = _watch()
+    calls: list[str] = []
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=4),
+        evidence_dir=Path("/tmp/no-such-evidence-dir-for-monitor"),
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == [f"python:3.12-slim-bookworm@{DIGEST_A}"]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert report["candidates"][0]["blocking_count"] == 4
+    assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
+
+
+def test_monitor_rejects_scan_missing_platform_as_not_verified():
+    watch = _watch()
+
+    def scan(ref: str) -> dict:
+        row = _pass_row(ref)
+        row.pop("platform")
+        return row
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_B),
+        scanner=scan,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert report["status"] == "NOT_VERIFIED"
+    assert report["candidates"][0]["platform"] == ""
+    assert "platform" in report["candidates"][0]["error"]
+
+
+def test_monitor_without_live_database_is_not_verified():
+    watch = _watch()
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: _pass_row(ref),
+        now=NOW,
+        database=None,
+        require_live_database=True,
+    )
+    assert report["status"] == "NOT_VERIFIED"
+    assert report["acceptable"] == []
+    assert "live vulnerability database" in report["error"]
+
+
+def test_failing_candidate_with_unscored_is_not_acceptable():
+    watch = _watch()
 
     def scan(ref: str) -> dict:
         row = _fail_row(ref, blocking=2)
@@ -277,7 +516,7 @@ def test_failing_candidate_with_unscored_is_not_acceptable():
         fetcher=lambda _url: _hub(DIGEST_A),
         scanner=scan,
         now=NOW,
-        database={"updated_at": "2026-10-24T01:18:19Z"},
+        database=LIVE_DB,
     )
     assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
     assert report["acceptable"] == []
@@ -286,7 +525,6 @@ def test_failing_candidate_with_unscored_is_not_acceptable():
 
 
 def test_pass_row_with_unscored_count_is_rejected():
-    """A mis-labeled PASS that still reports unscored findings must not be adopted."""
     watch = (
         {
             "name": "trivy-tip",
@@ -306,74 +544,139 @@ def test_pass_row_with_unscored_count_is_rejected():
         fetcher=lambda _url: _hub(DIGEST_B),
         scanner=scan,
         now=NOW,
-        database={"updated_at": "2026-10-24T01:18:19Z"},
+        database=LIVE_DB,
     )
     assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
     assert report["acceptable"] == []
     assert report["candidates"][0]["status"] == "FAIL"
 
 
-def test_reused_evidence_missing_platform_or_scanner_is_not_fresh(tmp_path: Path):
-    watch = (
-        {
-            "name": "python-tip",
-            "hub_repository": "library/python",
-            "tag": "3.12-slim-bookworm",
-            "image": "python",
-        },
-    )
+def test_preclassified_pass_without_raw_results_is_not_reused(tmp_path: Path):
+    watch = _watch()
     evidence = tmp_path / "evidence"
     evidence.mkdir()
     ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
-    incomplete = _fail_row(ref, blocking=1)
-    incomplete.pop("platform", None)
-    incomplete["scanner_version"] = ""
-    (evidence / "incomplete.json").write_text(json.dumps(incomplete), encoding="utf-8")
+    planted = _pass_row(ref)
+    # Summary-only PASS: no Results, no findings.
+    assert "Results" not in planted
+    assert "findings" not in planted
+    (evidence / "planted-pass.json").write_text(json.dumps(planted), encoding="utf-8")
     calls: list[str] = []
 
     report = monitor_candidates(
         watch=watch,
         fetcher=lambda _url: _hub(DIGEST_A),
-        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=4),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=7),
         evidence_dir=evidence,
         now=NOW,
-        database={"updated_at": "2026-10-24T01:18:19Z"},
+        database=LIVE_DB,
     )
     assert calls == [ref]
     assert report["candidates"][0]["reused_evidence"] is False
-    assert report["candidates"][0]["blocking_count"] == 4
+    assert "PASS" in report["candidates"][0]["reuse_rejected"]
+    assert report["candidates"][0]["blocking_count"] == 7
+    assert report["acceptable"] == []
+
+
+def test_preclassified_pass_with_blocking_findings_is_failed(tmp_path: Path):
+    watch = _watch()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    planted = _pass_row(ref)
+    planted["findings"] = [
+        {
+            "id": "CVE-TEST-1",
+            "severity": "CRITICAL",
+            "fixed": "1.2.3",
+            "class": "fixed",
+            "blocking": True,
+        },
+        {
+            "id": "CVE-TEST-2",
+            "severity": "UNKNOWN",
+            "fixed": "",
+            "class": "unscored",
+            "blocking": True,
+        },
+    ]
+    planted["blocking_count"] = 0
+    planted["unscored_count"] = 0
+    (evidence / "planted.json").write_text(json.dumps(planted), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=99),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    # Revalidation from findings yields FAIL; may be reused as FAIL without rescan.
+    assert report["acceptable"] == []
+    assert report["candidates"][0]["status"] == "FAIL"
+    assert report["candidates"][0]["blocking_count"] >= 1
+    assert report["candidates"][0]["unscored_count"] >= 1
+
+
+def test_preclassified_pass_with_clean_findings_still_requires_results_for_reuse(tmp_path: Path):
+    """Empty findings on a PASS summary must not become ACCEPTABLE via reuse."""
+    watch = _watch()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    planted = _pass_row(ref)
+    planted["findings"] = []
+    (evidence / "empty-findings.json").write_text(json.dumps(planted), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=3),
+        evidence_dir=evidence,
+        now=NOW,
+        database=LIVE_DB,
+    )
+    assert calls == [ref]
+    assert report["candidates"][0]["reused_evidence"] is False
     assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
 
 
-def test_reused_evidence_older_than_live_db_probe_is_rescanned(tmp_path: Path):
+def test_acceptable_only_after_fresh_exact_digest_pass():
     watch = (
         {
-            "name": "python-tip",
-            "hub_repository": "library/python",
-            "tag": "3.12-slim-bookworm",
-            "image": "python",
+            "name": "trivy-tip",
+            "hub_repository": "aquasec/trivy",
+            "tag": "latest",
+            "image": "aquasec/trivy",
         },
     )
-    evidence = tmp_path / "evidence"
-    evidence.mkdir()
-    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
-    prior = _fail_row(ref, blocking=1)
-    prior["database"] = {"updated_at": "2026-10-20T00:00:00Z"}
-    prior["created_at"] = "2026-10-20T01:00:00Z"
-    (evidence / "older.json").write_text(json.dumps(prior), encoding="utf-8")
     calls: list[str] = []
+
+    def scan(ref: str) -> dict:
+        calls.append(ref)
+        row = _pass_row(ref)
+        assert row["digest"] == DIGEST_B
+        assert row["scanner_version"] == REQUIRED_SCANNER_VERSION
+        assert row["platform"] == REQUIRED_PLATFORM
+        assert row["blocking_count"] == 0
+        assert row["unscored_count"] == 0
+        return row
 
     report = monitor_candidates(
         watch=watch,
-        fetcher=lambda _url: _hub(DIGEST_A),
-        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=9),
-        evidence_dir=evidence,
+        fetcher=lambda _url: _hub(DIGEST_B),
+        scanner=scan,
         now=NOW,
-        database={"updated_at": "2026-10-24T01:18:19Z"},
+        database=LIVE_DB,
     )
-    assert calls == [ref]
-    assert report["candidates"][0]["reused_evidence"] is False
-    assert report["candidates"][0]["blocking_count"] == 9
+    assert calls == [f"aquasec/trivy:latest@{DIGEST_B}"]
+    assert report["status"] == "ACCEPTABLE_CANDIDATE"
+    assert len(report["acceptable"]) == 1
+    assert report["acceptable"][0]["digest"] == DIGEST_B
+    assert report["acceptable"][0]["reused_evidence"] is False
 
 
 def test_ci_keeps_python_and_upstream_image_gates_separate():
@@ -404,5 +707,5 @@ def test_reject_inventory_includes_python_31213_and_temporal_173():
         assert item.get("status") == "FAIL"
         assert int(item.get("blocking_count") or 0) > 0
         assert item.get("platform") == "linux/amd64"
-        assert item.get("scanner_version")
+        assert item.get("scanner_version") == REQUIRED_SCANNER_VERSION
         assert (item.get("database") or {}).get("updated_at")

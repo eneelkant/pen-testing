@@ -77,8 +77,57 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return 0 if report["ok"] else 1
     if args.command == "candidates":
+        import shutil
+        import subprocess
+
+        from core.supply_chain.candidates import load_version_database
+        from core.supply_chain.images import _trivy_invoke_prefix
+
         evidence = Path(args.evidence_dir).resolve() if args.evidence_dir else None
-        report = monitor_candidates(evidence_dir=evidence)
+        # Probe the live Trivy DB. Age-only reuse is not allowed; a failed probe
+        # fails closed as NOT_VERIFIED (no candidate may be accepted).
+        database: dict[str, str] = {}
+        prefix: list[str] | None = None
+        if shutil.which("trivy"):
+            prefix = ["trivy"]
+        elif shutil.which("docker"):
+            prefix = _trivy_invoke_prefix(use_docker=True)
+        if prefix is not None:
+            try:
+                subprocess.run(
+                    [*prefix, "image", "--download-db-only"],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    check=False,
+                )
+                completed = subprocess.run(
+                    [*prefix, "version", "--format", "json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    check=False,
+                )
+                if completed.returncode == 0 and completed.stdout.strip():
+                    database = load_version_database(json.loads(completed.stdout))
+            except (OSError, TimeoutError, json.JSONDecodeError, ValueError):
+                database = {}
+        if not database.get("updated_at"):
+            report = {
+                "ok": False,
+                "status": "NOT_VERIFIED",
+                "error": "live trivy vulnerability database probe failed or UpdatedAt is missing",
+                "candidates": [],
+                "acceptable": [],
+                "database": database,
+                "note": "Incomplete live DB metadata is not treated as clean; no candidate accepted.",
+            }
+        else:
+            report = monitor_candidates(
+                evidence_dir=evidence,
+                database=database,
+                require_live_database=True,
+            )
         text = json.dumps(report, indent=2)
         safe_write_text(args.output, text + "\n")
         print(text)

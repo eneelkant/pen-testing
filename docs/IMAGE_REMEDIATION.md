@@ -2,7 +2,7 @@
 
 **Branch:** `cursor/image-remediation-7e32` (separate from PR #25 evidence-reuse work).  
 **Decision:** **No safe pin updates.** Production digests in `core/supply_chain/images.py` are unchanged.  
-**Gate:** zero fixed HIGH/CRITICAL + zero unscored, with digest/platform/scanner/DB-freshness-bound evidence. Missing or mismatched evidence is `NOT_VERIFIED`, not a pass.
+**Gate:** zero fixed HIGH/CRITICAL + zero unscored. Candidate evidence reuse requires exact digest, `linux/amd64`, scanner `0.76.0`, fresh CreatedAt/DB UpdatedAt, and a **live** `trivy version` DB probe (age alone is not enough). Pre-classified `PASS` without raw Trivy `Results` is rejected. Missing or mismatched evidence is `NOT_VERIFIED`, not a pass. Platform is never invented when omitted.
 
 ## Baseline (reproduced locally)
 
@@ -79,8 +79,20 @@ Committed reject inventory: `core/supply_chain/candidate_rejects.json` (includes
 - `docs/IMAGE_REMEDIATION.md` (this report)
 - `docs/SECURITY_EXCEPTIONS.md` (baseline + new candidate rows)
 - `core/supply_chain/candidate_rejects.json` (new reject digests)
-- `core/supply_chain/candidates.py` (reject incomplete reused evidence; do not accept PASS+unscored)
+- `core/supply_chain/candidates.py` (`evidence_reusable` + live DB requirement; never trust PASS without raw Results)
+- `core/supply_chain/__main__.py` (CLI live DB probe; fail closed when probe missing)
 - `tests/unit/test_image_candidates.py` (rejection / evidence / gate-separation regressions)
 - `CHANGELOG.md` / `.gitignore` as needed
 
 `docs/READINESS_SCORECARD.md` local uncommitted edit is preserved and not part of this change set.
+
+## Evidence-reuse guarantees (implemented)
+
+| Check | Behavior |
+|---|---|
+| Digest | Recorded evidence digest must equal Hub-resolved digest |
+| Platform | Must be present and equal `linux/amd64`; missing → not reused / `NOT_VERIFIED` |
+| Scanner | Must equal pinned Trivy tag `0.76.0` |
+| DB age | Evidence DB `UpdatedAt` within max age **and** not older than live probe |
+| Live probe | Required for reuse and for `ACCEPTABLE_CANDIDATE`; CLI fails `NOT_VERIFIED` if probe missing |
+| Pre-classified PASS | Without Trivy `Results`, cannot become acceptable; blockers in stored findings demote to FAIL |

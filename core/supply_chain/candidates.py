@@ -306,6 +306,8 @@ def monitor_candidates(
             db_meta = candidate.get("database") if isinstance(candidate.get("database"), dict) else {}
             db_updated = _parse_time(str(db_meta.get("updated_at") or ""))
             created = _parse_time(str(candidate.get("created_at") or ""))
+            platform = str(candidate.get("platform") or "")
+            scanner = str(candidate.get("scanner_version") or candidate.get("tool_version") or "")
             fresh = True
             if candidate.get("status") == "NOT_VERIFIED":
                 fresh = False
@@ -315,6 +317,17 @@ def monitor_candidates(
                 fresh = False
             if created is not None and clock - created > age_limit:
                 fresh = False
+            # Bound reused evidence to platform + scanner identity. Missing or
+            # mismatched fields are not treated as a reusable pass/fail row.
+            if platform and platform != "linux/amd64":
+                fresh = False
+            if not platform or not scanner:
+                fresh = False
+            if database and database.get("updated_at") and db_meta.get("updated_at"):
+                # Live probe wins: stale inventory relative to the probe is not fresh.
+                live = _parse_time(str(database.get("updated_at")))
+                if live is not None and db_updated is not None and db_updated < live:
+                    fresh = False
             if fresh:
                 classified = candidate
                 reused = True
@@ -379,8 +392,17 @@ def monitor_candidates(
         rows.append(row)
         if status == "NOT_VERIFIED":
             unresolved = True
-        elif status == "PASS" and int(classified.get("blocking_count") or 0) == 0:
+        elif (
+            status == "PASS"
+            and int(classified.get("blocking_count") or 0) == 0
+            and int(classified.get("unscored_count") or 0) == 0
+        ):
             acceptable.append(row)
+        elif status == "PASS" and int(classified.get("unscored_count") or 0) > 0:
+            # Defensive: a PASS body that still reports unscored rows is not acceptable.
+            row["status"] = "FAIL"
+            row["error"] = "PASS row reported unscored findings; treated as FAIL"
+            rows[-1] = row
 
     if unresolved and not acceptable:
         overall = "NOT_VERIFIED"

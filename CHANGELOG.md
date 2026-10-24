@@ -22,6 +22,7 @@
 - Digests were not changed. The fixed HIGH/CRITICAL and unscored gates remain fail-closed
 - Candidate tags rescanned on 2026-10-24 with Trivy 0.76.0 still fail the gate; no pin moved. Additional Hub tips (Shannon `3.4.0` digest move, Temporal `1.8.1`, Python `3.13`/`3.14-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / canary) also fail. Python unscored rows checked against NVD/Debian; severities were not invented into the classifier
 - Added `python -m core.supply_chain candidates` and scheduled workflow `image-candidate-monitor.yml` to watch official Hub tags, reuse committed reject evidence, scan only new digests, and report `NO_ACCEPTABLE_CANDIDATE` without changing pins
+- Image remediation pass (2026-10-24): reproduced CI run `40066307720` (Python FAIL / upstream 1,075 blocking). Evaluated additional official digests including `python:3.12.13-slim-bookworm` and Temporal `1.7.3`; all rejected. Pins unchanged. See `docs/IMAGE_REMEDIATION.md`. Candidate reuse now rejects incomplete platform/scanner evidence and PASS rows that still report unscored findings
 
 ### Notes
 

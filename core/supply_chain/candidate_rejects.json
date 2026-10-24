@@ -1,114 +1,20 @@
 [
   {
-    "image": "python:3.12-slim-bookworm@sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0",
-    "digest": "sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0",
-    "status": "FAIL",
-    "blocking_count": 2,
-    "unscored_count": 2,
-    "finding_row_count": 289,
-    "unique_cve_count": 130,
-    "created_at": "2026-10-24T01:12:19.214317789Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "python:3.13-slim-bookworm@sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a6678850",
-    "digest": "sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a6678850",
+    "image": "aquasec/trivy:0.76.0@sha256:166061a4a15c64a94a3aab430659e2c166dc0815fbc54a222c6d56d64132f552",
+    "digest": "sha256:166061a4a15c64a94a3aab430659e2c166dc0815fbc54a222c6d56d64132f552",
     "status": "FAIL",
     "blocking_count": 6,
-    "unscored_count": 2,
-    "finding_row_count": 262,
-    "unique_cve_count": 123,
-    "created_at": "2026-10-24T01:56:52.467505804Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "python:3.14-slim-bookworm@sha256:7dff173021016c8829ae58d5ce112ffc388073ebe67f351aeb6ba2909e35f847",
-    "digest": "sha256:7dff173021016c8829ae58d5ce112ffc388073ebe67f351aeb6ba2909e35f847",
-    "status": "FAIL",
-    "blocking_count": 6,
-    "unscored_count": 2,
-    "finding_row_count": 262,
-    "unique_cve_count": 123,
-    "created_at": "2026-10-24T02:23:13.08716846Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "python:3.12-slim@sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c",
-    "digest": "sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c",
-    "status": "FAIL",
-    "blocking_count": 1,
-    "unscored_count": 1,
-    "finding_row_count": 170,
-    "unique_cve_count": 77,
-    "created_at": "2026-10-24T01:59:36.175924853Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "keygraph/shannon:3.4.0@sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a",
-    "digest": "sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a",
-    "status": "FAIL",
-    "blocking_count": 970,
-    "unscored_count": 419,
-    "finding_row_count": 1793,
-    "unique_cve_count": 1777,
-    "created_at": "2026-10-24T01:56:50.389046337Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "temporalio/temporal:1.8.1@sha256:d7fe04db99586b7e20c3ee96ced04e5585be380b5a565cabb1fb40281f1a64b5",
-    "digest": "sha256:d7fe04db99586b7e20c3ee96ced04e5585be380b5a565cabb1fb40281f1a64b5",
-    "status": "FAIL",
-    "blocking_count": 35,
     "unscored_count": 3,
-    "finding_row_count": 104,
-    "unique_cve_count": 70,
-    "created_at": "2026-10-24T01:56:51.609009093Z",
+    "finding_row_count": 7,
+    "unique_cve_count": 6,
+    "created_at": "2026-10-24T01:58:59.935059181Z",
     "platform": "linux/amd64",
     "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "temporalio/temporal:1.9.1@sha256:150d6208d7b24371e4080f49780e6061611f6279cd6908236e9a34ae5746c1b5",
-    "digest": "sha256:150d6208d7b24371e4080f49780e6061611f6279cd6908236e9a34ae5746c1b5",
-    "status": "FAIL",
-    "blocking_count": 11,
-    "unscored_count": 3,
-    "finding_row_count": 47,
-    "unique_cve_count": 29,
-    "created_at": "2026-10-24T01:12:23.435205567Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "zricethezav/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb",
-    "digest": "sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb",
-    "status": "FAIL",
-    "blocking_count": 78,
-    "unscored_count": 6,
-    "finding_row_count": 193,
-    "unique_cve_count": 158,
-    "created_at": "2026-10-24T01:12:26.618414659Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
     "error": ""
   },
   {
@@ -122,21 +28,11 @@
     "created_at": "2026-10-24T01:56:53.799697617Z",
     "platform": "linux/amd64",
     "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
-    "error": ""
-  },
-  {
-    "image": "aquasec/trivy:0.76.0@sha256:166061a4a15c64a94a3aab430659e2c166dc0815fbc54a222c6d56d64132f552",
-    "digest": "sha256:166061a4a15c64a94a3aab430659e2c166dc0815fbc54a222c6d56d64132f552",
-    "status": "FAIL",
-    "blocking_count": 6,
-    "unscored_count": 3,
-    "finding_row_count": 7,
-    "unique_cve_count": 6,
-    "created_at": "2026-10-24T01:58:59.935059181Z",
-    "platform": "linux/amd64",
-    "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
     "error": ""
   },
   {
@@ -150,7 +46,191 @@
     "created_at": "2026-10-24T01:59:01.213762045Z",
     "platform": "linux/amd64",
     "scanner_version": "0.76.0",
-    "database": {"updated_at": "2026-10-24T01:18:19.814880615Z"},
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "keygraph/shannon:3.4.0@sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a",
+    "digest": "sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a",
+    "status": "FAIL",
+    "blocking_count": 970,
+    "unscored_count": 419,
+    "finding_row_count": 1793,
+    "unique_cve_count": 1777,
+    "created_at": "2026-10-24T01:56:50.389046337Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "python:3.12-slim-bookworm@sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0",
+    "digest": "sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0",
+    "status": "FAIL",
+    "blocking_count": 2,
+    "unscored_count": 2,
+    "finding_row_count": 289,
+    "unique_cve_count": 130,
+    "created_at": "2026-10-24T01:12:19.214317789Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "python:3.12-slim@sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c",
+    "digest": "sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c",
+    "status": "FAIL",
+    "blocking_count": 1,
+    "unscored_count": 1,
+    "finding_row_count": 170,
+    "unique_cve_count": 77,
+    "created_at": "2026-10-24T01:59:36.175924853Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "python:3.12.13-slim-bookworm@sha256:6e13e65c55e33adf203d77ee371cf8bf5d81bd4902ef07565721f46bf44917af",
+    "digest": "sha256:6e13e65c55e33adf203d77ee371cf8bf5d81bd4902ef07565721f46bf44917af",
+    "status": "FAIL",
+    "blocking_count": 18,
+    "unscored_count": 7,
+    "finding_row_count": 326,
+    "unique_cve_count": 161,
+    "created_at": "2026-10-24T06:12:50.378001824Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "python:3.13-slim-bookworm@sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a6678850",
+    "digest": "sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a6678850",
+    "status": "FAIL",
+    "blocking_count": 6,
+    "unscored_count": 2,
+    "finding_row_count": 262,
+    "unique_cve_count": 123,
+    "created_at": "2026-10-24T01:56:52.467505804Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "python:3.14-slim-bookworm@sha256:7dff173021016c8829ae58d5ce112ffc388073ebe67f351aeb6ba2909e35f847",
+    "digest": "sha256:7dff173021016c8829ae58d5ce112ffc388073ebe67f351aeb6ba2909e35f847",
+    "status": "FAIL",
+    "blocking_count": 6,
+    "unscored_count": 2,
+    "finding_row_count": 262,
+    "unique_cve_count": 123,
+    "created_at": "2026-10-24T02:23:13.08716846Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "temporalio/temporal:1.7.3@sha256:1683f097876c2af71ba833bd9418910601be12d4a25422f2c4ebec45113e1bc2",
+    "digest": "sha256:1683f097876c2af71ba833bd9418910601be12d4a25422f2c4ebec45113e1bc2",
+    "status": "FAIL",
+    "blocking_count": 30,
+    "unscored_count": 3,
+    "finding_row_count": 71,
+    "unique_cve_count": 52,
+    "created_at": "2026-10-24T01:12:25.768048172Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "temporalio/temporal:1.8.1@sha256:d7fe04db99586b7e20c3ee96ced04e5585be380b5a565cabb1fb40281f1a64b5",
+    "digest": "sha256:d7fe04db99586b7e20c3ee96ced04e5585be380b5a565cabb1fb40281f1a64b5",
+    "status": "FAIL",
+    "blocking_count": 35,
+    "unscored_count": 3,
+    "finding_row_count": 104,
+    "unique_cve_count": 70,
+    "created_at": "2026-10-24T01:56:51.609009093Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "temporalio/temporal:1.9.1@sha256:150d6208d7b24371e4080f49780e6061611f6279cd6908236e9a34ae5746c1b5",
+    "digest": "sha256:150d6208d7b24371e4080f49780e6061611f6279cd6908236e9a34ae5746c1b5",
+    "status": "FAIL",
+    "blocking_count": 11,
+    "unscored_count": 3,
+    "finding_row_count": 47,
+    "unique_cve_count": 29,
+    "created_at": "2026-10-24T01:12:23.435205567Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
+    "error": ""
+  },
+  {
+    "image": "zricethezav/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb",
+    "digest": "sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb",
+    "status": "FAIL",
+    "blocking_count": 78,
+    "unscored_count": 6,
+    "finding_row_count": 193,
+    "unique_cve_count": 158,
+    "created_at": "2026-10-24T01:12:26.618414659Z",
+    "platform": "linux/amd64",
+    "scanner_version": "0.76.0",
+    "database": {
+      "updated_at": "2026-10-24T01:18:19.814880615Z",
+      "next_update": "2026-10-25T01:18:19.814880324Z",
+      "downloaded_at": "2026-10-24T01:56:42.991511995Z"
+    },
     "error": ""
   }
 ]

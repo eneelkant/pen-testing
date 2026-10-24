@@ -254,3 +254,155 @@ def test_workflow_is_manual_and_scheduled_not_on_pull_request():
     payload = json.loads(rejects.read_text(encoding="utf-8"))
     assert isinstance(payload, list) and payload
     assert all(item.get("digest", "").startswith("sha256:") for item in payload)
+
+
+def test_failing_candidate_with_unscored_is_not_acceptable():
+    watch = (
+        {
+            "name": "python-tip",
+            "hub_repository": "library/python",
+            "tag": "3.12-slim-bookworm",
+            "image": "python",
+        },
+    )
+
+    def scan(ref: str) -> dict:
+        row = _fail_row(ref, blocking=2)
+        row["unscored_count"] = 2
+        row["blocking_count"] = 2
+        return row
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=scan,
+        now=NOW,
+        database={"updated_at": "2026-10-24T01:18:19Z"},
+    )
+    assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
+    assert report["acceptable"] == []
+    assert report["candidates"][0]["status"] == "FAIL"
+    assert report["candidates"][0]["unscored_count"] == 2
+
+
+def test_pass_row_with_unscored_count_is_rejected():
+    """A mis-labeled PASS that still reports unscored findings must not be adopted."""
+    watch = (
+        {
+            "name": "trivy-tip",
+            "hub_repository": "aquasec/trivy",
+            "tag": "latest",
+            "image": "aquasec/trivy",
+        },
+    )
+
+    def scan(ref: str) -> dict:
+        row = _pass_row(ref)
+        row["unscored_count"] = 3
+        return row
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_B),
+        scanner=scan,
+        now=NOW,
+        database={"updated_at": "2026-10-24T01:18:19Z"},
+    )
+    assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
+    assert report["acceptable"] == []
+    assert report["candidates"][0]["status"] == "FAIL"
+
+
+def test_reused_evidence_missing_platform_or_scanner_is_not_fresh(tmp_path: Path):
+    watch = (
+        {
+            "name": "python-tip",
+            "hub_repository": "library/python",
+            "tag": "3.12-slim-bookworm",
+            "image": "python",
+        },
+    )
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    incomplete = _fail_row(ref, blocking=1)
+    incomplete.pop("platform", None)
+    incomplete["scanner_version"] = ""
+    (evidence / "incomplete.json").write_text(json.dumps(incomplete), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=4),
+        evidence_dir=evidence,
+        now=NOW,
+        database={"updated_at": "2026-10-24T01:18:19Z"},
+    )
+    assert calls == [ref]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert report["candidates"][0]["blocking_count"] == 4
+    assert report["status"] == "NO_ACCEPTABLE_CANDIDATE"
+
+
+def test_reused_evidence_older_than_live_db_probe_is_rescanned(tmp_path: Path):
+    watch = (
+        {
+            "name": "python-tip",
+            "hub_repository": "library/python",
+            "tag": "3.12-slim-bookworm",
+            "image": "python",
+        },
+    )
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    ref = f"python:3.12-slim-bookworm@{DIGEST_A}"
+    prior = _fail_row(ref, blocking=1)
+    prior["database"] = {"updated_at": "2026-10-20T00:00:00Z"}
+    prior["created_at"] = "2026-10-20T01:00:00Z"
+    (evidence / "older.json").write_text(json.dumps(prior), encoding="utf-8")
+    calls: list[str] = []
+
+    report = monitor_candidates(
+        watch=watch,
+        fetcher=lambda _url: _hub(DIGEST_A),
+        scanner=lambda ref: calls.append(ref) or _fail_row(ref, blocking=9),
+        evidence_dir=evidence,
+        now=NOW,
+        database={"updated_at": "2026-10-24T01:18:19Z"},
+    )
+    assert calls == [ref]
+    assert report["candidates"][0]["reused_evidence"] is False
+    assert report["candidates"][0]["blocking_count"] == 9
+
+
+def test_ci_keeps_python_and_upstream_image_gates_separate():
+    text = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "Pinned base image vulnerability scan" in text
+    assert "Pinned upstream image vulnerability scan" in text
+    assert "image-scan-python" in text
+    assert "image-scan-upstream" in text
+    assert "PYTHON_IMAGE_SCAN_EXIT" in text
+    assert "UPSTREAM_IMAGE_SCAN_EXIT" in text
+    assert "Enforce pinned image scan gates" in text
+
+
+def test_production_pins_remain_digest_pinned():
+    for item in PINNED_IMAGES:
+        assert "@sha256:" in item["ref"], item
+        assert not item["ref"].endswith(":latest")
+        assert ":latest@" not in item["ref"]
+
+
+def test_reject_inventory_includes_python_31213_and_temporal_173():
+    rejects = Path(__file__).resolve().parents[2] / "core/supply_chain/candidate_rejects.json"
+    payload = json.loads(rejects.read_text(encoding="utf-8"))
+    digests = {item["digest"] for item in payload}
+    assert "sha256:6e13e65c55e33adf203d77ee371cf8bf5d81bd4902ef07565721f46bf44917af" in digests
+    assert "sha256:1683f097876c2af71ba833bd9418910601be12d4a25422f2c4ebec45113e1bc2" in digests
+    for item in payload:
+        assert item.get("status") == "FAIL"
+        assert int(item.get("blocking_count") or 0) > 0
+        assert item.get("platform") == "linux/amd64"
+        assert item.get("scanner_version")
+        assert (item.get("database") or {}).get("updated_at")

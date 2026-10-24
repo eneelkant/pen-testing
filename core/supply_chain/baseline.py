@@ -770,6 +770,17 @@ def verify_baseline_entry_ci_evidence(
         summary = json.loads(summary_bytes.decode("utf-8"))
         if not isinstance(summary, dict) or summary.get("status") == "NOT_VERIFIED":
             return ["source CI summary is malformed or NOT_VERIFIED"]
+        summary_rows = summary.get("images")
+        if not isinstance(summary_rows, list) or not summary_rows:
+            return ["source CI summary has no image rows"]
+        if any(not isinstance(item, dict) or item.get("status") == "NOT_VERIFIED" for item in summary_rows):
+            return ["source CI summary contains an unverified image row"]
+        aggregate_blocking = sum(int(item.get("blocking_count") or 0) for item in summary_rows)
+        if int(summary.get("blocking_count") or 0) != aggregate_blocking:
+            return ["aggregate blocking count differs from per-image summary rows"]
+        aggregate_status = "FAIL" if aggregate_blocking else "PASS"
+        if summary.get("status") != aggregate_status:
+            return ["aggregate summary status differs from its blocking count"]
         database = summary.get("database") if isinstance(summary.get("database"), dict) else {}
         if str(database.get("updated_at") or "") != str(entry.get("db_updated_at") or ""):
             return ["db_updated_at differs from authentic CI summary"]
@@ -807,6 +818,15 @@ def verify_baseline_entry_ci_evidence(
         )
         if classified.get("status") == "NOT_VERIFIED":
             return ["raw CI evidence does not verify: " + str(classified.get("error") or "unknown error")]
+        expected_blocking = int(classified.get("blocking_count") or 0)
+        expected_status = "FAIL" if expected_blocking else "PASS"
+        if (
+            row.get("status") != expected_status
+            or int(row.get("blocking_count") or 0) != expected_blocking
+            or int(row.get("unscored_count") or 0) != int(classified.get("unscored_count") or 0)
+            or int(row.get("finding_row_count") or 0) != int(classified.get("finding_row_count") or 0)
+        ):
+            return ["per-image status or counts differ from canonical classification of CI raw evidence"]
         expected = sorted(blocking_findings(raw, classified), key=lambda item: key_tuple(item["key"]))
         if json.dumps(expected, sort_keys=True) != json.dumps(entry.get("findings"), sort_keys=True):
             return ["baseline findings differ from canonical classification of CI raw evidence"]

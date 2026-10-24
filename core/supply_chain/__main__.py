@@ -77,8 +77,30 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return 0 if report["ok"] else 1
     if args.command == "candidates":
+        import shutil
+        import subprocess
+
+        from core.supply_chain.candidates import load_version_database
+        from core.supply_chain.images import _trivy_invoke_prefix
+
         evidence = Path(args.evidence_dir).resolve() if args.evidence_dir else None
-        report = monitor_candidates(evidence_dir=evidence)
+        # Probe the live Trivy DB so reused evidence cannot outrun a fresher cache.
+        database: dict[str, str] = {}
+        version_args: list[str] = []
+        if shutil.which("trivy"):
+            version_args = ["trivy", "version", "--format", "json"]
+        elif shutil.which("docker"):
+            version_args = [*_trivy_invoke_prefix(use_docker=True), "version", "--format", "json"]
+        if version_args:
+            try:
+                completed = subprocess.run(
+                    version_args, capture_output=True, text=True, timeout=120, check=False
+                )
+                if completed.returncode == 0 and completed.stdout.strip():
+                    database = load_version_database(json.loads(completed.stdout))
+            except (OSError, TimeoutError, json.JSONDecodeError, ValueError):
+                database = {}
+        report = monitor_candidates(evidence_dir=evidence, database=database or None)
         text = json.dumps(report, indent=2)
         safe_write_text(args.output, text + "\n")
         print(text)

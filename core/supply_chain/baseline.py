@@ -862,7 +862,7 @@ def verify_github_approvals(
         if not isinstance(approval, dict):
             continue
         match = re.match(
-            r"^https://github\\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([1-9][0-9]*)$",
+            r"^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([1-9][0-9]*)$",
             str(approval.get("approval_ref") or ""),
         )
         if not match:

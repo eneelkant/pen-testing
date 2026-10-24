@@ -57,7 +57,7 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
 | Command | Exit | Result |
 |---|---|---|
-| `python3 -m pytest -q tests/unit` on this `0.2.0a18` tree | 0 | 226 passed |
+| `python3 -m pytest -q tests/unit` on this `0.2.0a18` tree | 0 | 227 passed |
 | `python3 -m compileall core integrations providers mcp_server installers` | 0 | compiled |
 | gitleaks | `NOT_VERIFIED` locally | gitleaks binary not installed in this environment |
 | `python3 -m core.supply_chain audit` | 0 | 24 components; metadata only |
@@ -66,6 +66,18 @@ Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 | `python3 -m core.supply_chain images --name python-3.12-probe` | 1 | `FAIL`, blocking 3 unscored; tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z (injected from `trivy version`) |
 | Host Trivy rescan of all pinned upstream images | 1 (expected) | Aggregate blocking 1069; see `docs/SECURITY_EXCEPTIONS.md` |
 | `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` / `79a6dea` succeeded for the runtime script markers |
+
+## CI on `d0b4a6f` (current PR head)
+
+PR run `40050425111` and push run `40050421096` on `d0b4a6f0d4a0d9b7b5412e6d8ccd1268bd21a7cb`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Python `FAIL` blocking **3** unscored (`DLA-4845-1`, `CVE-2026-82560`, `DLA-4854-1`); upstream `FAIL` blocking **1069**. Tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z recorded on both artifacts. Gate not waived |
 
 ## CI on `abfd437` (DB inject without cold-cache download)
 
@@ -77,9 +89,7 @@ PR run `40049776184` and push run `40049772354` on `abfd437de02046c69c08bca126be
 | Secret scanning (gitleaks) | success |
 | Dependency metadata check | success |
 | Docker build and runtime | **success** |
-| Pinned image vulnerability scans | **failure**. Python step `NOT_VERIFIED` (`UpdatedAt` missing: version probe ran on empty cache before DB download). Upstream step `FAIL` blocking **1069** with DB `UpdatedAt` 2026-10-23T19:15:43Z after the first scan warmed the shared cache. Gate not waived |
-
-Follow-up on this tree adds `--download-db-only` before the version probe so cold CI caches record real FAIL findings instead of hiding them behind missing DB metadata.
+| Pinned image vulnerability scans | **failure**. Python step `NOT_VERIFIED` (`UpdatedAt` missing: version probe ran on empty cache before DB download). Upstream step `FAIL` blocking **1069** after the first scan warmed the shared cache. Fixed by `--download-db-only` on `d0b4a6f` |
 
 ## CI on `79a6dea` (previous PR head before DB-metadata fix)
 

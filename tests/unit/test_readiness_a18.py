@@ -191,6 +191,32 @@ def test_image_mismatched_digest_is_not_verified():
     assert "digest" in report["error"]
 
 
+def test_image_empty_digests_are_not_verified_for_digest_pins():
+    doc = _trivy_doc(artifact="")
+    doc["Metadata"]["RepoDigests"] = []
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+    assert "digest" in report["error"]
+
+
+def test_image_tag_only_artifact_is_not_verified_for_digest_pins():
+    # Tag/name match without digest evidence must fail closed.
+    tag_only = PIN.split("@", 1)[0]
+    doc = _trivy_doc(artifact=tag_only)
+    doc["Metadata"]["RepoDigests"] = []
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+    assert "digest" in report["error"]
+
+
+def test_image_artifact_carrying_digest_without_repodigests_is_accepted():
+    doc = _trivy_doc(artifact=PIN, vulns=[])
+    doc["Metadata"]["RepoDigests"] = []
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "PASS"
+    assert report["blocking_count"] == 0
+
+
 def test_image_stale_created_at_is_not_verified():
     doc = _trivy_doc(created_at="2019-01-01T00:00:00Z")
     report = classify_trivy_document(doc, image=PIN, now=NOW)

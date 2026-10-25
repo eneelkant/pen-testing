@@ -238,29 +238,18 @@ def classify_trivy_document(
     if expected:
         reported = _report_digests(document)
         artifact = str(document.get("ArtifactName") or "")
-        # Accept either explicit digest metadata or an ArtifactName that carries
-        # the pinned repository/tag (local docker scans often omit RepoDigests).
-        digest_ok = any(expected in item or item.endswith(expected.split(":", 1)[-1]) for item in reported)
-        name_ok = False
-        if artifact:
-            pin_name = identity["repository"].split("/")[-1]
-            name_ok = identity["repository"] in artifact or (pin_name and pin_name in artifact)
-            if identity["tag"] and identity["tag"] in artifact:
-                name_ok = True
-        if reported and not digest_ok:
+        digest_hex = expected.split(":", 1)[-1]
+        # Digest-pinned images require digest evidence. Tag/name match alone is
+        # not identity: empty RepoDigests plus a floating tag must not PASS.
+        digest_ok = any(expected in item or item.endswith(digest_hex) for item in reported)
+        artifact_digest_ok = bool(artifact) and (expected in artifact or artifact.endswith(digest_hex))
+        if not digest_ok and not artifact_digest_ok:
             return _not_verified(
                 image,
                 "trivy report image digest does not match the pinned digest",
                 exit_code=exit_code,
                 artifact=artifact,
                 reported_digests=sorted(reported),
-            )
-        if not reported and not name_ok and artifact and artifact != image:
-            return _not_verified(
-                image,
-                "trivy report artifact identity does not match the pinned image",
-                exit_code=exit_code,
-                artifact=artifact,
             )
 
     clock = now or datetime.now(timezone.utc)

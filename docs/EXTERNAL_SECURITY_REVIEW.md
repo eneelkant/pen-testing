@@ -1,6 +1,6 @@
 # External security review plan
 
-This plan is a request list for a reviewer who is not an author of this repository. An internal reading of the code is not that review. No engagement has been commissioned.
+**Engagement status (2026-10-25):** No independent external security review has been commissioned or completed. This file remains a request list. An internal reading, AI-assisted audit, or repository self-review is **not** that review. Track remediation of any future findings through separate PRs with retest evidence. See also `docs/PRODUCTION_READINESS_PLAN.md` (gaps G10/G11) and the readiness scorecard on `main` @ `be3a023`.
 
 Priority is the order a reviewer should spend time. Each item names the question, the code to read, and the result that would change the scorecard.
 

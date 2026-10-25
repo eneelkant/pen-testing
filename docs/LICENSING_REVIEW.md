@@ -39,3 +39,29 @@
 ## Non-goals of automation
 
 CI cannot certify AGPL compliance. Passing tests must not be interpreted as legal clearance.
+
+## Dependency / container inventory for counsel (2026-10-25)
+
+This section is preparation only. It is **not** legal clearance.
+
+Generate the current Python inventory on the release candidate SHA:
+
+```bash
+python -m core.supply_chain audit
+python -m core.supply_chain emit --output /tmp/sbom.json
+```
+
+Expected on `0.2.0a18` / `be3a023`: metadata audit of **24** components; CycloneDX 1.5 SBOM with **24** components and no `vulnerabilities` array (OSV results are separate via `python -m core.supply_chain vuln`).
+
+| Artifact | Pin / digest | License notes for counsel |
+|---|---|---|
+| Orchestrator | Apache-2.0 (`LICENSE`) | Primary distribution license |
+| `@keygraph/shannon` | `3.4.0` | AGPL-3.0-only; not vendored; Docker worker |
+| `keygraph/shannon` image | `3.4.0@sha256:4e726ed8…` | Upstream worker image; absolute scan FAIL (inherited) |
+| `briar-pentest` | `0.4.62` | AGPL-3.0; Compose/`pip install` pin |
+| `temporalio/temporal` | `1.7.0@sha256:9c5b386d…` | Used by Shannon path; absolute scan FAIL |
+| `aquasec/trivy` | `0.76.0@sha256:2416d1f7…` | Supply-chain scanner image; absolute scan FAIL |
+| `zricethezav/gitleaks` | `v8.21.2@sha256:0e99e882…` | CI secret scan; absolute scan FAIL |
+| `python` base | `3.12.15-alpine3.24@sha256:b658b05c…` | Absolute scan PASS |
+
+Concrete questions for counsel remain in the numbered list above. Do not treat a green CI job or a merge regression-gate PASS as license approval.

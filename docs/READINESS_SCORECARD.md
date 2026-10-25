@@ -1,12 +1,31 @@
 # Readiness scorecard
 
-Review date: **2026-10-24** (Asia/Calcutta).
-Parent of this change: `origin/main` `9c02a031d05e1915393fa4e8db2f169739d51a69` (merge of PR #24, pluggy 1.7.0; earlier PR #22 was `312d858`).
-This document describes `0.2.0a18` on PR #23 (`cursor/readiness-gaps-87c9`). Local unit commands and host-Trivy image rescans were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine and gitleaks are not installed here, so Compose runtime markers remain `NOT_VERIFIED` locally.
+Review date: **2026-10-25** (Asia/Calcutta).
+Current `origin/main`: `be3a023cad79f86f2158d19784f4a8c03da192e5` (merge of PR #28 — Alpine Python pin + image regression baseline).
+Working plan: [`docs/PRODUCTION_READINESS_PLAN.md`](PRODUCTION_READINESS_PLAN.md). Historical rows below for `0.2.0a18` readiness-gap work remain for provenance.
 
-**Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images have fixed HIGH/CRITICAL findings and their digests were not changed. Classification: **`BLOCKED_BY_SECURITY_GATE`**.
+**Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images still fail the absolute image gate. Classification: **`BLOCKED_BY_SECURITY_GATE`**.
 
 Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
+
+## Current main `be3a023` (verified 2026-10-25)
+
+CI run [40153361168](https://github.com/eneelkant/pen-testing/actions/runs/40153361168):
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | success |
+| Pinned image regression gate | **success** (`inherited_blocking_count` 1085; `new_blocking_count` 0). Not a waiver |
+| Pinned image vulnerability scans | **failure**. Python PASS blocking 0; upstream FAIL blocking **1085** (Shannon 980 / Temporal 58 / Gitleaks 41 / Trivy 6). DB UpdatedAt `2026-10-25T01:20:33Z` |
+
+Branch protection on `main`: `protected: true`; five required checks listed above for **non-admins** (`enforcement_level: non_admins`). Absolute image scan is intentionally not a required merge check; release workflow still requires zero blocking findings. Admin bypass disable and “Require review from Code Owners” remain **administrator UI actions** (protection write API returned HTTP 403 for this agent).
+
+Baseline: `core/supply_chain/image_baseline.json` approved by `neelkantekbote-66degree` on PR #28; expires **2026-11-25T01:51:37Z**. Renew before expiry.
+
+Local re-verification on this tree (2026-10-25): unit suite **374 passed**; smoke PASS; OSV vuln PASS blocking 0; Python Alpine image PASS; `candidates` → `NO_ACCEPTABLE_CANDIDATE`. Docker Engine / gitleaks binary **NOT_VERIFIED** locally (green in CI).
 
 ## Milestones
 

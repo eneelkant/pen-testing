@@ -53,6 +53,21 @@ npm `@keygraph/shannon` latest remains `3.4.0`. No `3.5.0` / `3.4.1` tags on Doc
 
 `python -m core.supply_chain candidates` resolves the official Hub tags in `CANDIDATE_WATCH`, reuses fresh entries from `core/supply_chain/candidate_rejects.json` (and optional `--evidence-dir`), and scans only new digests. It never updates pins. Scheduled/manual workflow: `.github/workflows/image-candidate-monitor.yml`. Status values: `ACCEPTABLE_CANDIDATE`, `NO_ACCEPTABLE_CANDIDATE`, `NOT_VERIFIED`.
 
+### Fresh monitor 2026-10-25 (not a pin change)
+
+Host Trivy **0.76.0**, vulnerability DB `UpdatedAt` **2026-10-25T01:20:33.190884269Z** (`DownloadedAt` 2026-10-25T04:02:32Z). Command: `python -m core.supply_chain candidates`. Result: **`NO_ACCEPTABLE_CANDIDATE`**, `acceptable: []`.
+
+| Watched tip | linux/amd64 digest | Blocking | Unscored | Decision |
+|---|---|---:|---:|---|
+| `python:3.12-slim-bookworm` | `sha256:57d96f71…` | 2 | 2 | Rejected |
+| `python:3.13-slim-bookworm` | `sha256:4cea12ab…` | 6 | 2 | Rejected |
+| `python:3.12-alpine3.24` / Shannon tip | (pinned digests) | — | — | `SKIPPED_PINNED` |
+| `temporalio/temporal:latest` (=`1.9.1`) | `sha256:150d6208…` | 15 | 3 | Rejected; includes unscored `GO-2026-5932` (`golang.org/x/crypto`, empty FixedVersion) |
+| `zricethezav/gitleaks:latest` (=`v8.30.1`) | `sha256:b109bc5f…` | 78 | 6 | Rejected (worse than pin) |
+| `aquasec/trivy:latest` (=`0.76.1`) | `sha256:2e6c00d7…` | 4 | 3 | Rejected |
+
+Main CI absolute scan on `be3a023` (run `40153361168`): Python PASS 0; upstream FAIL **1085** (Shannon 980 / Temporal 58 / Gitleaks 41 / Trivy 6). Pins unchanged. No ignore file.
+
 ## Python base — fixed HIGH/CRITICAL still zero; unscored now visible
 
 Image: `python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258`

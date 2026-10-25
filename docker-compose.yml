@@ -38,7 +38,13 @@ services:
       PEN_ALLOW_SCOPE_DISABLE: "false"
       PEN_ALLOW_SHANNON_LIVE: "false"
       PEN_ALLOW_SHANNON_UNCONTAINED_NET: "false"
+      PEN_ALLOW_SHANNON_FULL_PIPELINE: "false"
       PEN_ALLOW_BRIAR_LIVE: "false"
+      # Supported deployment fails closed. The key comes from the host environment
+      # and is not written into this file or the image. An empty key makes doctor exit 1.
+      PEN_REQUIRE_DATA_ENCRYPTION: "true"
+      PEN_DOCTOR_STRICT: "true"
+      PEN_DATA_KEY: ${PEN_DATA_KEY:-}
       PEN_ALLOW_BRIAR_HOST_NET: "false"
       PEN_BRIAR_EXEC: "compose"
       # Provider keys: pass through from host env / .env — never bake into image
@@ -163,7 +169,7 @@ services:
   # Intentionally vulnerable local fixture for safe integration tests (no external targets).
   # On pen-control (orchestrator) and pen-scanner-live (authorized Briar compose path).
   fixture-headers:
-    image: python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
+    image: python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d
     profiles: ["fixtures"]
     user: "10001:10001"
     working_dir: /app

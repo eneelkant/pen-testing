@@ -9,8 +9,44 @@ permissions:
   contents: write
 
 jobs:
+  # Release gate (policy Option A): every pinned image must have zero blocking
+  # findings. The merge-time regression baseline is deliberately NOT used here.
+  absolute-image-gate:
+    name: Absolute pinned image gate (release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Scan every pinned image (zero blocking findings required)
+        run: python -m core.supply_chain images --raw-dir image-scan-raw --output image-scan-release.json
+
+      - name: Upload release image scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan-release
+          path: |
+            image-scan-release.json
+            image-scan-raw/
+          if-no-files-found: warn
+
   github-release:
     name: Create GitHub Release
+    needs: [absolute-image-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

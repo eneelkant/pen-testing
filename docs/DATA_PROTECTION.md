@@ -38,9 +38,28 @@ Cleanup considers regular `.json`, `.md`, `.sarif`, and `.log` files under the a
 | Authorization registry | `PEN_SCOPES_FILE` (default `scopes/registry.yaml`) | Same OS user | Operator-managed | Operator-managed |
 | Scanner container logs | Docker/Shannon/Briar, outside this process | Host Docker user | Upstream/engine default | Not cleaned by this CLI |
 
-When `PEN_DATA_KEY` is unset, files are plaintext. Set it to a Fernet key to encrypt assessment records and backup members that this process writes. `PEN_REQUIRE_DATA_ENCRYPTION=1` refuses plaintext reads and writes. The key is not printed by doctor. This is not disk encryption or a managed KMS. A copy of the key decrypts the files. Backups are `pen-testing backup --apply` into a directory you choose; restore requires `--apply` and stays inside the assessment and report directories.
+Local CLI use leaves files plaintext when `PEN_DATA_KEY` is unset. That is intentional so existing plaintext trees keep working. It is not the supported deployment.
 
-`pen-testing cleanup --apply` overwrites a regular file with zeros before unlink. That reduces leftover plaintext on some filesystems. It does not erase SSD wear-leveling, snapshots, or files that were already copied. Symlinks are still not deleted.
+The Compose orchestrator sets `PEN_REQUIRE_DATA_ENCRYPTION=true` and `PEN_DOCTOR_STRICT=true`. `PEN_DATA_KEY` is taken from the host environment (`${PEN_DATA_KEY:-}`) and is not written into the image or `docker-compose.yml`. Doctor exits 1 when the key is missing, not a Fernet key, or when `PEN_ALLOW_SHANNON_FULL_PIPELINE` is set. Generate a key with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` and keep it outside the repository. A copy of the key decrypts the files. This software has no key escrow: a lost key makes those ciphertext files unreadable. This is not disk encryption or a managed KMS.
+
+`PEN_REQUIRE_DATA_ENCRYPTION=1` refuses plaintext reads and writes. The key is not printed by doctor. A non-empty value that Fernet rejects is `invalid-key` and is not stored as plaintext.
+
+Backup and restore:
+
+```bash
+pen-testing backup --output /secure/backups/2026-10-18          # dry-run
+pen-testing backup --output /secure/backups/2026-10-18 --apply
+pen-testing restore --archive /secure/backups/2026-10-18        # dry-run
+pen-testing restore --archive /secure/backups/2026-10-18 --apply
+```
+
+The archive stays where you point `--output`. Create seals every member before writing a staging directory, then replaces the destination archive only after the manifest is complete. Restore path-checks, decrypts, and checksum-verifies every member before any destination file is replaced; commit uses per-file staging temps. A wrong key, invalid key, missing key under `PEN_REQUIRE_DATA_ENCRYPTION`, corrupt ciphertext, or mixed plaintext member in an encrypted archive raises an error and does not commit restored data. Restore writes only under the assessment and report directories, skips symlinks, and rejects manifest paths that leave that root. There is no backup scheduler in Compose. An operator cron job can call the same command; this repository does not install one. See `docs/OPERATIONS.md`.
+
+`pen-testing cleanup --apply` overwrites a regular file with zeros before unlink. That reduces leftover plaintext on some filesystems. It is not forensic erasure. It does not erase SSD wear-leveling, snapshots, or files that were already copied. Symlinks are still not deleted.
+
+Pattern redaction runs before assessment records are stored. It does not cover every secret shape. Logs written by Shannon, Briar, Temporal, or the container engine are outside this process and are not redacted here.
+
+The MCP server speaks stdio only. Calling it with `sse` or `streamable-http` raises `PermissionError` and does not bind a port. That is not multi-user authentication.
 
 ## Rate limits
 

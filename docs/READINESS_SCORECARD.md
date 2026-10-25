@@ -1,69 +1,190 @@
 # Readiness scorecard
 
-Review date: **2026-10-18**
-Baseline: `origin/main` `90664e86a0865585a0fa9f7c10f0111847fa5911` (PR #21 merged, package `0.2.0a14`).
-This document describes the `0.2.0a15` follow-up. Local commands below were run on this working tree before CI on the pushed SHA. CI on that SHA is the release gate.
+Review date: **2026-10-24** (Asia/Calcutta).
+Parent of this change: `origin/main` `9c02a031d05e1915393fa4e8db2f169739d51a69` (merge of PR #24, pluggy 1.7.0; earlier PR #22 was `312d858`).
+This document describes `0.2.0a18` on PR #23 (`cursor/readiness-gaps-87c9`). Local unit commands and host-Trivy image rescans were run on this working tree. CI on the pushed SHA is the release gate. Docker Engine and gitleaks are not installed here, so Compose runtime markers remain `NOT_VERIFIED` locally.
 
-**Verdict: not production-ready.** Legal clearance and independent security review have not happened.
+**Verdict: controlled testing.** Not a release candidate and not production-ready. Legal clearance and an independent security review have not happened. Upstream container images have fixed HIGH/CRITICAL findings and their digests were not changed. Classification: **`BLOCKED_BY_SECURITY_GATE`**.
 
-Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT VERIFIED`.
+Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
 ## Milestones
 
 ### 1. Authorization and scope — PARTIAL
 
-- Implemented: scope engine, egress independent of scope skip, `rate_limit_rps` on non-dry-run preflight, and `PEN_MAX_INFLIGHT_SCANS`. `0.2.0a15` adds a default dry-run for `pen-testing run` (`--live` is required to execute) and `PEN_SKIP_SCOPE_RATE_LIMIT_RPS` (default 1) for live scans that skip the registry.
-- Tests: `tests/unit/test_scope.py`, `tests/unit/test_rate_limit.py`, `tests/unit/test_readiness_followup.py`. Local suite on 2026-10-18: `198 passed, 1 skipped`.
-- Outstanding: limits are process-local and reset on exit. There is no multi-user authentication. The operator still maintains `scopes/registry.yaml`.
-- Next action: do not expose the CLI or MCP server as a shared service.
+- Implemented: scope engine, egress independent of scope skip, in-process rate and concurrency limits, CLI dry-run unless `--live`. MCP transports other than stdio raise `PermissionError` before a listener starts.
+- Tests: `tests/unit/test_scope.py`, `tests/unit/test_rate_limit.py`, `tests/unit/test_readiness_followup.py`, `tests/unit/test_readiness_a16.py`, `tests/unit/test_readiness_a18.py`. Full unit suite on this tree: `227 passed` (no skips in `tests/unit`).
+- Outstanding: limits are process-local. There is no multi-user authentication. The operator still maintains `scopes/registry.yaml`.
+- Next action: do not expose the CLI or MCP server as a shared service. A multi-user design needs its own review.
 
 ### 2. Network isolation — PARTIAL
 
-- Implemented: destination policy from `0.2.0a13`, Docker `Internal=true` worker networks, Shannon full pipeline default off. `0.2.0a15` makes the egress gateway connect to the IP approved in that same decision and checks every proxied redirect hop. Unit tests cover an allowlisted public answer and a hop to `169.254.169.254`.
-- Outstanding: a browser that ignores `HTTP(S)_PROXY` is not intercepted by the gateway. Internal networks are the connection boundary for that case. The Shannon CI path remains `--validate-model` with a local mock LLM, not a production-LLM exploit pipeline. Local Docker is not installed here, so runtime markers are CI evidence on the pushed SHA, not a local re-run.
-- Next action: read the Docker job on the release SHA. Leave `PEN_ALLOW_SHANNON_FULL_PIPELINE` unset.
+- Implemented: destination policy, Docker `Internal=true` worker networks, Shannon full pipeline default off, gateway connect-to-approved-address, proxied redirect recheck. Strict doctor fails when `PEN_ALLOW_SHANNON_FULL_PIPELINE` is set. Compose sets that variable to `false`.
+- Outstanding: a browser that ignores `HTTP(S)_PROXY` is not intercepted. Runtime markers in `scripts/docker_runtime_verify.sh` and `scripts/shannon_e2e_verify.sh` were not re-run here (`NOT_VERIFIED` locally). Prior CI on `ac712a4` printed `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`, `ORCHESTRATOR_STRICT_DOCTOR_OK`, and `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED`.
+- Next action: read the Docker job on the release SHA. Leave the full pipeline unset.
 
 ### 3. Secret handling — PARTIAL
 
-- Implemented: redaction before assessment writes, plus redaction of execution-result logs, errors, artifacts, and metadata in `to_dict`. Pattern coverage is unchanged (URL userinfo, JWT-like strings, AWS-key-like strings, GitHub and Slack tokens, `sk-` keys, PEM blocks, sensitive key names).
-- Tests: `tests/unit/test_ops_data_protection.py`, `tests/unit/test_readiness_followup.py`. Local gitleaks 8.21.2 `detect --no-git` exit 0.
-- Outstanding: pattern matching misses unknown formats. Shannon, Briar, and container logs that this process does not capture are not redacted.
-- Next action: keep secrets out of scanner configs. Rotate anything a future scan reports.
+- Implemented: pattern redaction of assessment records and of execution-result logs, errors, artifacts, and metadata.
+- Outstanding: unknown secret formats are not detected. Shannon, Briar, Temporal, and container-engine logs are outside this process.
+- Next action: keep provider keys out of scanner configs.
 
 ### 4. Report and file access — PARTIAL
 
-- Implemented: UUID assessment IDs, symlink refusal, export confinement, dry-run cleanup. `0.2.0a15` encrypts assessment records and backup members when `PEN_DATA_KEY` is set, refuses plaintext when `PEN_REQUIRE_DATA_ENCRYPTION=1`, and overwrites regular files before unlink. Backup and restore skip symlinks and reject manifest paths that leave the destination root.
-- Tests: `tests/unit/test_readiness_followup.py` (encrypt, required-plaintext refusal, backup symlink skip, restore checksum, traversal refusal, cleanup apply).
-- Outstanding: encryption is off unless the operator sets a key. It is not disk encryption. Overwrite is not a guarantee on SSDs or snapshots. Access control is the OS account running the process.
-- Next action: set `PEN_DATA_KEY` for any deployment that stores assessment files you cannot afford to leave plaintext. Do not commit the key.
+- Implemented: UUID assessment ids, symlink refusal, export confinement, Fernet encryption when `PEN_DATA_KEY` is a valid key, encrypted backup members, restore path checks. Compose requires encryption (`PEN_REQUIRE_DATA_ENCRYPTION=true`, key from the host environment). Strict doctor fails when encryption is off or the key is invalid. Local CLI use can still write plaintext when encryption is not required.
+- `0.2.0a18` adds atomic `safe_write_text`, all-or-nothing backup create via staging directory, and restore that decrypts/checksums every member before committing. Wrong-key and corrupt-member restores write nothing. Failed writes do not truncate existing valid files.
+- Tests cover invalid keys, strict failure without a key, multi-file wrong-key restore, checksum failure before commit, create-backup failure preserving an existing archive, and mixed plaintext members under an encrypted manifest.
+- Outstanding: not disk encryption, no key escrow, overwrite-before-unlink is not forensic erasure. Backup storage is the operator's host. Docker proof of the missing-key container exit is `NOT_VERIFIED` locally; the script contains `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`.
+- Next action: set `PEN_DATA_KEY` before `docker compose up`. Do not commit the key. See `docs/OPERATIONS.md` and `docs/DATA_PROTECTION.md`.
 
-### 5. Supply chain — PARTIAL
+### 5. Supply chain — FAIL
 
-- Implemented: CycloneDX SBOM without a `vulnerabilities` array, OSV query, and digest pins for the Python, Shannon worker, Temporal, Gitleaks, and Trivy images recorded in `core/supply_chain/images.py`. `cryptography==50.0.2` is pinned with `cffi==2.1.1` and `pycparser==3.11`.
-- Local evidence on 2026-10-18: audit exit 0, 24 components. OSV exit 0, `PASS`, `blocking_count` 0, `generated_at` `2026-10-18T01:22:03.473405+00:00`. Trivy 0.76.0 against `python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258` reported `PASS`, 0 fixed HIGH/CRITICAL, 63 unfixed HIGH/CRITICAL, `CreatedAt` `2026-10-18T01:22:03.774118549Z`. Unfixed findings do not fail the gate and are not a waiver.
-- CI on `d99f100` scanned `python:3.14-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83` and failed on four fixed HIGH findings: `GHSA-6v7p-g79w-8964` (msgpack 1.1.2, fix 1.2.1), `CVE-2025-47273` (setuptools 70.3.0, fix 78.1.1), `CVE-2026-97687` and `CVE-2026-97689` (urllib3 2.7.0, fix 2.8.0). The orchestrator image therefore uses the 3.12 digest above. That 3.14 digest is not a supported base.
-- Outstanding: counsel review is pending. A Python OSV pass does not cover container images. CI must scan the pinned Python bases on the release SHA.
-- Next action: send `docs/LICENSING_REVIEW.md` to qualified counsel. Keep the image scan failing closed on fixed HIGH/CRITICAL and on `NOT_VERIFIED`.
+- Python OSV and the CycloneDX SBOM behavior from `0.2.0a15` are unchanged. Local re-run on this tree: audit 24 components, emit CycloneDX 1.5 with 24 components, vuln `PASS` blocking 0.
+- Local host-Trivy rescan 2026-10-24 (Trivy 0.76.0, DB `UpdatedAt` 2026-10-23T19:15:43Z): pinned Python `FAIL`, `blocking_count` **3** unscored (`DLA-4845-1`, `CVE-2026-82560`, `DLA-4854-1`). Fixed HIGH/CRITICAL remains 0. Full report: 290 rows / 131 unique ids. Inventory in `docs/SECURITY_EXCEPTIONS.md`. Unfixed rows are not a waiver. Unscored rows are blocking under the documented gate.
+- Same local rescan of Shannon, Temporal, Gitleaks, and Trivy pins: `FAIL`, aggregate upstream `blocking_count` **1069** (642 fixed HIGH/CRITICAL + 427 unscored). Per image blocking: Shannon 967; Temporal 55; Gitleaks 41; Trivy 6. Digests were not moved. No ignore file was added.
+- Candidate tags rescanned 2026-10-24 (including Shannon Hub tip `9e53649e…`, Temporal `1.8.1`, Python `3.13`/`3.14-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / Hub `0.76.0` / `canary`) all still fail; none were adopted. See `docs/SECURITY_EXCEPTIONS.md`.
+- Reporting fix: Trivy image JSON omits `VulnerabilityDB`. Classification now requires DB `UpdatedAt` (from the report or a `trivy version --format json` probe). Missing DB metadata is `NOT_VERIFIED`, not PASS. CI logs print tool version and DB timestamps.
+- Automated watch: `python -m core.supply_chain candidates` + `.github/workflows/image-candidate-monitor.yml` (schedule/manual). Reuses `candidate_rejects.json`; never auto-pins.
+- Counsel review is pending.
+- Next action: wait for the candidate monitor (or a manual rescan) to report `ACCEPTABLE_CANDIDATE`, then run Shannon `--validate-model` and units before changing a pin. Do not add a Trivy ignore to turn CI green.
 
 ### 6. Operational reliability — PARTIAL
 
-- Implemented: retention cleanup, Compose non-root and capability drop, `pen-testing backup` / `restore`, and `PEN_DOCTOR_STRICT=1` which fails when the registry or a required encryption key is missing. Doctor reports encryption state and limit settings without the key.
-- Tests: backup and strict-doctor cases in `tests/unit/test_readiness_followup.py`. Worker restart evidence remains the Docker CI job, which was not re-run locally.
-- Outstanding: no external alerting, no scheduled deletion daemon, no multi-instance lock. Backup storage and key custody are the operator's job. There is no application database.
-- Next action: run backups on the schedule you choose and keep the archive with the same care as the source files.
+- Implemented: retention cleanup, backup/restore commands, Compose non-root and capability drop, strict doctor. Operator-run backup, key loss, storage ownership, and rollback are documented in `docs/OPERATIONS.md`. There is still no backup daemon and no external alerter. Strict mode is the fail-closed check the process can perform.
+- Outstanding: worker restart evidence is the Docker CI job (`NOT_VERIFIED` locally). No multi-instance lock. No application database.
+- Next action: run `pen-testing backup --apply` on a schedule you operate yourself, and store the archive with the key.
+
+## Local verification on this tree
+
+| Command | Exit | Result |
+|---|---|---|
+| `python3 -m pytest -q tests/unit` on this `0.2.0a18` tree | 0 | 237 passed |
+| `python3 -m compileall core integrations providers mcp_server installers` | 0 | compiled |
+| gitleaks | `NOT_VERIFIED` locally | gitleaks binary not installed in this environment |
+| `python3 -m core.supply_chain audit` | 0 | 24 components; metadata only |
+| `python3 -m core.supply_chain emit --output /tmp/sbom.json` | 0 | CycloneDX 1.5, 24 components, no `vulnerabilities` array |
+| `python3 -m core.supply_chain vuln` | 0 | `PASS`, `blocking_count` 0, `generated_at` `2026-10-24T01:22:01.554129+00:00` |
+| `python3 -m core.supply_chain images --name python-3.12-probe` | 1 | `FAIL`, blocking 3 unscored; tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z (injected from `trivy version`) |
+| Host Trivy rescan of all pinned upstream images | 1 (expected) | Aggregate blocking 1069; see `docs/SECURITY_EXCEPTIONS.md` |
+| `bash scripts/docker_runtime_verify.sh` | not run locally | `NOT_VERIFIED` locally (Docker not installed). Prior CI on `ac712a4` / `79a6dea` succeeded for the runtime script markers |
+
+## CI on `7b7614c` (current PR head)
+
+PR run `40050942802` and push run `40050940324` on `7b7614c6b6d6778f82f1d49bf3a0bceee2c101f2`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Python `FAIL` blocking **3** unscored; upstream `FAIL` blocking **1075**. Tool 0.76.0; DB `UpdatedAt` 2026-10-24T01:18:19Z. Gate not waived |
+
+## CI on `d0b4a6f` (download-db-only fix)
+
+PR run `40050425111` and push run `40050421096` on `d0b4a6f0d4a0d9b7b5412e6d8ccd1268bd21a7cb`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Python `FAIL` blocking **3** unscored; upstream `FAIL` blocking **1069**. Tool 0.76.0; DB `UpdatedAt` 2026-10-23T19:15:43Z. Gate not waived |
+
+## CI on `abfd437` (DB inject without cold-cache download)
+
+PR run `40049776184` and push run `40049772354` on `abfd437de02046c69c08bca126be4b3130913cef`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Python step `NOT_VERIFIED` (`UpdatedAt` missing: version probe ran on empty cache before DB download). Upstream step `FAIL` blocking **1069** after the first scan warmed the shared cache. Fixed by `--download-db-only` on `d0b4a6f` |
+
+## CI on `79a6dea` (previous PR head before DB-metadata fix)
+
+PR run `40008170156` and push run `40008162945`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** |
+| Pinned image vulnerability scans | **failure**. Genuine unscored/fixed findings. Artifacts uploaded. Gate not waived |
+
+## CI on `46ef944` (historical after job split)
+
+PR run `40007096658` and push run `40007085301`:
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker build and runtime | **success** (Compose + Shannon `--validate-model` path) |
+| Pinned image vulnerability scans | **failure**. Python `blocking_count` 2; upstream `blocking_count` 1068. Artifacts uploaded. Gate not waived |
+
+## CI diagnosis for older jobs named “Docker build and runtime” on `85ac470`
+
+PR run `40005558585` job `120592446563` and push run `40005547895` job `120592410406` shared one root cause. It was **not** a Compose/runtime defect:
+
+| Step | Result |
+|---|---|
+| Docker Engine / Compose / install | success |
+| Docker runtime verification (`scripts/docker_runtime_verify.sh`) | success |
+| Pinned base + upstream image scans | reports written; exits 1 |
+| Enforce pinned image scan gates | **failure** (`PYTHON_IMAGE_SCAN_EXIT=1`, `UPSTREAM_IMAGE_SCAN_EXIT=1`) |
+
+Python report: `blocking_count` 2 (unscored). Upstream report: `blocking_count` 1068. Artifacts uploaded. Gate not waived. Image scans were later moved to job `Pinned image vulnerability scans`.
+
+## CI on `85ac470` (PR #23)
+
+PR run `40005558585` (and push run `40005547895`):
+
+| Job / step | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker runtime verification | success |
+| Pinned base image vulnerability scan | step completed; report `FAIL`, `blocking_count` 2 (unscored). Artifact `image-scan-python` uploaded |
+| Pinned upstream image vulnerability scan | step completed; report `FAIL`, `blocking_count` 1068 (641 fixed HIGH/CRITICAL + 427 unscored). Artifact `image-scan-upstream` uploaded |
+| Enforce pinned image scan gates | failure (nonzero scan exits). Not waived |
+
+## CI on `4e8453d` (historical for this PR)
+
+PR run `40004715041`: unit/gitleaks/deps/runtime success; Python scan `FAIL` blocking 2; upstream scan skipped before the workflow fix; no upstream artifact on that head.
+
+## CI on prior PR head `ac712a4` (historical)
+
+Push/PR run `39089581237` (PR #23):
+
+| Job | Result |
+|---|---|
+| Lint and unit tests | success |
+| Secret scanning (gitleaks) | success |
+| Dependency metadata check | success |
+| Docker runtime verification | success. Log contains `ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED`, `ORCHESTRATOR_STRICT_DOCTOR_OK`, and `SHANNON_E2E_VALIDATE_MODEL_SUCCEEDED` |
+| Pinned base image vulnerability scan | success under the old HIGH/CRITICAL-only Trivy filter. Artifact `image-scan-python` uploaded |
+| Pinned upstream image vulnerability scan | failure, exit 1, `blocking_count` 612. Artifact `image-scan-upstream` uploaded after the failure |
 
 ## Release gates that remain mandatory
 
-1. Required CI checks green on the exact release SHA, including OSV and the pinned-image scan.
+1. Required CI checks green on the exact release SHA, including OSV, the Python base image scan, and the upstream image scan. The upstream scan is a known failure until those images are replaced without an ignore file.
 2. Repository review and branch protection, where GitHub enforces them.
-3. `PEN_ALLOW_SHANNON_FULL_PIPELINE` remains unset.
+3. `PEN_ALLOW_SHANNON_FULL_PIPELINE` remains unset. Strict doctor must fail if it is set.
 4. Counsel review of `docs/LICENSING_REVIEW.md`.
-5. No statement that multi-user auth, disk encryption, or in-engine browser containment exist.
+5. An external review against `docs/EXTERNAL_SECURITY_REVIEW.md`. This scorecard is not that review.
+6. No statement that multi-user auth, disk encryption, forensic erasure, or in-engine browser containment exist.
 
 ## What this scorecard does not claim
 
-- Production readiness
+- Production readiness or release-candidate status
 - Multi-tenant SaaS
 - Legal clearance
-- Independent security review
+- Independent security review (`docs/THREAT_MODEL.md` is an internal model)
 - Zero CVEs in container images

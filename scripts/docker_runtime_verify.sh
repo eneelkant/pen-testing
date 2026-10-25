@@ -37,6 +37,12 @@ RENDER="$(docker compose --profile workers --profile live-workers config)"
 echo "$RENDER" | grep -q 'pen-scanner-isolated' || die "missing pen-scanner-isolated network"
 echo "$RENDER" | grep -q 'pen-scanner-live' || die "missing pen-scanner-live network"
 echo "$RENDER" | grep -q 'internal: true' || die "expected internal: true on isolated scanner network"
+echo "$RENDER" | grep -E 'PEN_REQUIRE_DATA_ENCRYPTION: ("true"|true)' >/dev/null \
+  || die "compose must require data encryption"
+echo "$RENDER" | grep -E 'PEN_DOCTOR_STRICT: ("true"|true)' >/dev/null \
+  || die "compose must run doctor in strict mode"
+echo "$RENDER" | grep -E 'PEN_ALLOW_SHANNON_FULL_PIPELINE: ("false"|false)' >/dev/null \
+  || die "compose must keep the Shannon full pipeline off"
 # Refuse accidental docker.sock mounts in any service definition we ship.
 if echo "$RENDER" | grep -E '/var/run/docker.sock|docker.sock:'; then
   die "docker.sock mount must not appear in compose render"
@@ -56,8 +62,19 @@ docker compose --progress=plain build
 docker compose --profile workers --progress=plain build briar
 docker compose --profile live-workers --progress=plain build briar-live egress-gateway
 
-log "== orchestrator smoke (compose service: orchestrator) =="
-docker compose run --rm --no-deps orchestrator
+log "== orchestrator strict doctor fails closed without PEN_DATA_KEY =="
+set +e
+env -u PEN_DATA_KEY docker compose run --rm --no-deps -e PEN_DATA_KEY= orchestrator
+strict_rc=$?
+set -e
+test "$strict_rc" -ne 0 || die "strict doctor exited 0 without PEN_DATA_KEY"
+echo "ORCHESTRATOR_STRICT_MISSING_KEY_BLOCKED"
+
+log "== orchestrator smoke with an ephemeral encryption key =="
+EPHEMERAL_KEY="$(python3 -c 'import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+PEN_DATA_KEY="$EPHEMERAL_KEY" docker compose run --rm --no-deps orchestrator
+unset EPHEMERAL_KEY
+echo "ORCHESTRATOR_STRICT_DOCTOR_OK"
 
 log "== briar isolated worker smoke (no external egress network) =="
 docker compose --profile workers run --rm --no-deps briar
@@ -76,7 +93,7 @@ echo "PEN_SCANNER_ISOLATED_INTERNAL=true"
 # Probe uses the same Python base image already pulled for builds; no third-party scan.
 # Expect connection failure (egress blocked by internal:true).
 set +e
-PROBE_OUT="$(docker run --rm --network "$ISO_NET" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
+PROBE_OUT="$(docker run --rm --network "$ISO_NET" python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d \
   python -c 'import socket,sys
 try:
     socket.create_connection(("1.1.1.1", 443), timeout=3)
@@ -108,7 +125,7 @@ done
 test "$ready" -eq 1 || die "fixture-headers did not become ready"
 CTRL_NET="$(docker network ls --format '{{.Name}}' | grep -E 'pen-control$' | head -n1 || true)"
 test -n "$CTRL_NET" || die "could not locate pen-control docker network"
-CTRL_OUT="$(docker run --rm --network "$CTRL_NET" python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 \
+CTRL_OUT="$(docker run --rm --network "$CTRL_NET" python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d \
   python -c 'import socket,sys
 s=socket.create_connection(("fixture-headers",8080), timeout=5)
 s.close()

@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   # Never cancel in-flight verification on main (rapid merges previously cancelled
@@ -107,11 +109,6 @@ jobs:
       - name: Docker runtime verification
         run: bash scripts/docker_runtime_verify.sh
 
-      - name: Pinned base image vulnerability scan
-        run: |
-          set -euo pipefail
-          python -m core.supply_chain images --name python-3.12-probe
-
       - name: Collect Docker diagnostics on failure
         if: failure()
         run: |
@@ -132,6 +129,183 @@ jobs:
           docker rm -f pen-shannon-egress-gateway pen-shannon-fixture pen-shannon-llm-mock pen-shannon-redirect shannon-temporal || true
           docker ps -aq --filter "name=shannon-worker-" | xargs -r docker rm -f || true
           docker network rm shannon-net pen-shannon-egress pen-shannon-host || true
+
+  # Separate from Docker runtime so a vulnerability-gate failure is not reported
+  # as a Compose/runtime defect. The gate stays fail-closed.
+  image-scan:
+    name: Pinned image vulnerability scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Pinned base image vulnerability scan
+        run: |
+          set +e
+          python -m core.supply_chain images --name python-3.12-probe \
+            --raw-dir image-scan-raw/python \
+            --output image-scan-python.json
+          code=$?
+          echo "PYTHON_IMAGE_SCAN_EXIT=${code}" >> "$GITHUB_ENV"
+          test -f image-scan-python.json
+          SCAN_EXIT="${code}" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(Path("image-scan-python.json").read_text())
+          print(
+              "python_image_scan",
+              "status=", report.get("status"),
+              "blocking=", report.get("blocking_count"),
+              "rows=", report.get("finding_row_count"),
+              "unique=", report.get("unique_cve_count"),
+              "tool=", report.get("tool_version"),
+              "db=", (report.get("database") or {}).get("updated_at"),
+              "exit=", os.environ.get("SCAN_EXIT"),
+          )
+          PY
+
+      - name: Upload Python image scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan-python
+          path: image-scan-python.json
+          if-no-files-found: error
+
+      - name: Pinned upstream image vulnerability scan
+        if: always()
+        run: |
+          set +e
+          # Fixed HIGH/CRITICAL and unscored findings fail the gate. Do not add an
+          # ignore file to turn it green. Pins stay put until a replacement is
+          # compatibility-tested.
+          python -m core.supply_chain images \
+            --name shannon-worker \
+            --name temporal \
+            --name gitleaks \
+            --name trivy-scanner \
+            --raw-dir image-scan-raw/upstream \
+            --output image-scan-upstream.json
+          code=$?
+          echo "UPSTREAM_IMAGE_SCAN_EXIT=${code}" >> "$GITHUB_ENV"
+          test -f image-scan-upstream.json
+          SCAN_EXIT="${code}" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(Path("image-scan-upstream.json").read_text())
+          print(
+              "upstream_image_scan",
+              "status=", report.get("status"),
+              "blocking=", report.get("blocking_count"),
+              "rows=", report.get("finding_row_count"),
+              "unique=", report.get("unique_cve_count"),
+              "tool=", report.get("tool_version"),
+              "db=", (report.get("database") or {}).get("updated_at"),
+              "exit=", os.environ.get("SCAN_EXIT"),
+          )
+          for image in report.get("images") or []:
+              print(
+                  " ",
+                  image.get("pin_name") or image.get("name"),
+                  "blocking=", image.get("blocking_count"),
+                  "unscored=", image.get("unscored_count"),
+                  "status=", image.get("status"),
+                  "db=", (image.get("database") or {}).get("updated_at"),
+              )
+          PY
+
+      - name: Upload upstream image scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan-upstream
+          path: image-scan-upstream.json
+          if-no-files-found: error
+
+      # Canonical JSON serialized from each image's parsed Trivy document (not the
+      # original stdout bytes). The summaries above record the SHA-256 of each file's
+      # exact on-disk bytes under images[].raw_evidence so reviewers can re-classify
+      # raw findings instead of trusting the summary.
+      - name: Upload raw Trivy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan-raw
+          path: image-scan-raw/
+          if-no-files-found: error
+
+      - name: Enforce pinned image scan gates
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "python_image_scan_exit=${PYTHON_IMAGE_SCAN_EXIT:-missing}"
+          echo "upstream_image_scan_exit=${UPSTREAM_IMAGE_SCAN_EXIT:-missing}"
+          test -n "${PYTHON_IMAGE_SCAN_EXIT:-}"
+          test -n "${UPSTREAM_IMAGE_SCAN_EXIT:-}"
+          test "${PYTHON_IMAGE_SCAN_EXIT}" -eq 0
+          test "${UPSTREAM_IMAGE_SCAN_EXIT}" -eq 0
+
+  # Merge regression gate (policy Option B). Fails on any blocking finding that is
+  # not in the reviewed, digest-bound, unexpired baseline, on unknown digests, on
+  # invalid baselines, and on unverified scans. It never changes the absolute
+  # result above, which stays visible here and is the release gate (Option A).
+  # A green regression gate does not mean the images are free of vulnerabilities.
+  image-regression-gate:
+    name: Pinned image regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Reject pin and baseline changes in the same pull request
+        if: github.event_name == 'pull_request'
+        run: python -m core.supply_chain baseline guard --base-ref "${{ github.event.pull_request.base.sha }}"
+
+      - name: Regression gate against the reviewed baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python -m core.supply_chain images \
+            --baseline core/supply_chain/image_baseline.json \
+            --raw-dir image-regression-raw \
+            --output image-regression.json
+
+      - name: Upload regression gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-regression-gate
+          path: |
+            image-regression.json
+            image-regression-raw/
+          if-no-files-found: warn
 
   secret-scan:
     name: Secret scanning (gitleaks)

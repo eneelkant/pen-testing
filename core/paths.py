@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 
@@ -57,25 +58,50 @@ def confine_path(path: str | Path, roots: list[Path]) -> Path:
     return candidate
 
 
-def safe_write_text(path: str | Path, data: str, *, encoding: str = "utf-8") -> Path:
-    """Write text without following a symlink in the path (O_NOFOLLOW).
-
-    Parent directories are created only after the existing chain is checked.
-    If any component is a symlink, the write is refused.
-    """
-    dest = assert_no_symlink_in_chain(path)
+def _write_temp_text(dest: Path, data: str, *, encoding: str = "utf-8") -> Path:
+    """Write ``data`` to a new temp file beside ``dest`` without replacing ``dest``."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.is_symlink() or dest.parent.is_symlink():
+    if dest.parent.is_symlink():
         raise PermissionError(f"Refusing to write through symlink: {dest}")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    tmp = dest.parent / f".{dest.name}.tmp-{uuid.uuid4().hex}"
+    if tmp.exists() or tmp.is_symlink():
+        raise PermissionError(f"Refusing to reuse temp path: {tmp}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    fd = os.open(str(dest), flags, 0o644)
+    fd = os.open(str(tmp), flags, 0o644)
     try:
         with os.fdopen(fd, "w", encoding=encoding) as handle:
             handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
     except Exception:
-        # fd is owned by fdopen on success; on open failure we never get here.
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return tmp
+
+
+def safe_write_text(path: str | Path, data: str, *, encoding: str = "utf-8") -> Path:
+    """Atomically replace a regular file without following symlink path components.
+
+    Bytes are written to a same-directory temp file, then ``os.replace`` commits
+    them. A failure leaves the previous destination intact and removes only the
+    temp file.
+    """
+    dest = assert_no_symlink_in_chain(path)
+    if dest.is_symlink() or dest.parent.is_symlink():
+        raise PermissionError(f"Refusing to write through symlink: {dest}")
+    tmp = _write_temp_text(dest, data, encoding=encoding)
+    try:
+        os.replace(str(tmp), str(dest))
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
         raise
     return dest
 

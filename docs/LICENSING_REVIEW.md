@@ -1,9 +1,9 @@
 # Licensing review notes (Shannon / Briar AGPL)
 
-**Status:** Qualified counsel review is **pending**. Image digest pins do not change that. This document is not legal clearance.
-**Date:** 2026-10-17
+**Status:** Qualified counsel review is **pending**. Image digest pins and the stdio-only MCP guard do not change that. This document is not legal clearance.
+**Date:** 2026-10-18 (questions unchanged; stdio refusal noted under operator guidance)
 **Packages:** `@keygraph/shannon@3.4.0` (AGPL-3.0-only), `briar-pentest==0.4.62` (AGPL-3.0)
-**Also in the runtime path:** Temporal server image used by the Shannon E2E, `keygraph/shannon` worker image, Briar Compose image, `aquasec/trivy`, `zricethezav/gitleaks`. Their licenses are not cleared by this file.
+**Also in the runtime path:** Temporal server image `temporalio/temporal:1.7.0` (Shannon 3.4.0 compose runs that tag), `keygraph/shannon:3.4.0` worker image, Briar Compose image, `aquasec/trivy:0.76.0` when the supply-chain command has no local `trivy` binary, and `zricethezav/gitleaks:v8.21.2` for CI secret scanning. Gitleaks `v8.30.1` and Temporal `1.7.3` / `1.9.1` were scanned and not adopted. Their licenses are not cleared by this file.
 
 ## How this repository integrates them
 
@@ -34,6 +34,7 @@
 - Preserve `THIRD_PARTY_NOTICES.md` and upstream license texts in downstream distributions.
 - Do not remove or weaken AGPL notices to “make packaging easier.”
 - Treat public redistribution of combined images/services as needing legal sign-off before a production release claim.
+- `0.2.0a16` refuses MCP transports other than stdio. That reduces one way to expose the tools remotely. It does not answer questions 3 or 9.
 
 ## Non-goals of automation
 

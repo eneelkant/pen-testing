@@ -1,5 +1,82 @@
 # Changelog
 
+## Unreleased
+
+### Supply chain
+
+- Merge regression gate for pinned images (policy Option B): `python -m core.supply_chain images --baseline core/supply_chain/image_baseline.json` fails on blocking findings outside a reviewed, digest-bound baseline whose entries expire within 31 days and need owner approval; it also fails on unknown digests, platform or scanner changes, invalid baselines and unverified scans. New CI job "Pinned image regression gate". The absolute result is reported unchanged
+- `baseline candidate` builds entries only from verified CI artifacts (raw sha256, re-classification, identity, DB freshness); `baseline approve` prepares reviewer identity and expiry before review, while CI requires a real, non-self `APPROVED` review on the exact current PR head and verifies the source run plus downloaded raw/summary artifacts; `baseline guard` rejects a PR that changes an image pin together with its baseline entry
+- Release workflow now runs the absolute image gate (policy Option A) and publishes only if it passes
+- `.github/CODEOWNERS` covers the baseline, gate code and workflows. Effective only once branch protection requires code-owner review (`docs/IMAGE_BASELINE.md`)
+
+## 0.2.0a18 — 2026-10-23
+
+### Security
+
+- Backup create seals every member before any archive write, commits through a staging directory, and leaves an existing archive intact when sealing or staging fails
+- Restore decrypts and checksum-verifies every member before replacing any destination file. Staging temps are removed on commit failure. A wrong key or corrupt member writes nothing
+- `safe_write_text` writes to a same-directory temp file and `os.replace`s into place so a failed write does not truncate an existing record
+- Encrypted manifests refuse plaintext members when encryption is required
+
+### Supply chain
+
+- Image scan reports record repository, tag, digest, platform, scanner version, vulnerability-database metadata, scan timestamp, exit code, finding row counts, and unique CVE counts
+- Empty, schema-only, digest-mismatched, stale `CreatedAt`, missing or stale vulnerability-database `UpdatedAt`, and nonzero-exit-with-clean-body Trivy documents are `NOT_VERIFIED`
+- `scan_pinned_images` runs `trivy image --download-db-only`, then probes `trivy version --format json`, and injects vulnerability-DB timestamps into classification, because Trivy image JSON does not embed `VulnerabilityDB`
+- A cold cache that has not downloaded the DB yet is `NOT_VERIFIED` rather than a clean pass; Docker-backed Trivy runs share a named cache volume so download, version, and image scans use the same database
+- Trivy is invoked without a severity pre-filter so UNKNOWN/unscored rows remain visible to the classifier
+- CI runs the Python and upstream image scans independently, uploads both artifacts, then fails if either gate exits nonzero
+- Image vulnerability scans run in a separate CI job from Docker Compose runtime verification so a gate failure is not reported as a runtime defect
+- Branch includes merged `main` after PR #24 (`pluggy==1.7.0`)
+- Digests were not changed. The fixed HIGH/CRITICAL and unscored gates remain fail-closed
+- Candidate tags rescanned on 2026-10-24 with Trivy 0.76.0 still fail the gate; no pin moved. Additional Hub tips (Shannon `3.4.0` digest move, Temporal `1.8.1`, Python `3.13`/`3.14-slim-bookworm` / `3.12-slim`, Trivy `0.76.1` / canary) also fail. Python unscored rows checked against NVD/Debian; severities were not invented into the classifier
+- Added `python -m core.supply_chain candidates` and scheduled workflow `image-candidate-monitor.yml` to watch official Hub tags, reuse committed reject evidence, scan only new digests, and report `NO_ACCEPTABLE_CANDIDATE` without changing pins
+- Image remediation pass (2026-10-24): reproduced CI run `40066307720` (Python FAIL / upstream 1,075 blocking). Evaluated additional official digests including `python:3.12.13-slim-bookworm` and Temporal `1.7.3`; all rejected. Pins unchanged. See `docs/IMAGE_REMEDIATION.md`
+- Candidate evidence reuse matches fail-closed guarantees: exact digest/platform/`0.76.0` scanner, live `trivy version` DB probe required (age alone insufficient), pre-classified PASS without raw Trivy `Results` rejected, missing platform reported explicitly rather than defaulted
+- Pins are OCI index digests; `PINNED_IMAGES` now records each pin's registry-verified linux/amd64 child as `platform_digest`, and the candidate monitor treats that child as pinned. Correction: the earlier "Shannon `3.4.0` / Trivy `0.76.0` digest moved" notes were wrong — `9e53649e…` and `166061a4…` are the amd64 children of the existing pins
+- Pinned image scans pass `--platform linux/amd64` and mark a report NOT_VERIFIED when its image config is not linux/amd64, or when the report's own `Trivy.Version` is missing or not `0.76.0`. The local `trivy version` probe is kept as `probe_scanner_version` for diagnostics and no longer fills a missing report version (a pinned index scanned as arm64 reports identical RepoDigests)
+- `python -m core.supply_chain images --raw-dir DIR` writes each image's parsed Trivy document as canonical JSON (sorted keys; not a byte-for-byte copy of Trivy stdout) and records the SHA-256 of the exact bytes written to disk in the report; CI uploads these files as artifact `image-scan-raw`. Pins unchanged
+- Python base pin moved from `python:3.12-slim-bookworm@sha256:34386ef0…` (3 unscored blockers; perl-base CVE-2026-82560 has no Debian fix) to `python:3.12.15-alpine3.24@sha256:b658b05c…` (linux/amd64 child `9b98a8d3…`: 0 fixed HIGH/CRITICAL, 0 unscored with Trivy 0.76.0 on DB UpdatedAt 2026-10-24T07:11:13Z). `useradd` replaced by busybox `adduser -D -u <uid>`; UIDs 10001/10002/10003 unchanged
+
+### Notes
+
+- Counsel review is still pending. This release is not an independent audit
+- Not production-ready
+
+## 0.2.0a17 — 2026-10-18
+
+### Supply chain
+
+- Re-scanned the pinned Shannon, Temporal, Gitleaks, and Trivy digests with Trivy 0.76.0. The vulnerability database `UpdatedAt` was still 2026-10-17 18:34:28Z. Counts matched the previous scan. Digests were not changed
+- Candidate tags were scanned and rejected: Gitleaks `v8.30.1` had 60 fixed HIGH/CRITICAL findings, Temporal `1.7.3` had 25, and Temporal `1.9.1` had 7. npm `@keygraph/shannon` latest remains `3.4.0`. Trivy `0.76.0` is still the newest stable tag and still reports `CVE-2026-77214`. None of those candidates passed the fixed-finding gate, so no pin moved
+- An empty Trivy document is `NOT_VERIFIED` rather than a clean scan. Unscored image findings are blocking. A vendor status of `not_affected` is not a waiver. Withdrawn records are ignored
+- CI uploads `image-scan-python.json` and `image-scan-upstream.json` so a failing scan can be reviewed without scraping the log
+
+### Notes
+
+- Counsel review is still pending. This release is not an independent audit
+- Not production-ready
+
+## 0.2.0a16 — 2026-10-18
+
+### Security
+
+- The MCP entrypoint accepts stdio only. `sse` and `streamable-http` raise `PermissionError` before a listener starts. There is still no multi-user authentication
+- `PEN_DOCTOR_STRICT=1` now fails when assessment encryption is off, when `PEN_DATA_KEY` is not a Fernet key, or when `PEN_ALLOW_SHANNON_FULL_PIPELINE` is set. A required-but-missing key still fails
+- The Compose orchestrator sets `PEN_REQUIRE_DATA_ENCRYPTION=true`, `PEN_DOCTOR_STRICT=true`, and `PEN_DATA_KEY` from the host environment. The key is not stored in the image. `scripts/docker_runtime_verify.sh` expects doctor to fail without a key and then retries with an ephemeral key
+
+### Supply chain
+
+- Local Trivy 0.76.0 (vulnerability DB `UpdatedAt` 2026-10-17 18:34:28Z) reported fixed HIGH/CRITICAL findings in the pinned Shannon, Temporal, Gitleaks, and Trivy images. Digests were not moved. The CI image step scans those names and fails when fixed findings are present. Counts are in `docs/SECURITY_EXCEPTIONS.md`
+- `python:3.12-slim-bookworm` at `sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258` remains 0 fixed HIGH/CRITICAL and 63 unfixed HIGH/CRITICAL rows. Unfixed rows are not a waiver
+
+### Notes
+
+- Local CLI use can still leave encryption off. That path is not the supported deployment
+- Pattern redaction and upstream container logs are unchanged. Overwrite-before-delete is still not forensic erasure
+- Counsel review in `docs/LICENSING_REVIEW.md` is still pending. This release is not an independent audit
+- Not production-ready
+
 ## 0.2.0a15 — 2026-10-18
 
 ### Security

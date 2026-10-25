@@ -89,6 +89,36 @@ def test_invalid_url_rejected():
     assert "http" in result["reason"].lower()
 
 
+def test_mcp_local_scan_path_excludes_cwd(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    reports = tmp_path / "reports"
+    work.mkdir()
+    reports.mkdir()
+    monkeypatch.setenv("PEN_WORK_DIR", str(work))
+    monkeypatch.setenv("PEN_REPORTS_DIR", str(reports))
+    monkeypatch.chdir(tmp_path)
+    outside = tmp_path / "outside-src"
+    outside.mkdir()
+    # Path is under cwd but not under work/reports — MCP must refuse.
+    result = service._confine_local_scan_path(
+        service.resolve_platform_config(),
+        str(outside),
+        None,
+    )
+    assert isinstance(result, dict)
+    assert result.get("ok") is False
+    assert "outside allowed roots" in result.get("error", "")
+    inside = work / "src"
+    inside.mkdir()
+    confined = service._confine_local_scan_path(
+        service.resolve_platform_config(),
+        str(inside),
+        None,
+    )
+    assert isinstance(confined, str)
+    assert Path(confined) == inside.resolve()
+
+
 def test_config_backup_preserves_unrelated(tmp_path):
     path = tmp_path / "mcp.json"
     path.write_text(json.dumps({"mcpServers": {"other": {"command": "true"}}}), encoding="utf-8")

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Security
+
+- Trivy and Gitleaks Docker fallbacks use digest-pinned refs from `PINNED_IMAGES` (Trivy adapter no longer floats `0.58.1`)
+- Live preflight under `PEN_REQUIRE_SCOPE=false` + `PEN_ALLOW_SCOPE_DISABLE` still applies the unscoped rate limit
+- MCP local-path scanners confine to `work_dir` and `reports_dir` only (process cwd is not an authorized root)
+- Regression-gate and release absolute-image artifact uploads fail closed when files are missing (`if-no-files-found: error`)
+
 ### Supply chain
 
 - Merge regression gate for pinned images (policy Option B): `python -m core.supply_chain images --baseline core/supply_chain/image_baseline.json` fails on blocking findings outside a reviewed, digest-bound baseline whose entries expire within 31 days and need owner approval; it also fails on unknown digests, platform or scanner changes, invalid baselines and unverified scans. New CI job "Pinned image regression gate". The absolute result is reported unchanged

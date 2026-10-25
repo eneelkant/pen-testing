@@ -171,6 +171,18 @@ def test_trivy_docker_cmd_uses_network_none(tmp_path: Path):
     assert result.status == "succeeded"
     assert "--network" in captured["cmd"]
     assert "none" in captured["cmd"]
+    assert TrivyAdapter.image_ref in captured["cmd"]
+    assert "@sha256:" in TrivyAdapter.image_ref
+    assert TrivyAdapter.version_pin == "0.76.0"
+
+
+def test_scanner_adapter_image_refs_match_pinned_images():
+    from core.supply_chain.images import PINNED_IMAGES
+
+    pins = {item["name"]: item["ref"] for item in PINNED_IMAGES}
+    assert TrivyAdapter.image_ref == pins["trivy-scanner"]
+    assert GitleaksAdapter.image_ref == pins["gitleaks"]
+    assert "@sha256:" in GitleaksAdapter.image_ref
 
 
 def test_finding_redacts_userinfo_in_free_text():

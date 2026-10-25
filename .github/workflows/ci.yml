@@ -305,7 +305,7 @@ jobs:
           path: |
             image-regression.json
             image-regression-raw/
-          if-no-files-found: warn
+          if-no-files-found: error
 
   secret-scan:
     name: Secret scanning (gitleaks)

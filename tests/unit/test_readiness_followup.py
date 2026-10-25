@@ -110,6 +110,24 @@ def test_backup_skips_symlinks_and_restores_checksum(tmp_path: Path, monkeypatch
         restore_backup(archive, {"assessments": dest}, apply=True)
 
 
+def test_restore_refuses_existing_symlink_destination(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PEN_DATA_KEY", _key())
+    source = tmp_path / "assessments"
+    source.mkdir()
+    (source / "a.json").write_text('{"ok": true}\n', encoding="utf-8")
+    archive = tmp_path / "archive"
+    create_backup([source], archive, apply=True)
+    dest = tmp_path / "restored"
+    dest.mkdir()
+    outside = tmp_path / "escape.json"
+    outside.write_text("secret\n", encoding="utf-8")
+    (dest / "a.json").symlink_to(outside)
+    with pytest.raises(PermissionError, match="symlink"):
+        restore_backup(archive, {"assessments": dest}, apply=True)
+    assert outside.read_text(encoding="utf-8") == "secret\n"
+    assert (dest / "a.json").is_symlink()
+
+
 def test_cleanup_apply_removes_expired_file(tmp_path: Path):
     root = tmp_path / "reports"
     root.mkdir()

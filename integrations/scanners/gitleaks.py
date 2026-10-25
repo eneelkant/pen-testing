@@ -11,12 +11,16 @@ from core.execution import CommandRunner
 from core.findings import FindingLifecycle, VerificationState, normalize_generic_finding, redact_secrets
 from core.paths import confine_path
 from core.results import ExecutionResult
+from core.supply_chain.images import PINNED_IMAGES
 from integrations.base import AdapterRequest, SecurityAdapter
+
+_GITLEAKS_IMAGE_REF = next(item["ref"] for item in PINNED_IMAGES if item["name"] == "gitleaks")
 
 
 class GitleaksAdapter(SecurityAdapter):
     name = "gitleaks"
-    version_pin = "8.21.2"
+    version_pin = _GITLEAKS_IMAGE_REF.split("@", 1)[0].rsplit(":", 1)[-1].lstrip("v")
+    image_ref = _GITLEAKS_IMAGE_REF
     requires_active_scope = False  # operates on local filesystem path only
 
     def __init__(self, *args, runner: CommandRunner | None = None, **kwargs):
@@ -92,7 +96,7 @@ class GitleaksAdapter(SecurityAdapter):
                 "none",
                 "-v",
                 f"{repo.resolve()}:/src:ro",
-                f"zricethezav/gitleaks:v{self.version_pin}",
+                self.image_ref,
                 "detect",
                 "--source",
                 "/src",
@@ -114,7 +118,7 @@ class GitleaksAdapter(SecurityAdapter):
                 f"{repo.resolve()}:/src:ro",
                 "-v",
                 f"{out_dir.resolve()}:/out",
-                f"zricethezav/gitleaks:v{self.version_pin}",
+                self.image_ref,
                 "detect",
                 "--source",
                 "/src",

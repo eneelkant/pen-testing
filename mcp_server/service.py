@@ -93,7 +93,9 @@ def _looks_like_url_or_path(target: str, tool: str | None = None) -> tuple[bool,
 
 
 def _confine_local_scan_path(cfg: PlatformConfig, target: str, repo_path: str | None) -> str | dict[str, Any]:
-    roots = [Path(cfg.work_dir), Path(cfg.reports_dir), Path.cwd()]
+    # MCP must not treat the process cwd as an authorized scan root. Operators
+    # scanning arbitrary trees use the CLI adapters, which keep their own roots.
+    roots = [Path(cfg.work_dir), Path(cfg.reports_dir)]
     try:
         return str(confine_path(repo_path or target, roots))
     except PermissionError as exc:

@@ -76,6 +76,18 @@ Upstream aggregate **1085**. Artifact hashes recorded in evidence `MANIFEST.json
 | `bash scripts/docker_runtime_verify.sh` | **NOT_VERIFIED** locally (Docker Engine absent); green on main CI job |
 | Gitleaks binary | **NOT_VERIFIED** locally; green on main CI job |
 
+## Open PRs from this effort
+
+| PR | Branch | Purpose |
+|---|---|---|
+| [#30](https://github.com/eneelkant/pen-testing/pull/30) | `cursor/prod-readiness-plan-7e32` | This plan + evidence docs |
+| [#31](https://github.com/eneelkant/pen-testing/pull/31) | `cursor/image-digest-failclosed-7e32` | Digest identity fail-closed (G2) |
+| [#32](https://github.com/eneelkant/pen-testing/pull/32) | `cursor/security-hardening-gaps-7e32` | Adapters / rate limit / MCP / uploads (G3–G7) |
+| [#33](https://github.com/eneelkant/pen-testing/pull/33) | `cursor/codeowners-second-reviewer-7e32` | Propose second CODEOWNER (G9) |
+| [#34](https://github.com/eneelkant/pen-testing/pull/34) | `cursor/review-package-7e32` | Review bundle + counsel inventory (G10/G11 prep) |
+
+Independent review must be submitted on GitHub by an authorized human. This agent cannot approve PRs or request reviewers (API 403). Absolute image scan FAIL on these PRs is expected until G1 is cleared; it is not a required merge check.
+
 ## Phased work (this effort)
 
 1. **Docs / plan** — this file, scorecard update, IMAGE_BASELINE protection correction, exceptions/remediation reconciliation with fresh candidate evidence.  

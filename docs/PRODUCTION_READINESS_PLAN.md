@@ -100,7 +100,7 @@ Fresh reruns of the pinned-image regression gate on PRs **#31–#34** produced t
 | [#33](https://github.com/eneelkant/pen-testing/pull/33) | `cursor/codeowners-second-reviewer-7e32` | Propose second CODEOWNER (G9) |
 | [#34](https://github.com/eneelkant/pen-testing/pull/34) | `cursor/review-package-7e32` | Review bundle + counsel inventory (G10/G11 prep) |
 
-Independent review must be submitted on GitHub by an authorized human. This agent cannot approve PRs or request reviewers (API 403). Absolute image scan FAIL on these PRs is expected until G1 is cleared; it is not a required merge check.
+Independent review must be submitted on GitHub by an authorized human. A review request for @neelkantekbote-66degree was successfully submitted on 2026-10-26 for PRs #30–#34; no submitted reviews were present at this snapshot. This agent cannot approve on behalf of that reviewer. Absolute image scan FAIL on these PRs is expected until G1 is cleared; it is not a required merge check.
 
 ## Phased work (this effort)
 

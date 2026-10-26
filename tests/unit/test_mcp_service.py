@@ -141,3 +141,27 @@ def test_list_integrations_includes_shannon_briar():
     items = service.list_integrations()["integrations"]
     assert "shannon" in items
     assert "briar" in items
+
+
+def test_mcp_local_scan_path_refuses_traversal_and_symlink_escape(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    reports = tmp_path / "reports"
+    outside = tmp_path / "outside"
+    for directory in (work, reports, outside):
+        directory.mkdir()
+    monkeypatch.setenv("PEN_WORK_DIR", str(work))
+    monkeypatch.setenv("PEN_REPORTS_DIR", str(reports))
+    monkeypatch.chdir(tmp_path)
+    cfg = service.resolve_platform_config()
+
+    traversal = service._confine_local_scan_path(cfg, str(work / ".." / "outside"), None)
+    assert isinstance(traversal, dict) and traversal.get("ok") is False
+
+    link = work / "link"
+    link.symlink_to(outside, target_is_directory=True)
+    escaped = service._confine_local_scan_path(cfg, str(link), None)
+    assert isinstance(escaped, dict) and escaped.get("ok") is False
+
+    # repo_path takes precedence over target and is confined the same way.
+    via_repo = service._confine_local_scan_path(cfg, str(work), str(outside))
+    assert isinstance(via_repo, dict) and via_repo.get("ok") is False

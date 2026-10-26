@@ -255,3 +255,36 @@ def test_safe_write_refuses_symlink(tmp_path: Path):
     with pytest.raises(PermissionError, match="symlink"):
         export_json([], link)
     assert outside.read_text(encoding="utf-8") == "secret"
+
+
+def test_gitleaks_docker_fallback_uses_digest_pin_and_no_network(tmp_path: Path):
+    cfg = PlatformConfig(work_dir=tmp_path, reports_dir=tmp_path / "reports")
+    (tmp_path / "reports").mkdir()
+    target = tmp_path / "src"
+    target.mkdir()
+    adapter = GitleaksAdapter(cfg)
+    adapter.healthcheck = lambda: {"binary": None, "docker": "/usr/bin/docker", "healthy": True}  # type: ignore
+    commands: list = []
+
+    def fake_run(cmd, **kwargs):
+        commands.append(list(cmd))
+
+        class R:
+            ok = True
+            timed_out = False
+            returncode = 0
+            stderr = ""
+            stdout = ""
+
+        return R()
+
+    adapter.runner.run = fake_run  # type: ignore
+    adapter.run(AdapterRequest(target=str(target), dry_run=False))
+    docker_cmds = [cmd for cmd in commands if cmd and cmd[0].endswith("docker")]
+    assert docker_cmds, commands
+    for cmd in docker_cmds:
+        assert GitleaksAdapter.image_ref in cmd
+        assert cmd[cmd.index("--network") + 1] == "none"
+        # No floating tag reference may be used for the fallback image.
+        assert not any(arg.startswith("zricethezav/gitleaks:") and "@sha256:" not in arg for arg in cmd)
+    assert GitleaksAdapter.version_pin == "8.21.2"

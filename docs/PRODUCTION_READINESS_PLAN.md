@@ -43,17 +43,25 @@ Upstream aggregate **1085**. Artifact hashes recorded in evidence `MANIFEST.json
 
 ## Fresh CI re-scan on 2026-10-26 (PR #30 head)
 
-The updated Trivy database found new risk on the *same pinned image digests*. CI run [40294357096](https://github.com/eneelkant/pen-testing/actions/runs/40294357096), scan timestamp **2026-10-26T08:45:21Z**, DB UpdatedAt **2026-10-26T07:15:18.945937093Z**. Raw report artifact: [image-regression-gate](https://github.com/eneelkant/pen-testing/actions/runs/40294357096/artifacts/12636848958).
+The updated Trivy database found new risk on the *same pinned image digests*. CI run [40294357096](https://github.com/eneelkant/pen-testing/actions/runs/40294357096), scan timestamp **2026-10-26T08:44:38Z**, DB UpdatedAt **2026-10-26T07:15:18.945937093Z**. Raw report artifact: [image-regression-gate](https://github.com/eneelkant/pen-testing/actions/runs/40294357096/artifacts/12636848958).
 
 | Gate / image | Result | Detail |
 |---|---|---|
 | Merge regression gate | **FAIL** | 1 new blocking finding; 4 changed blocking findings; 1,081 inherited blockers |
 | Absolute image gate | **FAIL** | **1,086** blockers total; release remains blocked |
-| Shannon worker | **FAIL** | Four findings previously recorded as UNKNOWN/unscored are now HIGH: `CVE-2026-105481`, `CVE-2026-106072`, `CVE-2026-106073`, `CVE-2026-106074`, all in `nodejs-22` `22.23.2-r1`; report lists fix `22.23.4-r0` |
-| Trivy scanner | **FAIL** | New HIGH `CVE-2026-92392` in `libcurl` `8.22.0-r0`; report lists fix `8.23.0-r0`. See the [curl advisory](https://curl.se/docs/CVE-2026-92392.html) |
+| Shannon worker — Node.js | **FAIL** | Four OS-package rows classified HIGH by the scan: `CVE-2026-105481`, `CVE-2026-106072`, `CVE-2026-106073`, `CVE-2026-106074`. Package: Wolfi `nodejs-22`, installed `22.23.2-r1`, fixed version reported by Trivy `22.23.4-r0`; these are **not npm dependency rows**. Node.js published the 22.23.4 security release on 2026-10-21 ([official release notes](https://github.com/nodejs/nodejs.org/blob/main/apps/site/pages/en/blog/release/v22.23.4.md)). |
+| Shannon worker — curl | **FAIL** | The same scan reports `CVE-2026-92392` twice: `curl` and `libcurl-openssl4`, both Wolfi package `8.22.0-r4`; fixed version `8.23.0-r0`. |
+| Trivy scanner — libcurl | **FAIL** | `CVE-2026-92392` in Alpine `libcurl` `8.22.0-r0`; fixed version `8.23.0-r0`. See the [curl security advisory](https://curl.se/docs/CVE-2026-92392.html). |
 | Temporal / Gitleaks | Inherited risk remains | 58 / 41 blockers respectively; absolute gate still fails |
 
-Fresh reruns of the pinned-image regression gate on PRs **#31–#34** produced the same fail result. This is a real vulnerability-data change, not a merge conflict or flaky unit test. Do **not** silence the gate or automatically add these findings to the approved baseline. Next step is either verified remediation on the exact pinned digests or a separately reviewed baseline refresh that explicitly acknowledges the risk. A baseline refresh alone does **not** satisfy the zero-blocker release requirement.
+## Candidate digest decision (2026-10-26)
+
+**No image pin was changed.** The current Docker Hub tags page lists Shannon `latest` and `3.4.0` at the same `linux/amd64` digest as the pinned image (`sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a)); it was last pushed about 18 days before this check ([Docker Hub tags](https://hub.docker.com/r/keygraph/shannon/tags)). That is the same image, not a patched replacement, and it predates the Node.js 22.23.4 security release. Re-pinning the same digest or switching the floating tag to `latest` would not fix the findings.
+
+The repository's last recorded candidate evidence (Trivy DB UpdatedAt **2026-10-24T01:18:19Z**) rejected Trivy `0.76.1` (4 blocking, 3 unscored) and `canary` (3 blocking, 3 unscored). These old results are **not** fresh enough to certify an updated candidate against the 2026-10-26 database. The Actions run history checked on 2026-10-26 showed no completed `image-candidate-monitor` run, so a fresh candidate scan plus runtime validation is still required before changing either pin.
+
+The regression failures on PRs **#31–#34** reproduce the same findings on the current pinned digests. This is a vulnerability-intelligence change, not a merge conflict or a flaky unit test. **Do not silence the gate or add findings to the accepted baseline to make CI green.** The next safe step is a fresh raw Trivy scan of newly published, immutable candidates; accept only a candidate with zero fixed HIGH/CRITICAL and zero unscored rows, then run the documented build/runtime tests (including Shannon `--validate-model`). If upstream has not published an acceptable digest, leave the pin untouched and keep merge/release blocked rather than claiming remediation.
+
 
 ## Gap register
 

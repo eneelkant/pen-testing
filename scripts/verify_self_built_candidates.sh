@@ -17,16 +17,24 @@ TAG="$(printf '%s' "$SHA" | cut -c1-12 | tr '[:upper:]' '[:lower:]')"
 SHANNON_IMAGE="local/shannon-worker-candidate:$TAG"
 TRIVY_CANDIDATE_IMAGE="local/trivy-scanner-candidate:$TAG"
 mkdir -p candidate-reports "$HOME/.cache/trivy"
+# Preserve a file so CI can upload diagnostics even when the first build fails.
+printf '%s\n' "candidate build started for $SHA" > candidate-reports/build-status.txt
 
 log() { printf '%s\n' "$*"; }
 
 log "== build candidate images for linux/amd64 =="
-docker build --pull --platform linux/amd64 \
+if ! docker build --pull --platform linux/amd64 \
   --file docker/candidates/shannon/Dockerfile \
-  --tag "$SHANNON_IMAGE" .
-docker build --pull --platform linux/amd64 \
+  --tag "$SHANNON_IMAGE" 2>&1 | tee candidate-reports/shannon-build.log; then
+  printf '%s\n' "Shannon candidate build failed; see shannon-build.log. No pin changed." >> candidate-reports/build-status.txt
+  exit 1
+fi
+if ! docker build --pull --platform linux/amd64 \
   --file docker/candidates/trivy/Dockerfile \
-  --tag "$TRIVY_CANDIDATE_IMAGE" .
+  --tag "$TRIVY_CANDIDATE_IMAGE" 2>&1 | tee candidate-reports/trivy-build.log; then
+  printf '%s\n' "Trivy candidate build failed; see trivy-build.log. No pin changed." >> candidate-reports/build-status.txt
+  exit 1
+fi
 
 log "== assert constrained packages are present in Shannon candidate =="
 docker run --rm --platform linux/amd64 --entrypoint /bin/sh "$SHANNON_IMAGE" -ec \

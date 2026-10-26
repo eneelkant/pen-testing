@@ -144,7 +144,7 @@ jobs:
             local log_file="$4"
             local target_tag="$target:$tag"
             docker tag "$local_ref" "$target_tag"
-            docker push "$target_tag" 2>&1 | tee "$log_file"
+            docker push "$target_tag" 2>&1 | tee "$log_file" >&2
             local digest
             digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' "$log_file" | tail -n1)"
             test -n "$digest" || { echo "::error::Registry push did not return a manifest digest for $target_tag"; exit 1; }

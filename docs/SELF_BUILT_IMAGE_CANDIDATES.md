@@ -12,6 +12,10 @@ The candidate Dockerfiles layer security-package upgrades over the existing immu
 
 The version constraints intentionally make the build fail if the package repositories cannot supply the required fixed versions. The base image digests in the candidate Dockerfiles are explicit. Do not replace them with tags or change core/supply_chain/images.py in this PR.
 
+## Observed CI blocker (2026-10-26)
+
+The first candidate workflow run confirms that the current Wolfi package index still resolves `nodejs-22` to `22.23.2-r1`. The Shannon candidate build therefore fails the explicit `nodejs-22>=22.23.4-r0` constraint. This is an expected fail-closed result, not a patched image. Do not weaken the constraint or merge this draft as though remediation succeeded. A follow-up must either wait for the fixed package to become available or implement and independently verify a reproducible source/package build that maintains package provenance. The same workflow run also shows the existing pinned-image regression gate failing against the current vulnerability database; that gate must not be bypassed to merge this PR.
+
 ## Verification and publication
 
 .github/workflows/self-built-image-candidates.yml builds both images for linux/amd64, records raw Trivy reports, checks freshness / scanner / platform / raw-result integrity, and runs the project's controlled Shannon Temporal + worker --validate-model E2E against the local mock fixtures.

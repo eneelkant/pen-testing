@@ -51,7 +51,7 @@ python -m core.supply_chain audit
 python -m core.supply_chain emit --output /tmp/sbom.json
 ```
 
-Expected on `0.2.0a18` / `be3a023`: metadata audit of **24** components; CycloneDX 1.5 SBOM with **24** components and no `vulnerabilities` array (OSV results are separate via `python -m core.supply_chain vuln`).
+Expected on `0.2.0a18` / `be3a023` (re-verified 2026-10-26): metadata audit of **24** requirements; CycloneDX 1.5 SBOM with **24** components and no `vulnerabilities` array (OSV results are separate via `python -m core.supply_chain vuln`).
 
 | Artifact | Pin / digest | License notes for counsel |
 |---|---|---|

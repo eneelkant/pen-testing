@@ -1,7 +1,7 @@
 # Independent review bundle (preparation)
 
 **Date:** 2026-10-25 (Asia/Calcutta)  
-**Head described:** `main` @ `be3a023cad79f86f2158d19784f4a8c03da192e5` plus open readiness PRs  
+**Head described:** `main` @ `be3a023cad79f86f2158d19784f4a8c03da192e5` plus open readiness PRs (re-check `main` before starting)  
 **Status:** Bundle for a human reviewer. **Not** a completed external security review. **Not** legal clearance.
 
 ## Scope
@@ -27,18 +27,18 @@ Single-operator authorized-testing orchestrator: stdio MCP, Docker Compose, Shan
 | Supply chain | `core/supply_chain/images.py`, `baseline.py`, `image_baseline.json` |
 | CI / release | `.github/workflows/ci.yml`, `release.yml`, `image-candidate-monitor.yml` |
 
-## Runtime / CI evidence (verified)
+## Review status
 
-| Check | Result | Evidence |
-|---|---|---|
-| Unit tests (local) | PASS 374–378 depending on open PR head | `pytest tests/unit` |
-| Main CI `40153361168` | Lint/Docker/Gitleaks/Deps/Regression **success**; Absolute images **failure** | GitHub Actions |
-| Absolute upstream | Shannon 980 / Temporal 58 / Gitleaks 41 / Trivy 6 = **1085** | `image-scan-upstream` artifact |
-| Python Alpine pin | PASS blocking 0 | same run |
-| Candidates 2026-10-25 | `NO_ACCEPTABLE_CANDIDATE` | host Trivy DB UpdatedAt 2026-10-25T01:20:33Z |
-| Baseline | Approved `neelkantekbote-66degree`; expires 2026-11-25 | `image_baseline.json` |
+| Review | Status |
+|---|---|
+| Independent external security review | **Not commissioned, not completed.** `docs/EXTERNAL_SECURITY_REVIEW.md` is a request list only. |
+| Qualified counsel licence review | **Not commissioned, not completed.** `docs/LICENSING_REVIEW.md` lists the questions. |
+| Maintainer PR reviews on GitHub | Per-PR code review by an independent maintainer. These are **not** an external security review and are tracked on each PR, not here. |
+| Internal / AI-assisted audits | Engineering input only. Not a substitute for either review above. |
 
-Raw scanner JSON from CI should be downloaded by the reviewer (`gh run download 40153361168`). Do not treat inherited baseline findings as fixed.
+## Runtime / CI evidence
+
+Current gate results, counts, run links and candidate decisions are maintained in one place: `docs/PRODUCTION_READINESS_PLAN.md` ("Current state"). This bundle does not repeat them, so it cannot drift from that record. The reviewer should download raw scanner JSON from the linked runs (`gh run download <run-id>`) rather than rely on summaries, and should not treat inherited baseline findings as fixed.
 
 ## Remaining known risks (not waived)
 

@@ -117,7 +117,10 @@ echo "$NOPROXY_PROBE" | grep -q SHANNON_NET_NOPROXY_DIRECT_BLOCKED || die "missi
 
 log "== prove real Shannon worker image on shannon-net (if pullable) =="
 SHANNON_IMAGE="${PEN_SHANNON_WORKER_IMAGE:-keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e}"
-if docker pull "$SHANNON_IMAGE" >/tmp/shannon-pull.log 2>&1; then
+# A locally built candidate (PEN_SHANNON_WORKER_IMAGE) exists only in the local
+# daemon and cannot be pulled; digest-pinned refs are immutable, so a present
+# local copy is the same image.
+if docker image inspect "$SHANNON_IMAGE" >/dev/null 2>&1 || docker pull "$SHANNON_IMAGE" >/tmp/shannon-pull.log 2>&1; then
   set +e
   REAL_PROBE="$(docker run --rm --network "$NET_NAME" --entrypoint node \
     -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \

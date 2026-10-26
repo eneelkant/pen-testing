@@ -41,6 +41,20 @@ Upstream aggregate **1085**. Artifact hashes recorded in evidence `MANIFEST.json
 
 **Release blocker remains.** Pins stay. Do not seed baselines for candidates that should be clean.
 
+## Fresh CI re-scan on 2026-10-26 (PR #30 head)
+
+The updated Trivy database found new risk on the *same pinned image digests*. CI run [40294357096](https://github.com/eneelkant/pen-testing/actions/runs/40294357096), scan timestamp **2026-10-26T08:45:21Z**, DB UpdatedAt **2026-10-26T07:15:18.945937093Z**. Raw report artifact: [image-regression-gate](https://github.com/eneelkant/pen-testing/actions/runs/40294357096/artifacts/12636848958).
+
+| Gate / image | Result | Detail |
+|---|---|---|
+| Merge regression gate | **FAIL** | 1 new blocking finding; 4 changed blocking findings; 1,081 inherited blockers |
+| Absolute image gate | **FAIL** | **1,086** blockers total; release remains blocked |
+| Shannon worker | **FAIL** | Four findings previously recorded as UNKNOWN/unscored are now HIGH: `CVE-2026-105481`, `CVE-2026-106072`, `CVE-2026-106073`, `CVE-2026-106074`, all in `nodejs-22` `22.23.2-r1`; report lists fix `22.23.4-r0` |
+| Trivy scanner | **FAIL** | New HIGH `CVE-2026-92392` in `libcurl` `8.22.0-r0`; report lists fix `8.23.0-r0`. See the [curl advisory](https://curl.se/docs/CVE-2026-92392.html) |
+| Temporal / Gitleaks | Inherited risk remains | 58 / 41 blockers respectively; absolute gate still fails |
+
+Fresh reruns of the pinned-image regression gate on PRs **#31–#34** produced the same fail result. This is a real vulnerability-data change, not a merge conflict or flaky unit test. Do **not** silence the gate or automatically add these findings to the approved baseline. Next step is either verified remediation on the exact pinned digests or a separately reviewed baseline refresh that explicitly acknowledges the risk. A baseline refresh alone does **not** satisfy the zero-blocker release requirement.
+
 ## Gap register
 
 | ID | Severity | Gap | Root cause | Remediation | Acceptance test | PR / owner |

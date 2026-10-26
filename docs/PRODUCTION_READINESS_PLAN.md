@@ -12,7 +12,7 @@ This document tracks gaps, owners, and acceptance tests. It does not waive findi
 |---|---|
 | `origin/main` SHA | `be3a023cad79f86f2158d19784f4a8c03da192e5` (merge of PR #28) |
 | Version | `0.2.0a18` (alpha / controlled testing) |
-| Open PRs | none |
+| Open PRs at evidence snapshot | none before this follow-on series; PRs #30–#34 were opened as this plan and related work were prepared |
 | Open issues | none |
 | GitHub Releases / tags | none |
 | Latest main CI | run [40153361168](https://github.com/eneelkant/pen-testing/actions/runs/40153361168) (2026-10-25 07:39:14 Asia/Calcutta) |
@@ -21,7 +21,7 @@ This document tracks gaps, owners, and acceptance tests. It does not waive findi
 | Regression gate | **success**, `inherited_blocking_count` **1085**, `new_blocking_count` 0 |
 | Baseline | `core/supply_chain/image_baseline.json` — 4 entries (Shannon/Temporal/Gitleaks/Trivy); `approved_by=neelkantekbote-66degree`; `approval_ref` PR #28; `expires_at=2026-11-25T01:51:37Z` (~30.9 days remaining); source run `40119376385` @ `f7cbcc0…` |
 | Branch protection API write / GraphQL rules | HTTP **403** for this integration — admin bypass (`enforcement_level: non_admins`) **not** changed here |
-| CODEOWNERS | `.github/CODEOWNERS` lists only `@eneelkant` |
+| CODEOWNERS at base SHA | `.github/CODEOWNERS` lists only `@eneelkant`; PR #33 proposes a second owner and is pending independent acceptance/review |
 
 ### Absolute image findings (CI run 40153361168)
 

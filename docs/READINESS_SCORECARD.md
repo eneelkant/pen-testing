@@ -8,6 +8,8 @@ Working plan: [`docs/PRODUCTION_READINESS_PLAN.md`](PRODUCTION_READINESS_PLAN.md
 
 Statuses used here: `PASS`, `PARTIAL`, `BLOCKED`, `FAIL`, `NOT_VERIFIED`.
 
+> **Superseded on 2026-10-26.** The Trivy DB update of 2026-10-26T07:15:18Z made the merge regression gate fail on these same digests (1 new, 4 changed blocking findings; absolute total 1,086). Current state and evidence: [`docs/PRODUCTION_READINESS_PLAN.md`](PRODUCTION_READINESS_PLAN.md#current-state-verified-2026-10-26).
+
 ## Current main `be3a023` (verified 2026-10-25)
 
 CI run [40153361168](https://github.com/eneelkant/pen-testing/actions/runs/40153361168):

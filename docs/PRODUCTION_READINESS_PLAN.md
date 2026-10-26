@@ -1,129 +1,102 @@
 # Production readiness plan
 
-**Status:** Working plan for `0.2.0a18` on `main` @ `be3a023cad79f86f2158d19784f4a8c03da192e5`.  
-**Verdict:** Controlled testing. **Not production-ready.** Absolute image gate blocks any release tag.  
-**Plan date:** 2026-10-25 (Asia/Calcutta). Evidence under `/tmp/prod-readiness-evidence/latest/` (not committed).
+**Status:** Working plan for `0.2.0a18` on `main` @ `be3a023cad79f86f2158d19784f4a8c03da192e5`.
 
-This document tracks gaps, owners, and acceptance tests. It does not waive findings, invent approvals, or authorize a release.
+**Verdict:** Controlled testing. **Not production-ready.** The absolute image gate blocks any release tag.
 
-## Verified starting state (2026-10-25)
+**Last verified:** 2026-10-26 (UTC), against GitHub Actions runs linked below. Earlier dated sections are kept for provenance and are marked as superseded.
+
+This document tracks gaps, owners, and acceptance tests. It does not waive findings, invent approvals, or authorize a release. Live PR and review status belongs on GitHub, not here.
+
+## Current state (verified 2026-10-26)
 
 | Item | Evidence |
 |---|---|
 | `origin/main` SHA | `be3a023cad79f86f2158d19784f4a8c03da192e5` (merge of PR #28) |
 | Version | `0.2.0a18` (alpha / controlled testing) |
-| Open PRs at evidence snapshot | none before this follow-on series; PRs #30–#34 were opened as this plan and related work were prepared |
-| Open issues | none |
 | GitHub Releases / tags | none |
-| Latest main CI | run [40153361168](https://github.com/eneelkant/pen-testing/actions/runs/40153361168) (2026-10-25 07:39:14 Asia/Calcutta) |
-| Required merge checks (non-admins) | `Pinned image regression gate`, `Lint and unit tests`, `Docker build and runtime`, `Secret scanning (gitleaks)`, `Dependency metadata check` — `branches/main` reports `protected: true`, `enforcement_level: non_admins` |
-| Absolute image job | **failure** (not a required merge check; required for release) |
-| Regression gate | **success**, `inherited_blocking_count` **1085**, `new_blocking_count` 0 |
-| Baseline | `core/supply_chain/image_baseline.json` — 4 entries (Shannon/Temporal/Gitleaks/Trivy); `approved_by=neelkantekbote-66degree`; `approval_ref` PR #28; `expires_at=2026-11-25T01:51:37Z` (~30.9 days remaining); source run `40119376385` @ `f7cbcc0…` |
-| Branch protection API write / GraphQL rules | HTTP **403** for this integration — admin bypass (`enforcement_level: non_admins`) **not** changed here |
-| CODEOWNERS at base SHA | `.github/CODEOWNERS` lists only `@eneelkant`; PR #33 proposes a second owner and is pending independent acceptance/review |
+| Required merge checks (non-admins) | `Pinned image regression gate`, `Lint and unit tests`, `Docker build and runtime`, `Secret scanning (gitleaks)`, `Dependency metadata check`. `GET branches/main` reports `protected: true`, `enforcement_level: non_admins`. Review-requirement settings (code-owner review, stale-review dismissal) are **not readable** with this integration's token (HTTP 403) and are therefore not claimed here. |
+| Vulnerability DB | Trivy 0.76.0, DB `UpdatedAt` **2026-10-26T07:15:18Z** |
+| Absolute image gate | **FAIL**, 1,086 blockers on the unchanged pinned digests (table below). Release remains blocked. |
+| Merge regression gate on `main`'s baseline | **FAIL** since the 2026-10-26 DB update: 1 new and 4 changed blocking findings against the PR #28 baseline (CI run [40294357096](https://github.com/eneelkant/pen-testing/actions/runs/40294357096)). Every PR inherits this failure. |
+| Baseline renewal | PR #36 regenerates the baseline from CI evidence with the documented CLI. On its head, the gate reports `new_blocking=0 changed_blocking=0 inherited_blocking=1086`; its only remaining error is the missing independent APPROVED review on the exact head (CI run [40328020356](https://github.com/eneelkant/pen-testing/actions/runs/40328020356)). |
+| Candidate monitor | Scheduled run [40327397325](https://github.com/eneelkant/pen-testing/actions/runs/40327397325) (2026-10-26, same DB): **`NO_ACCEPTABLE_CANDIDATE`**, `acceptable: []` |
+| CODEOWNERS on `main` | `@eneelkant` only. PR #33 proposes `@neelkantekbote-66degree` as a second owner. |
 
-### Absolute image findings (CI run 40153361168)
+### Absolute image findings (CI run 40328020356, scanned 2026-10-26T13:09Z)
 
 | Image | Status | Blocking | Unscored | Digest (index) |
 |---|---|---:|---:|---|
 | python Alpine pin | PASS | 0 | 0 | `b658b05c…7815d` |
-| shannon-worker | FAIL | 980 | 423 | `4e726ed8…bd0e` |
+| shannon-worker | FAIL | 980 | 419 | `4e726ed8…bd0e` |
 | temporal | FAIL | 58 | 4 | `9c5b386d…37f4` |
 | gitleaks | FAIL | 41 | 1 | `0e99e882…7f46` |
-| trivy-scanner | FAIL | 6 | 3 | `2416d1f7…d222` |
+| trivy-scanner | FAIL | 7 | 3 | `2416d1f7…d222` |
 
-Upstream aggregate **1085**. Artifact hashes recorded in evidence `MANIFEST.json`. Regression PASS is merge-only inherited risk; release still requires zero blocking findings.
+Upstream aggregate **1,086**. A regression PASS is merge-only inherited risk; release still requires zero blocking findings.
 
-### Fresh candidate monitor (host Trivy 0.76.0, DB UpdatedAt 2026-10-25T01:20:33Z)
+### What changed with the 2026-10-26 DB (same digests)
 
-`python -m core.supply_chain candidates` → **`NO_ACCEPTABLE_CANDIDATE`**. Acceptable list empty. Temporal `1.9.1@150d6208…` reclassified **FAIL** blocking **15** (includes unscored `GO-2026-5932` on `golang.org/x/crypto` with empty FixedVersion). Trivy latest / `0.76.1@2e6c00d7…` FAIL blocking 4. Gitleaks latest / `v8.30.1@b109bc5f…` FAIL blocking 78. No Shannon tag newer than `3.4.0` on Hub for the current major line tip used by this repo.
+From the raw report in [image-regression-gate, run 40294357096](https://github.com/eneelkant/pen-testing/actions/runs/40294357096/artifacts/12636848958):
 
-**Release blocker remains.** Pins stay. Do not seed baselines for candidates that should be clean.
-
-## Fresh CI re-scan on 2026-10-26 (PR #30 head)
-
-The updated Trivy database found new risk on the *same pinned image digests*. CI run [40294357096](https://github.com/eneelkant/pen-testing/actions/runs/40294357096), scan timestamp **2026-10-26T08:44:38Z**, DB UpdatedAt **2026-10-26T07:15:18.945937093Z**. Raw report artifact: [image-regression-gate](https://github.com/eneelkant/pen-testing/actions/runs/40294357096/artifacts/12636848958).
-
-| Gate / image | Result | Detail |
+| Image | Finding | Detail |
 |---|---|---|
-| Merge regression gate | **FAIL** | 1 new blocking finding; 4 changed blocking findings; 1,081 inherited blockers |
-| Absolute image gate | **FAIL** | **1,086** blockers total; release remains blocked |
-| Shannon worker — Node.js | **FAIL** | Four OS-package rows classified HIGH by the scan: `CVE-2026-105481`, `CVE-2026-106072`, `CVE-2026-106073`, `CVE-2026-106074`. Package: Wolfi `nodejs-22`, installed `22.23.2-r1`, fixed version reported by Trivy `22.23.4-r0`; these are **not npm dependency rows**. Node.js published the 22.23.4 security release on 2026-10-21 ([official release notes](https://github.com/nodejs/nodejs.org/blob/main/apps/site/pages/en/blog/release/v22.23.4.md)). |
-| Shannon worker — curl | **FAIL** | The same scan reports `CVE-2026-92392` twice: `curl` and `libcurl-openssl4`, both Wolfi package `8.22.0-r4`; fixed version `8.23.0-r0`. |
-| Trivy scanner — libcurl | **FAIL** | `CVE-2026-92392` in Alpine `libcurl` `8.22.0-r0`; fixed version `8.23.0-r0`. See the [curl security advisory](https://curl.se/docs/CVE-2026-92392.html). |
-| Temporal / Gitleaks | Inherited risk remains | 58 / 41 blockers respectively; absolute gate still fails |
+| trivy-scanner | **New** `CVE-2026-92392` | Alpine `libcurl` `8.22.0-r0`, fixed `8.23.0-r0` ([curl advisory](https://curl.se/docs/CVE-2026-92392.html)) |
+| shannon-worker | **Changed** UNKNOWN → HIGH | `CVE-2026-105481`, `CVE-2026-106072`, `CVE-2026-106073`, `CVE-2026-106074` in Wolfi `nodejs-22` `22.23.2-r1`, fixed `22.23.4-r0`. These are OS-package rows, not npm rows. |
 
-## Candidate digest decision (2026-10-26)
+### Candidate decision (2026-10-26)
 
-**No image pin was changed.** The current Docker Hub tags page lists Shannon `latest` and `3.4.0` at the same `linux/amd64` digest as the pinned image (`sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a)); it was last pushed about 18 days before this check ([Docker Hub tags](https://hub.docker.com/r/keygraph/shannon/tags)). That is the same image, not a patched replacement, and it predates the Node.js 22.23.4 security release. Re-pinning the same digest or switching the floating tag to `latest` would not fix the findings.
+**No image pin was changed.**
 
-The repository's last recorded candidate evidence (Trivy DB UpdatedAt **2026-10-24T01:18:19Z**) rejected Trivy `0.76.1` (4 blocking, 3 unscored) and `canary` (3 blocking, 3 unscored). These old results are **not** fresh enough to certify an updated candidate against the 2026-10-26 database. The Actions run history checked on 2026-10-26 showed no completed `image-candidate-monitor` run, so a fresh candidate scan plus runtime validation is still required before changing either pin.
+- The monitor run above reports Shannon `latest` as `SKIPPED_PINNED`: its `linux/amd64` digest (`sha256:9e53649e…644a`) is the pinned platform digest. Re-pinning it, or switching to `latest`, would not fix anything.
+- Rejected on the 2026-10-26 DB: Temporal `latest` (15 blocking, 3 unscored, including `GO-2026-5932`), Gitleaks `latest` (78 / 6), Trivy `latest` (5 / 3), Python `3.12-slim-bookworm` (4 / 2), Python `3.13-slim-bookworm` (8 / 2).
+- The self-built candidate pipeline (PR #35) also rejects both candidates: Shannon still has the Chromium, application-dependency and `nodejs-22` rows; the Trivy binary still embeds Go `stdlib` CVE-2026-111943 and `GO-2026-5932`. See `docs/SELF_BUILT_IMAGE_CANDIDATES.md` on that branch.
 
-The regression failures on PRs **#31–#34** reproduce the same findings on the current pinned digests. This is a vulnerability-intelligence change, not a merge conflict or a flaky unit test. **Do not silence the gate or add findings to the accepted baseline to make CI green.** The next safe step is a fresh raw Trivy scan of newly published, immutable candidates; accept only a candidate with zero fixed HIGH/CRITICAL and zero unscored rows, then run the documented build/runtime tests (including Shannon `--validate-model`). If upstream has not published an acceptable digest, leave the pin untouched and keep merge/release blocked rather than claiming remediation.
-
+**Do not silence the gate or add findings to the baseline without CI evidence and independent review.** Accept a candidate only with zero fixed HIGH/CRITICAL and zero unscored rows, plus the documented runtime tests (including Shannon `--validate-model`), in a separate pin PR.
 
 ## Gap register
 
 | ID | Severity | Gap | Root cause | Remediation | Acceptance test | PR / owner |
 |---|---|---|---|---|---|---|
-| G1 | **CRITICAL** (release) | Absolute upstream image gate FAIL (1085) | Upstream images ship fixed HIGH/CRITICAL + unscored findings; no clean official digest | Keep pins; run candidate monitor; adopt only `ACCEPTABLE_CANDIDATE` with runtime/Shannon `--validate-model`; separate pin PR then baseline cleanup | `python -m core.supply_chain images` exit 0 on every pin; release job green | Upstream vendors + maintainer; **blocked** |
-| G2 | HIGH | Classifier can PASS digest-pinned images when Trivy omits RepoDigests and only a tag matches ArtifactName | Fail-open name/tag identity when `expected` digest set | Require digest evidence in RepoDigests or ArtifactName; else `NOT_VERIFIED` | Unit: empty digests / tag-only ArtifactName → NOT_VERIFIED | Engineering PR (this effort) |
-| G3 | HIGH | Trivy/Gitleaks adapters use mutable tags; Trivy adapter still `0.58.1` | Adapter pins diverged from `PINNED_IMAGES` | Docker fallbacks use digest-pinned `PINNED_IMAGES` refs | Unit asserts adapter image refs equal pins | Engineering PR |
-| G4 | HIGH | `PEN_REQUIRE_SCOPE=false` + dual-gate skips unscoped rate limit | Early return omits `enforce_unscoped_rate_limit` | Rate-limit live dual-gate disable path | Unit: second live preflight raises under `PEN_SKIP_SCOPE_RATE_LIMIT_RPS=1` | Engineering PR |
-| G5 | MEDIUM | Regression/release artifact upload `if-no-files-found: warn` | Soft-fail evidence | Set `error` (keep `if: always()`) | Workflow review; CI still uploads on failure | Engineering PR |
-| G6 | MEDIUM | MCP local-scan confinement includes `Path.cwd()` | Over-broad roots | MCP confines to work_dir + reports_dir only | Unit: path under cwd but outside work/reports blocked | Engineering PR |
-| G7 | MEDIUM | Restore-onto-symlink leaf lacks dedicated unit test | Behavior exists; coverage gap | Add adversarial unit test | Test proves `PermissionError` | Engineering PR |
-| G8 | HIGH (ops) | Branch protection `enforcement_level: non_admins` — admins can bypass required checks | GitHub setting; API 403 for this agent | Admin UI: enable “Do not allow bypassing the above settings” / admin enforcement; require CODEOWNERS review | `gh api …/branches/main` shows admin enforcement / ruleset equivalent | **Human admin** (`eneelkant`) |
-| G9 | HIGH (ops) | CODEOWNERS only `@eneelkant`; author cannot satisfy code-owner self-review | Incomplete CODEOWNERS for independent review | Propose adding `@neelkantekbote-66degree` (current baseline approver) after they accept ownership | CODEOWNERS review required + independent APPROVED on security PRs | **Human** — propose via PR; do not claim ownership without acceptance |
-| G10 | HIGH (release) | No external security review commissioned | Process | Engage independent reviewer per `docs/EXTERNAL_SECURITY_REVIEW.md`; remediate findings | Separate published review + retest evidence | **Human** |
-| G11 | HIGH (release) | Qualified counsel AGPL/license clearance pending | Process | Counsel answers in `docs/LICENSING_REVIEW.md`; update notices | Documented counsel sign-off before production distribution | **Human / counsel** |
-| G12 | MEDIUM | No backup scheduler / external alerting / multi-user auth | Out of single-operator design | Keep interfaces; document operator provisioning; do not claim deployed | Docs accuracy; no false “production SaaS” claims | Docs (this plan) |
-| G13 | LOW | `docs/IMAGE_BASELINE.md` still said `protected: false` after checks were enabled | Stale doc | Update to verified protection state + remaining admin-bypass gap | Doc matches `gh api` | Docs PR |
-| G14 | LOW | Baseline expires 2026-11-25 | Time-bounded inherited risk | Renew from fresh CI artifacts before expiry; never hand-edit `expires_at` | Regression gate still PASS with renewed entry | Maintainer before 2026-11-25 |
+| G1 | **CRITICAL** (release) | Absolute upstream image gate FAIL (1,086) | Upstream images ship fixed HIGH/CRITICAL + unscored findings; no clean official digest | Keep pins; run candidate monitor; adopt only `ACCEPTABLE_CANDIDATE` with runtime/Shannon `--validate-model`; separate pin PR then baseline cleanup | `python -m core.supply_chain images` exit 0 on every pin; release job green | Upstream vendors + maintainer; **blocked** |
+| G2 | HIGH | Classifier could PASS digest-pinned images without manifest-digest evidence (tag-only `ArtifactName`; config `ImageID` or layer `DiffIDs`; substring/suffix matches) | Fail-open identity matching | Require a complete `sha256` digest after `@` in `ArtifactName` or `Metadata.RepoDigests` that exactly equals the pin; otherwise `NOT_VERIFIED` | Unit: empty digests, tag-only, ImageID-only, DiffID-only, lookalikes and malformed fields → `NOT_VERIFIED`; RepoDigests-only and artifact-digest → PASS | PR #31 |
+| G3 | HIGH | Trivy/Gitleaks adapters used mutable tags; Trivy adapter was `0.58.1` | Adapter pins diverged from `PINNED_IMAGES` | Docker fallbacks use digest-pinned `PINNED_IMAGES` refs | Unit: adapter refs equal pins; docker commands use the digest ref with `--network none` | PR #32 |
+| G4 | HIGH | `PEN_REQUIRE_SCOPE=false` + dual-gate skipped the unscoped rate limit | Early return omitted `enforce_unscoped_rate_limit` | Rate-limit the live dual-gate disable path | Unit: second live preflight raises under `PEN_SKIP_SCOPE_RATE_LIMIT_RPS=1`; dry-run does not consume budget | PR #32 |
+| G5 | MEDIUM | Regression/release artifact upload used `if-no-files-found: warn` | Soft-fail evidence | Set `error` (keep `if: always()`) | Workflow review | PR #32 |
+| G6 | MEDIUM | MCP local-scan confinement included `Path.cwd()` | Over-broad roots | MCP confines to `work_dir` + `reports_dir` only | Unit: path under cwd but outside roots, `../` traversal, symlink escape and out-of-root `repo_path` are refused | PR #32 |
+| G7 | MEDIUM | Restore-onto-symlink leaf lacked a dedicated unit test | Coverage gap | Adversarial unit test | Test proves `PermissionError` and the outside file is untouched | PR #32 |
+| G8 | HIGH (ops) | Branch protection `enforcement_level: non_admins`: admins can bypass required checks | GitHub setting; protection write API returns 403 for this integration | Admin UI: "Do not allow bypassing the above settings"; require code-owner review | `gh api …/branches/main` shows admin enforcement (or an equivalent ruleset) | **Human admin** (`eneelkant`) |
+| G9 | HIGH (ops) | CODEOWNERS only `@eneelkant`; an author cannot satisfy code-owner review on their own PR | Single owner | Add `@neelkantekbote-66degree` once they accept ownership | Independent APPROVED review on security PRs; code-owner review required in settings | PR #33 + **human acceptance** |
+| G10 | HIGH (release) | No external security review commissioned | Process | Engage an independent reviewer per `docs/EXTERNAL_SECURITY_REVIEW.md` | Separate published review + retest evidence | **Human** |
+| G11 | HIGH (release) | Qualified counsel AGPL/licence clearance pending | Process | Counsel answers in `docs/LICENSING_REVIEW.md`; update notices | Documented counsel sign-off before production distribution | **Human / counsel** |
+| G12 | MEDIUM | No backup scheduler / external alerting / multi-user auth | Out of single-operator design | Keep interfaces; document operator provisioning; do not claim deployed | No false "production SaaS" claims | Docs (this plan) |
+| G13 | LOW | `docs/IMAGE_BASELINE.md` said `protected: false` after checks were enabled | Stale doc | Update to the verified protection state and remaining gaps | Doc matches `gh api` | PR #30 |
+| G14 | MEDIUM | Baseline invalidated by the 2026-10-26 DB; PR #28 entries expire 2026-11-25 | Time-bounded inherited risk; DB reclassification | Renew from fresh CI artifacts with the documented CLI and an independent approval on the exact head; never hand-edit `expires_at` | Regression gate PASS on the renewal PR's head | PR #36 + **human approval** |
 
-## Local verification on this effort (2026-10-25 Asia/Calcutta)
+## Local verification
 
-| Command | Result |
+| Command | Result (2026-10-26, this branch) |
 |---|---|
-| `python3 -m compileall …` | PASS |
-| `python3 -m pytest -q tests/unit` | PASS — **374 passed** |
-| `bash scripts/smoke.sh` | PASS |
-| `python3 -m core.supply_chain audit` | PASS — 24 components |
-| `python3 -m core.supply_chain emit` | PASS — CycloneDX 1.5, 24 components |
-| `python3 -m core.supply_chain vuln` | PASS — blocking 0 |
-| `python3 -m core.supply_chain images --name python-3.12-probe` | PASS — blocking 0; DB UpdatedAt 2026-10-25T01:20:33Z |
-| `python3 -m core.supply_chain candidates` | FAIL status `NO_ACCEPTABLE_CANDIDATE` (expected) |
-| Host Trivy Temporal `1.9.1@150d6208…` | FAIL blocking 15 (GO-2026-5932 present) |
-| `bash scripts/docker_runtime_verify.sh` | **NOT_VERIFIED** locally (Docker Engine absent); green on main CI job |
-| Gitleaks binary | **NOT_VERIFIED** locally; green on main CI job |
+| `python -m compileall core integrations providers mcp_server installers` | PASS |
+| `python -m pytest -q tests/unit` | PASS (count varies by branch; see each PR's CI) |
+| `python -m core.supply_chain audit` | PASS, 24 requirements |
+| `bash scripts/docker_runtime_verify.sh` | Verified by the CI job "Docker build and runtime" on each PR head, not claimed from a local run |
 
-## Open PRs from this effort
+## Superseded snapshot (2026-10-25, before the DB update)
 
-| PR | Branch | Purpose |
-|---|---|---|
-| [#30](https://github.com/eneelkant/pen-testing/pull/30) | `cursor/prod-readiness-plan-7e32` | This plan + evidence docs |
-| [#31](https://github.com/eneelkant/pen-testing/pull/31) | `cursor/image-digest-failclosed-7e32` | Digest identity fail-closed (G2) |
-| [#32](https://github.com/eneelkant/pen-testing/pull/32) | `cursor/security-hardening-gaps-7e32` | Adapters / rate limit / MCP / uploads (G3–G7) |
-| [#33](https://github.com/eneelkant/pen-testing/pull/33) | `cursor/codeowners-second-reviewer-7e32` | Propose second CODEOWNER (G9) |
-| [#34](https://github.com/eneelkant/pen-testing/pull/34) | `cursor/review-package-7e32` | Review bundle + counsel inventory (G10/G11 prep) |
+Kept for provenance only. On CI run [40153361168](https://github.com/eneelkant/pen-testing/actions/runs/40153361168) the regression gate passed (`inherited_blocking_count` 1,085, `new_blocking_count` 0) and the absolute gate failed with Shannon 980 / Temporal 58 / Gitleaks 41 / Trivy 6. Host Trivy candidate scans with DB `UpdatedAt` 2026-10-25T01:20:33Z returned `NO_ACCEPTABLE_CANDIDATE`. These numbers no longer describe the current state.
 
-Independent review must be submitted on GitHub by an authorized human. A review request for @neelkantekbote-66degree was successfully submitted on 2026-10-26 for PRs #30–#34; no submitted reviews were present at this snapshot. This agent cannot approve on behalf of that reviewer. Absolute image scan FAIL on these PRs is expected until G1 is cleared; it is not a required merge check.
+## Release sequence
 
-## Phased work (this effort)
-
-1. **Docs / plan** — this file, scorecard update, IMAGE_BASELINE protection correction, exceptions/remediation reconciliation with fresh candidate evidence.  
-2. **Image digest fail-closed** — G2 only; no pin/baseline changes.  
-3. **Security hardening** — G3–G7 (adapters, rate limit, MCP confinement, upload strictness, restore test).  
-4. **CODEOWNERS proposal** — G9 as a dedicated PR requesting `@neelkantekbote-66degree` accept code ownership.  
-5. **Review package** — refresh external-review checklist pointers; counsel questions unchanged.  
-6. **Release** — **do not tag** until G1 absolute zero-blocking + G10 + G11 + ops checklist complete.
+1. Merge the baseline renewal (#36) after independent approval of its exact head; then the CODEOWNERS change (#33).
+2. Merge security fixes (#31, #32) and the candidate pipeline (#35) after independent review of their latest heads.
+3. **Do not tag** until G1 (absolute zero-blocking), G10, G11 and the ops checklist are complete.
 
 ## Explicit non-claims
 
-- Not production-ready.  
-- Regression PASS ≠ release PASS.  
-- No legal clearance.  
-- No independent external security review completed.  
-- No multi-tenant authentication.  
-- Admin branch-protection bypass not confirmed disabled.
+- Not production-ready.
+- Regression PASS ≠ release PASS. An approved inherited-risk baseline is not evidence that an image is safe.
+- No legal clearance.
+- No independent external security review completed.
+- No multi-tenant authentication.
+- Admin branch-protection bypass not confirmed disabled; code-owner review requirement not verifiable with this token.

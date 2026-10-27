@@ -62,10 +62,11 @@ flowchart TB
     CORE --> GATE
     SCOPE --> GATE
     GATE -- "No" --> BLOCK["Stop / explain why"]
-    GATE -- "Approved workflow" --> WEB
-    GATE --> QUICK
-    GATE --> SOURCE
-    GATE --> OPTIONAL
+    GATE -- "Yes" --> ROUTER["Choose permitted test type"]
+    ROUTER --> WEB
+    ROUTER --> QUICK
+    ROUTER --> SOURCE
+    ROUTER --> OPTIONAL
     WEB --> NORMALIZE
     QUICK --> NORMALIZE
     SOURCE --> NORMALIZE

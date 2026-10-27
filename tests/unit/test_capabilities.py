@@ -18,7 +18,7 @@ from core.capabilities import (
 
 def test_registry_matches_currently_integrated_adapters():
     # Keep this expectation explicit: proposed tools must not appear as available.
-    assert set(CAPABILITIES_BY_ID) == {"shannon", "briar", "headers", "gitleaks", "trivy"}
+    assert set(CAPABILITIES_BY_ID) == {"shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"}
     assert all(item.status == "integrated" for item in CAPABILITIES_BY_ID.values())
 
 
@@ -38,14 +38,14 @@ def test_network_targeting_adapters_require_authorization():
 
 
 def test_local_scanners_advertise_only_local_source_paths():
-    for tool_id in ("gitleaks", "trivy"):
+    for tool_id in ("gitleaks", "trivy", "checkov", "mobsfscan"):
         capability = get_capability(tool_id)
         assert capability.target_types == (TargetType.LOCAL_SOURCE_PATH,)
         assert capability.requires_authorization is False
 
 
 def test_capabilities_do_not_overstate_planned_integrations():
-    for tool_id in ("zap", "nuclei", "schemathesis", "mobsf", "nmap", "checkov"):
+    for tool_id in ("zap", "nuclei", "schemathesis", "mobsf", "nmap"):
         with pytest.raises(KeyError, match="No integrated capability"):
             get_capability(tool_id)
 
@@ -88,5 +88,5 @@ def test_cli_capabilities_does_not_claim_planned_tools(monkeypatch, tmp_path, ca
     assert main(["capabilities"]) == 0
     payload = json.loads(capsys.readouterr().out)
     names = {item["id"] for item in payload["capabilities"]}
-    assert names == {"shannon", "briar", "headers", "gitleaks", "trivy"}
+    assert names == {"shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"}
     assert "zap" not in names

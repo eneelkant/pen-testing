@@ -40,6 +40,17 @@ PEN_ASSUME_YES=1 bash scripts/setup_all.sh
 
 Details: [`mcp_server/README.md`](mcp_server/README.md)
 
+## Capability discovery
+
+The current CLI and MCP share a curated registry of implemented adapters. This is a capability inventory, not a substitute for dependency health checks or authorization.
+
+```bash
+python -m core.cli capabilities
+python -m core.cli capabilities --tool headers
+```
+
+The registry describes only adapters that exist in the runtime. Planned tools such as ZAP, Nuclei, MobSF, Nmap, Checkov and Schemathesis are tracked in [docs/CAPABILITY_REGISTRY.md](docs/CAPABILITY_REGISTRY.md) and are not callable until their adapters and tests are implemented.
+
 ## AI clients
 
 | Client | Status |

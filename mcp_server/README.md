@@ -11,7 +11,9 @@ Official MCP Python SDK (`mcp` 2.x) stdio server exposing constrained orchestrat
 | `validate_target_scope` | No | Authorization check |
 | `list_integrations` | No | Adapter capabilities |
 | `run_local_diagnostics` | No | Combined non-destructive checks |
-| `run_security_assessment` | Maybe | Dry-run by default; live requires `confirm_authorized` |
+| `list_assessment_profiles` | No | Declarative assessment profiles (not authorization) |
+| `issue_execution_approval` | No | Bound, expiring approval after a successful scope check |
+| `run_security_assessment` | Maybe | Dry-run by default; live requires `confirm_authorized` and, for bound profiles, `approval_id` |
 | `get_assessment_status` | No | Assessment record |
 | `list_findings` | No | Normalized findings |
 | `export_report` | No | Draft report export |

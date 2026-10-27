@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from core.findings import Finding, redact_secrets
+from core.findings.redaction import allowlist_finding_fields
 from core.paths import safe_write_text
 
 
@@ -16,7 +17,7 @@ def export_json(findings: Iterable[Finding], path: str | Path, *, metadata: dict
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "metadata": redact_secrets(metadata or {}),
-        "findings": [redact_secrets(f.to_dict()) for f in findings],
+        "findings": [allowlist_finding_fields(redact_secrets(f.to_dict())) for f in findings],
     }
     return safe_write_text(path, json.dumps(payload, indent=2))
 

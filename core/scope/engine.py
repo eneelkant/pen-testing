@@ -37,6 +37,27 @@ def _normalize_host(value: str) -> str:
     return value.split("/")[0].split(":")[0].lower()
 
 
+def _effective_port(scheme: str, port: int | None) -> int | None:
+    if port is not None:
+        return port
+    if scheme == "http":
+        return 80
+    if scheme == "https":
+        return 443
+    return None
+
+
+def _url_components(value: str) -> tuple[str, str, int | None, str] | None:
+    parsed = urlparse(value.strip())
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    return parsed.scheme.lower(), parsed.hostname.lower(), port, parsed.path or "/"
+
+
 def _asset_matches(candidate: str, pattern: str) -> bool:
     """Conservative exact/host match. Does not auto-expand to subdomains."""
     cand = candidate.strip()
@@ -48,30 +69,65 @@ def _asset_matches(candidate: str, pattern: str) -> bool:
     if cand.rstrip("/") == pat.rstrip("/"):
         return True
 
+    cand_url = _url_components(cand) if "://" in cand else None
+    pat_url = _url_components(pat) if "://" in pat else None
+
+    # When both sides are absolute URLs, scheme + host + port must agree.
+    # Path may still use exact equality via the check above; prefix matching is
+    # intentionally not applied for full URL patterns (exact only).
+    if cand_url and pat_url:
+        cs, ch, cp, _ = cand_url
+        ps, ph, pp, _ = pat_url
+        if cs != ps or ch != ph:
+            return False
+        if _effective_port(cs, cp) != _effective_port(ps, pp):
+            return False
+        # Same origin URL patterns authorize only the exact URL (already handled)
+        # or identical origin with identical path already compared; do not broaden.
+        return False
+
     # Scheme-less patterns that include a path (e.g. staging.example.com/app)
     # must not authorize the entire host — require host + path-prefix match.
     if "://" not in pat and "/" in pat.strip().strip("/"):
         host_part, _, path_part = pat.partition("/")
-        pat_host = host_part.split(":")[0].lower()
+        host_only, _, port_part = host_part.partition(":")
+        pat_host = host_only.lower()
+        pat_port = int(port_part) if port_part.isdigit() else None
         pat_path = "/" + path_part
-        if "://" in cand:
-            parsed = urlparse(cand)
-            cand_host = (parsed.hostname or "").lower()
-            cand_path = parsed.path or "/"
+        if cand_url:
+            cand_scheme, cand_host, cand_port, cand_path = cand_url
             if cand_host and cand_host == pat_host:
-                # Prefix match on path segments: /app matches /app and /app/...
+                if pat_port is not None and _effective_port(cand_scheme, cand_port) != pat_port:
+                    return False
                 prefix = pat_path.rstrip("/") or "/"
                 if cand_path == prefix or cand_path.startswith(prefix + "/"):
                     return True
         return False
 
     # Host-only patterns (no URL scheme and no path component)
-    cand_host = _normalize_host(cand)
-    pat_host = _normalize_host(pat)
-    if cand_host and pat_host and cand_host == pat_host and "://" not in pat:
-        return True
+    # Patterns with an explicit port (host:8443) require that port on the candidate.
+    if "://" not in pat:
+        if ":" in pat and "/" not in pat:
+            host_only, _, port_part = pat.partition(":")
+            pat_host = host_only.lower()
+            if not port_part.isdigit():
+                return False
+            pat_port = int(port_part)
+            if cand_url:
+                cand_scheme, cand_host, cand_port, _ = cand_url
+                return bool(
+                    cand_host
+                    and cand_host == pat_host
+                    and _effective_port(cand_scheme, cand_port) == pat_port
+                )
+            return False
+        cand_host = _normalize_host(cand)
+        pat_host = _normalize_host(pat)
+        if cand_host and pat_host and cand_host == pat_host:
+            return True
 
     # CIDR for IP literals only
+    cand_host = _normalize_host(cand)
     try:
         network = ipaddress.ip_network(pat, strict=False)
         ip = ipaddress.ip_address(cand_host)
@@ -119,6 +175,18 @@ class ScopeEngine:
         category = test_category.lower().strip()
         if not target or not target.strip():
             return ScopeDecision(False, "Target is empty or missing")
+
+        # Explicit scheme validation for URL-like targets (fail closed on junk schemes).
+        if "://" in target:
+            parsed = urlparse(target.strip())
+            if parsed.scheme.lower() not in {"http", "https"}:
+                return ScopeDecision(False, "Only http(s) URL targets are accepted for scope evaluation")
+            if not parsed.hostname:
+                return ScopeDecision(False, "URL target is missing a hostname")
+            try:
+                _ = parsed.port
+            except ValueError:
+                return ScopeDecision(False, "URL target has an invalid port")
 
         matches = [r for r in self.records if any(_asset_matches(target, a) for a in r.allowed_assets)]
         if not matches:

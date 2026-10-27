@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### FYERS bounty readiness (local / synthetic only)
+
+- Add FYERS program mapping, threat model, runbook, and manual vulnerability report template under `docs/` (no live FYERS assessment; no auto-submit).
+- Add disabled-by-default `configs/assessment_profiles/fyers_non_destructive.yaml` using synthetic host `fyers-api.example.test` only.
+- Add bound, expiring, single-use execution approvals (`issue_execution_approval`) required when a profile sets `require_bound_approval` or `PEN_REQUIRE_BOUND_APPROVAL=1`.
+- Strengthen URL scheme/port scope matching and same-origin redirect helpers; re-validate scope immediately before live scanner execution.
+- Add local `SyntheticAuthService` / `SyntheticFinancialAPI` fixtures for token/OTP/session and cross-account authorization regressions (transactions disabled by default).
+- Extend secret redaction (OTP, cookies, sessions, query tokens) and evidence validation statuses; exports prefer an allowlisted finding field set.
+- MCP tools: `list_assessment_profiles`, `issue_execution_approval`; CI required tool surface updated.
+
 ### Integrations
 
 - Add optional, version-checked Checkov 3.3.29 for confined local IaC/configuration scans; platform uploads and external Terraform-module downloads are disabled.

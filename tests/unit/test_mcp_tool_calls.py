@@ -40,6 +40,8 @@ def test_all_tools_registered():
         "validate_target_scope",
         "list_integrations",
         "run_local_diagnostics",
+        "list_assessment_profiles",
+        "issue_execution_approval",
         "run_security_assessment",
         "get_assessment_status",
         "list_findings",

@@ -5,7 +5,8 @@ from .schema import (
     VerificationState,
 )
 from .normalize import normalize_generic_finding, validate_finding
-from .redaction import redact_secrets
+from .redaction import allowlist_finding_fields, redact_secrets, redact_text
+from .evidence import EvidenceContext, EvidenceValidationStatus, validate_finding_evidence
 
 __all__ = [
     "FINDING_JSON_SCHEMA",
@@ -15,4 +16,9 @@ __all__ = [
     "normalize_generic_finding",
     "validate_finding",
     "redact_secrets",
+    "redact_text",
+    "allowlist_finding_fields",
+    "EvidenceContext",
+    "EvidenceValidationStatus",
+    "validate_finding_evidence",
 ]

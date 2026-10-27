@@ -21,7 +21,9 @@ mcp = MCPServer(
         "For remote/web targets, call validate_target_scope before a live assessment. "
         "Local source scanners require paths confined to configured work/report roots and do not use URL scope validation. "
         "All live assessments require confirm_authorized=true; this does not bypass target-specific policy. "
-        "Never expand network scope silently. Prefer dry_run=true and local fixtures."
+        "Profiles with require_bound_approval also need a single-use approval_id from issue_execution_approval. "
+        "Never expand network scope silently. Prefer dry_run=true and local fixtures. "
+        "Do not submit bounty reports automatically."
     ),
 )
 
@@ -60,6 +62,32 @@ def run_local_diagnostics() -> dict[str, Any]:
 
 
 @mcp.tool()
+def list_assessment_profiles() -> dict[str, Any]:
+    """List declarative assessment profiles (metadata only; not authorization)."""
+    return service.list_assessment_profiles()
+
+
+@mcp.tool()
+def issue_execution_approval(
+    tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"],
+    target: str,
+    category: Literal["passive", "active", "dast", "pentest", "dynamic"] = "active",
+    mode: Literal["quick", "standard", "deep"] = "standard",
+    assessment_profile: str | None = None,
+    ttl_seconds: int = 900,
+) -> dict[str, Any]:
+    """Issue a bound, expiring approval after a successful scope decision. Does not scan."""
+    return service.issue_execution_approval(
+        tool=tool,
+        target=target,
+        category=category,
+        mode=mode,
+        assessment_profile=assessment_profile,
+        ttl_seconds=ttl_seconds,
+    )
+
+
+@mcp.tool()
 def run_security_assessment(
     tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"],
     target: str,
@@ -70,11 +98,14 @@ def run_security_assessment(
     confirm_authorized: bool = False,
     demo: bool = False,
     timeout_seconds: int = 120,
+    assessment_profile: str | None = None,
+    approval_id: str | None = None,
 ) -> dict[str, Any]:
     """Start an assessment only after authorization/safety checks.
 
     Defaults to dry_run=true. For live runs set dry_run=false and
     confirm_authorized=true after validate_target_scope succeeds.
+    When an assessment profile requires bound approval, also pass approval_id.
     """
     return service.run_security_assessment(
         tool=tool,
@@ -86,6 +117,8 @@ def run_security_assessment(
         confirm_authorized=confirm_authorized,
         demo=demo,
         timeout_seconds=timeout_seconds,
+        assessment_profile=assessment_profile,
+        approval_id=approval_id,
     )
 
 

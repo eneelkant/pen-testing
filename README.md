@@ -135,10 +135,12 @@ For Claude Desktop, use `python installers/configure_claude.py --apply`. See the
 | `validate_target_scope` | Check whether a target is allowed |
 | `list_integrations` | Discover available tools and their health |
 | `run_local_diagnostics` | Run non-destructive diagnostics |
-| `run_security_assessment` | Preview or run an assessment; dry-run by default |
+| `plan_assessment` | Build an assessment plan without launching scanners |
+| `authorize_assessment` | Issue a bound, expiring live-execution approval |
+| `run_security_assessment` | Dry-run by default; live needs `confirm_authorized` + `approval_id` |
 | `get_assessment_status` | Check assessment progress and status |
 | `list_findings` | Review collected findings |
-| `export_report` | Export a report draft |
+| `export_report` | Export a report draft (never auto-submits) |
 
 **Example prompt for your connected AI client**
 
@@ -203,8 +205,9 @@ flowchart TB
 ## 🔒 Important security note
 
 - Add only approved systems to `scopes/registry.yaml`; a valid URL is not proof of permission.
-- Start with a dry run. Live MCP assessments require explicit authorization confirmation; the CLI also defaults to dry-run.
+- Start with a dry run. Live MCP assessments require `confirm_authorized` plus a bound `approval_id` from `authorize_assessment`; the CLI also defaults to dry-run.
 - Do not expose an unauthenticated MCP server to the internet. Local stdio is the documented default; a public ChatGPT-compatible endpoint is **not** deployed by default.
+- Zoho / third-party bug-bounty work: see [program requirements](docs/ZOHO_PROGRAM_REQUIREMENTS.md), [runbook](docs/ZOHO_ASSESSMENT_RUNBOOK.md), and the disabled-by-default [non-destructive profile](configs/assessment_profiles/zoho_non_destructive.yaml). Do not probe real program hosts unless they are explicitly listed in `scopes/registry.yaml`.
 - This project is for controlled testing, not a multi-user production security service. Its pinned upstream container images still have blocking vulnerability findings. Follow the [production readiness plan](docs/PRODUCTION_READINESS_PLAN.md).
 
 ## 🗺️ Explore the project
@@ -216,6 +219,9 @@ flowchart TB
 - [MCP server details](mcp_server/README.md)
 - [Scope and authorization checks](docs/SECURITY_VALIDATION.md)
 - [Isolation design](docs/SCANNER_ISOLATION.md)
+- [Zoho assessment baseline](docs/ZOHO_ASSESSMENT_BASELINE.md)
+- [Zoho program requirements mapping](docs/ZOHO_PROGRAM_REQUIREMENTS.md)
+- [Zoho assessment runbook](docs/ZOHO_ASSESSMENT_RUNBOOK.md)
 - [Roadmap / tool coverage](docs/TOOL_MATRIX.md)
 - [Third-party licenses](THIRD_PARTY_NOTICES.md)
 

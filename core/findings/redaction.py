@@ -49,6 +49,9 @@ def redact_secrets(obj: Any, replacement: str = "[REDACTED]") -> Any:
                     "authorization",
                     "credential",
                     "private_key",
+                    "cookie",
+                    "set-cookie",
+                    "session",
                 )
             ):
                 out[key] = replacement

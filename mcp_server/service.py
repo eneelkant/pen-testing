@@ -14,10 +14,17 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from core import __version__
+from core.assessment.profile import (
+    AssessmentProfile,
+    load_assessment_profile,
+    resolve_profile_path,
+    validate_profile_request,
+)
 from core.capabilities import get_capability, list_capabilities
 from core.config import PlatformConfig
 from core.diagnostics import collect_diagnostics
-from core.findings import Finding
+from core.findings import Finding, ValidationStatus
+from core.findings.evidence import assess_evidence
 from core.findings.redaction import redact_secrets, redact_text
 from core.net import redact_url_userinfo
 from core.ops.retention import parse_retention_days
@@ -26,7 +33,11 @@ from core.ops.crypto import protect_text, reveal_text
 from core.paths import assert_no_symlink_in_chain, confine_path, is_under_roots, safe_read_text, safe_write_text
 from core.reporting import export_json, export_markdown, export_sarif
 from core.results import ExecutionResult
-from core.scope import ScopeEngine
+from core.scope import (
+    ScopeEngine,
+    get_approval_store,
+    plan_fingerprint,
+)
 from integrations.base import AdapterRequest
 from integrations.briar import BriarAdapter
 from integrations.scanners import CheckovAdapter, GitleaksAdapter, HeadersAdapter, MobSFScanAdapter, TrivyAdapter
@@ -271,6 +282,216 @@ def run_local_diagnostics() -> dict[str, Any]:
     }
 
 
+def _load_optional_profile(
+    profile_id: str | None,
+) -> tuple[AssessmentProfile | None, dict[str, Any] | None]:
+    if not profile_id:
+        return None, None
+    try:
+        path = resolve_profile_path(profile_id)
+        return load_assessment_profile(path), None
+    except (OSError, ValueError) as exc:
+        return None, {"ok": False, "error": redact_text(str(exc))}
+
+
+def plan_assessment(
+    *,
+    tool: str,
+    target: str,
+    category: str = "active",
+    mode: str = "standard",
+    profile_id: str | None = None,
+    repo_path: str | None = None,
+    timeout_seconds: int | None = 120,
+) -> dict[str, Any]:
+    """Build an execution plan without launching any scanner."""
+    tool = (tool or "").lower().strip()
+    if tool not in ALLOWED_TOOLS:
+        return {"ok": False, "error": f"Unsupported tool '{tool}'. Allowed: {sorted(ALLOWED_TOOLS)}"}
+    ok_target, target_reason = _looks_like_url_or_path(target, tool=tool)
+    if not ok_target:
+        return {"ok": False, "error": target_reason}
+    if timeout_seconds is not None and (timeout_seconds < 1 or timeout_seconds > 86_400):
+        return {"ok": False, "error": "timeout_seconds must be between 1 and 86400"}
+
+    profile, profile_err = _load_optional_profile(profile_id)
+    if profile_err:
+        return profile_err
+    if profile is not None:
+        try:
+            validate_profile_request(
+                profile,
+                tool=tool,
+                category=category,
+                target=target,
+                dry_run=True,
+                timeout_seconds=timeout_seconds,
+            )
+        except PermissionError as exc:
+            return {"ok": False, "error": redact_text(str(exc))}
+
+    cfg = resolve_platform_config()
+    scope_decision = None
+    if tool in ACTIVE_TOOLS and Path(cfg.scopes_file).exists():
+        engine = ScopeEngine.from_file(cfg.scopes_file)
+        scope_decision = engine.evaluate(target, test_category=category).to_dict()
+
+    fingerprint = plan_fingerprint(
+        tool=tool,
+        target=target,
+        category=category,
+        mode=mode,
+        profile_id=(profile.profile_id if profile else "") or "",
+    )
+    return {
+        "ok": True,
+        "launches_scanner": False,
+        "dry_run_default": True,
+        "tool": tool,
+        "target": redact_url_userinfo(target),
+        "category": category,
+        "mode": mode,
+        "profile_id": profile.profile_id if profile else None,
+        "timeout_seconds": timeout_seconds,
+        "repo_path_provided": bool(repo_path),
+        "scope": scope_decision,
+        "plan_fingerprint": fingerprint,
+        "note": "Planning never starts a scanner. Live execution requires authorize_assessment + confirm_authorized.",
+    }
+
+
+def authorize_assessment(
+    *,
+    tool: str,
+    target: str,
+    category: str = "active",
+    mode: str = "standard",
+    profile_id: str | None = None,
+    ttl_seconds: int = 900,
+    confirm_authorized: bool = False,
+) -> dict[str, Any]:
+    """Issue a bound, single-use live-execution approval after scope/profile checks."""
+    if not confirm_authorized:
+        return {
+            "ok": False,
+            "error": "authorize_assessment requires confirm_authorized=true after a successful scope check",
+        }
+    tool = (tool or "").lower().strip()
+    if tool not in ALLOWED_TOOLS:
+        return {"ok": False, "error": f"Unsupported tool '{tool}'. Allowed: {sorted(ALLOWED_TOOLS)}"}
+    ok_target, target_reason = _looks_like_url_or_path(target, tool=tool)
+    if not ok_target:
+        return {"ok": False, "error": target_reason}
+
+    profile, profile_err = _load_optional_profile(profile_id)
+    if profile_err:
+        return profile_err
+    resolved_profile_id = profile.profile_id if profile else ""
+    if profile is not None:
+        try:
+            validate_profile_request(
+                profile,
+                tool=tool,
+                category=category,
+                target=target,
+                dry_run=False,
+            )
+        except PermissionError as exc:
+            return {"ok": False, "error": redact_text(str(exc))}
+
+    cfg = resolve_platform_config()
+    scope_target_id = ""
+    if tool in ACTIVE_TOOLS:
+        if not Path(cfg.scopes_file).exists():
+            return {"ok": False, "error": "Authorization registry required for active assessments"}
+        engine = ScopeEngine.from_file(cfg.scopes_file)
+        try:
+            decision = engine.require(
+                target,
+                test_category=category,
+                require_non_production=not cfg.allow_production_active,
+                for_live_execution=True,
+            )
+        except PermissionError as exc:
+            return {"ok": False, "error": redact_text(str(exc))}
+        scope_target_id = decision.matched_record.target_id if decision.matched_record else ""
+
+    fingerprint = plan_fingerprint(
+        tool=tool,
+        target=target,
+        category=category,
+        mode=mode,
+        profile_id=resolved_profile_id,
+    )
+    try:
+        grant = get_approval_store().issue(
+            target=target,
+            tool=tool,
+            category=category,
+            mode=mode,
+            profile_id=resolved_profile_id,
+            plan_fingerprint=fingerprint,
+            ttl_seconds=ttl_seconds,
+            scope_target_id=scope_target_id,
+        )
+    except (ValueError, PermissionError) as exc:
+        return {"ok": False, "error": redact_text(str(exc))}
+    return {
+        "ok": True,
+        "approval_id": grant.approval_id,
+        "expires_at": grant.expires_at,
+        "plan_fingerprint": grant.plan_fingerprint,
+        "tool": grant.tool,
+        "target": grant.target,
+        "category": grant.category,
+        "mode": grant.mode,
+        "profile_id": grant.profile_id or None,
+        "single_use": grant.single_use,
+        "note": "Approval is bound to this plan and expires. It cannot be reused for another target or tool.",
+    }
+
+
+def _postprocess_findings(
+    findings: list[dict[str, Any]],
+    *,
+    assessment_id: str,
+    target: str,
+    scope: ScopeEngine | None,
+    category: str,
+) -> list[dict[str, Any]]:
+    """Enforce validation_status defaults and block out-of-scope assets from reporting."""
+    in_scope: list[str] | None = None
+    if scope is not None:
+        decision = scope.evaluate(target, test_category=category)
+        if decision.matched_record is not None:
+            in_scope = list(decision.matched_record.allowed_assets)
+
+    processed: list[dict[str, Any]] = []
+    for raw in findings:
+        finding = Finding.from_dict(raw)
+        finding.assessment_id = assessment_id
+        if finding.validation_status == ValidationStatus.VALIDATED.value:
+            # Scanner output must not self-validate.
+            finding.validation_status = ValidationStatus.NEEDS_REVIEW.value
+        evidence_decision = assess_evidence(
+            finding,
+            assessment_id=assessment_id,
+            in_scope_assets=in_scope,
+            require_primary=False,
+        )
+        if evidence_decision.status == ValidationStatus.BLOCKED.value:
+            finding.validation_status = ValidationStatus.BLOCKED.value
+        elif finding.validation_status == ValidationStatus.CANDIDATE.value:
+            # Keep candidate unless evidence policy raised needs_review/rejected.
+            if evidence_decision.status in {
+                ValidationStatus.NEEDS_REVIEW.value,
+                ValidationStatus.REJECTED.value,
+            }:
+                finding.validation_status = evidence_decision.status
+        processed.append(finding.to_dict())
+    return processed
+
+
 def _save_assessment(record: dict[str, Any]) -> Path:
     cfg = resolve_platform_config()
     safe_id = _safe_assessment_id(str(record.get("assessment_id", "")))
@@ -324,6 +545,8 @@ def run_security_assessment(
     confirm_authorized: bool = False,
     demo: bool = False,
     timeout_seconds: int | None = 120,
+    profile_id: str | None = None,
+    approval_id: str | None = None,
 ) -> dict[str, Any]:
     tool = tool.lower().strip()
     if tool not in ALLOWED_TOOLS:
@@ -345,10 +568,35 @@ def run_security_assessment(
     if timeout_seconds is not None and (timeout_seconds < 1 or timeout_seconds > 86_400):
         return {"ok": False, "error": "timeout_seconds must be between 1 and 86400"}
 
+    profile, profile_err = _load_optional_profile(profile_id)
+    if profile_err:
+        return profile_err
+    resolved_profile_id = profile.profile_id if profile else ""
+    if profile is not None:
+        try:
+            validate_profile_request(
+                profile,
+                tool=tool,
+                category=category,
+                target=target,
+                dry_run=dry_run,
+                timeout_seconds=timeout_seconds,
+            )
+        except PermissionError as exc:
+            return {"ok": False, "error": redact_text(str(exc))}
+
     cfg = resolve_platform_config()
     scope = None
     if Path(cfg.scopes_file).exists():
         scope = ScopeEngine.from_file(cfg.scopes_file)
+
+    fingerprint = plan_fingerprint(
+        tool=tool,
+        target=target,
+        category=category,
+        mode=mode,
+        profile_id=resolved_profile_id,
+    )
 
     safe_target = redact_url_userinfo(target)
     scan_path = None
@@ -360,23 +608,8 @@ def run_security_assessment(
         safe_target = scan_path
 
     assessment_id = str(uuid4())
-    adapters = _adapters(cfg, scope)
-    adapter = adapters[tool]
-    # Confine generated artifacts under reports_dir.
-    out_dir = Path(cfg.reports_dir).resolve() / f"mcp-{assessment_id}"
-    request = AdapterRequest(
-        target=scan_path or target,
-        test_category=category,
-        mode=mode,
-        repo_path=scan_path or repo_path,
-        dry_run=dry_run,
-        timeout_seconds=timeout_seconds,
-        skip_scope_check=briar_demo,
-        extra={"demo": briar_demo},
-        output_dir=str(out_dir),
-    )
 
-    # Preflight scope for active/remote tools unless dry_run already handled inside adapter
+    # Preflight scope for active/remote tools before consuming a bound approval.
     if tool in ACTIVE_TOOLS and not briar_demo and not dry_run:
         if scope is None:
             return {"ok": False, "error": "Authorization registry required for active assessments"}
@@ -385,6 +618,7 @@ def run_security_assessment(
                 target,
                 test_category=category,
                 require_non_production=not cfg.allow_production_active,
+                for_live_execution=True,
             )
         except PermissionError as exc:
             record = {
@@ -409,6 +643,41 @@ def run_security_assessment(
                 "error": redact_text(str(exc)),
             }
 
+    if not dry_run and not briar_demo:
+        try:
+            get_approval_store().consume(
+                approval_id or "",
+                target=target,
+                tool=tool,
+                category=category,
+                mode=mode,
+                profile_id=resolved_profile_id,
+                plan_fingerprint=fingerprint,
+            )
+        except PermissionError as exc:
+            return {
+                "ok": False,
+                "assessment_id": assessment_id,
+                "error": redact_text(str(exc)),
+                "hint": "Call plan_assessment then authorize_assessment to obtain a bound approval_id.",
+            }
+
+    adapters = _adapters(cfg, scope)
+    adapter = adapters[tool]
+    # Confine generated artifacts under reports_dir.
+    out_dir = Path(cfg.reports_dir).resolve() / f"mcp-{assessment_id}"
+    request = AdapterRequest(
+        target=scan_path or target,
+        test_category=category,
+        mode=mode,
+        repo_path=scan_path or repo_path,
+        dry_run=dry_run,
+        timeout_seconds=timeout_seconds,
+        skip_scope_check=briar_demo,
+        extra={"demo": briar_demo, "profile_id": resolved_profile_id or None},
+        output_dir=str(out_dir),
+    )
+
     slot = False
     if not dry_run:
         try:
@@ -418,12 +687,22 @@ def run_security_assessment(
             return {"ok": False, "assessment_id": assessment_id, "error": redact_text(str(exc))}
     try:
         result = adapter.run(request)
-        findings = [f.to_dict() for f in result.findings]
+        findings = _postprocess_findings(
+            [f.to_dict() for f in result.findings],
+            assessment_id=assessment_id,
+            target=scan_path or target,
+            scope=scope,
+            category=category,
+        )
         record = {
             "assessment_id": assessment_id,
             "tool": tool,
             "target": safe_target,
             "category": category,
+            "mode": mode,
+            "profile_id": resolved_profile_id or None,
+            "approval_id": approval_id,
+            "plan_fingerprint": fingerprint,
             "dry_run": dry_run,
             "demo": briar_demo,
             "status": result.status,
@@ -448,6 +727,7 @@ def run_security_assessment(
             "error": redact_text(result.error) if isinstance(result.error, str) else result.error,
             "findings_count": len(findings),
             "dry_run": dry_run,
+            "profile_id": resolved_profile_id or None,
             "note": "Upstream engines may navigate beyond the initial URL; scope preflight is not full containment.",
         }
     finally:
@@ -513,8 +793,24 @@ def export_report(assessment_id: str, outdir: str | None = None) -> dict[str, An
     if isinstance(dest, dict):
         return dest
     findings = [Finding.from_dict(f) for f in record.get("findings") or []]
-    md = export_markdown(findings, dest / "report.md", metadata={"assessment_id": safe_id})
-    js = export_json(findings, dest / "report.json", metadata={"assessment_id": safe_id})
+    metadata = {
+        "assessment_id": safe_id,
+        "tool": record.get("tool"),
+        "tool_version": (record.get("metadata") or {}).get("tool_version"),
+        "profile_id": record.get("profile_id"),
+        "scope": record.get("target"),
+        "dry_run": record.get("dry_run"),
+        "limitations": (
+            "Upstream engines may navigate beyond the initial URL. "
+            "Do not auto-submit. Scanner severity is not confirmation."
+        ),
+        "untested_areas": (
+            "Only the selected tool/profile capabilities were exercised. "
+            "Excluded Zoho program categories and unapproved hosts were not tested."
+        ),
+    }
+    md = export_markdown(findings, dest / "report.md", metadata=metadata)
+    js = export_json(findings, dest / "report.json", metadata=metadata)
     sarif = export_sarif(findings, dest / "report.sarif")
     return {
         "ok": True,
@@ -523,4 +819,5 @@ def export_report(assessment_id: str, outdir: str | None = None) -> dict[str, An
         "json": str(js),
         "sarif": str(sarif),
         "human_review_required": True,
+        "auto_submit": False,
     }

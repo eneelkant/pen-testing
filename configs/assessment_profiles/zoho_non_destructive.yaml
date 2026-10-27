@@ -1,0 +1,70 @@
+# Zoho Vulnerability Reward Program — non-destructive assessment profile.
+# LIVE EXECUTION IS DISABLED. No real Zoho hostnames are included.
+# This profile is for planning, dry-run validation, and synthetic fixtures only.
+#
+# Official program reference (verify before any human-authorized live work):
+# https://bugbounty.zohocorp.com/bb/info
+# Retrieved for documentation on 2026-10-27; re-verify before use.
+
+profile_id: zoho_non_destructive
+display_name: Zoho non-destructive (disabled live)
+description: >
+  Capability-limited profile aligned with Zoho VRP responsible-research rules.
+  Permits only low-impact, non-destructive planning against synthetic fixtures.
+  Real Zoho targets must never be added here without an explicit, current
+  human authorization record in scopes/registry.yaml.
+live_execution_enabled: false
+program_reference: https://bugbounty.zohocorp.com/bb/info
+policy_version: "1"
+require_synthetic_targets: true
+synthetic_target_suffixes:
+  - ".test"
+  - ".invalid"
+  - ".localhost"
+  - ".local"
+max_timeout_seconds: 120
+allowed_categories:
+  - passive
+allowed_tools:
+  - headers
+allowed_capabilities:
+  - headers
+  - headers.passive
+  - headers.security_headers
+  - tls.inspect_planned
+  - public_metadata.passive_planned
+prohibited_capabilities:
+  - shannon.active
+  - shannon.deep
+  - briar.active
+  - enumeration.users
+  - enumeration.email
+  - credential.guessing
+  - dos
+  - ddos
+  - rate_limit_stress
+  - content_discovery.broad
+  - dns.bruteforce
+  - subdomain.bruteforce
+  - crawl.high_volume
+  - upload.arbitrary
+  - data.modification
+  - cross_user_access
+  - network.scan_outside_allowlist
+  - exploit.active
+prohibited_actions:
+  - dos
+  - ddos
+  - data_destruction
+  - social_engineering
+  - email_bombing
+  - credential_stuffing
+  - privilege_escalation
+  - access_other_users_data
+notes: >
+  Missing security headers without direct impact, open redirects, username/email
+  enumeration, and unvalidated automated-scan findings are excluded by the Zoho
+  program. Do not treat informational observations as vulnerabilities.
+  Do not enable live_execution_enabled until a human verifies current program
+  terms, adds an exact authorized asset to scopes/registry.yaml, and issues a
+  bound MCP approval for that asset alone.

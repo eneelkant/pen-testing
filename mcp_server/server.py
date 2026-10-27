@@ -19,9 +19,11 @@ mcp = MCPServer(
     instructions=(
         "Authorized security-testing orchestration platform. "
         "For remote/web targets, call validate_target_scope before a live assessment. "
+        "Use plan_assessment to preview work without launching scanners. "
+        "Live runs require authorize_assessment (bound approval_id) plus confirm_authorized=true. "
         "Local source scanners require paths confined to configured work/report roots and do not use URL scope validation. "
-        "All live assessments require confirm_authorized=true; this does not bypass target-specific policy. "
-        "Never expand network scope silently. Prefer dry_run=true and local fixtures."
+        "Never expand network scope silently. Prefer dry_run=true and local fixtures. "
+        "Do not probe Zoho or other third-party hosts unless they are explicitly listed in the authorization registry."
     ),
 )
 
@@ -60,6 +62,50 @@ def run_local_diagnostics() -> dict[str, Any]:
 
 
 @mcp.tool()
+def plan_assessment(
+    tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"],
+    target: str,
+    category: Literal["passive", "active", "dast", "pentest", "dynamic"] = "active",
+    mode: Literal["quick", "standard", "deep"] = "standard",
+    profile_id: str | None = None,
+    repo_path: str | None = None,
+    timeout_seconds: int = 120,
+) -> dict[str, Any]:
+    """Create an assessment plan without launching any scanner."""
+    return service.plan_assessment(
+        tool=tool,
+        target=target,
+        category=category,
+        mode=mode,
+        profile_id=profile_id,
+        repo_path=repo_path,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+@mcp.tool()
+def authorize_assessment(
+    tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"],
+    target: str,
+    category: Literal["passive", "active", "dast", "pentest", "dynamic"] = "active",
+    mode: Literal["quick", "standard", "deep"] = "standard",
+    profile_id: str | None = None,
+    ttl_seconds: int = 900,
+    confirm_authorized: bool = False,
+) -> dict[str, Any]:
+    """Issue a bound, single-use live-execution approval after scope and profile checks."""
+    return service.authorize_assessment(
+        tool=tool,
+        target=target,
+        category=category,
+        mode=mode,
+        profile_id=profile_id,
+        ttl_seconds=ttl_seconds,
+        confirm_authorized=confirm_authorized,
+    )
+
+
+@mcp.tool()
 def run_security_assessment(
     tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"],
     target: str,
@@ -70,11 +116,13 @@ def run_security_assessment(
     confirm_authorized: bool = False,
     demo: bool = False,
     timeout_seconds: int = 120,
+    profile_id: str | None = None,
+    approval_id: str | None = None,
 ) -> dict[str, Any]:
     """Start an assessment only after authorization/safety checks.
 
-    Defaults to dry_run=true. For live runs set dry_run=false and
-    confirm_authorized=true after validate_target_scope succeeds.
+    Defaults to dry_run=true. For live runs set dry_run=false, confirm_authorized=true,
+    and supply a bound approval_id from authorize_assessment.
     """
     return service.run_security_assessment(
         tool=tool,
@@ -86,6 +134,8 @@ def run_security_assessment(
         confirm_authorized=confirm_authorized,
         demo=demo,
         timeout_seconds=timeout_seconds,
+        profile_id=profile_id,
+        approval_id=approval_id,
     )
 
 

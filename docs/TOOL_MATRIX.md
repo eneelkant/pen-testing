@@ -5,7 +5,7 @@ Last reviewed: 2026-10-27.
 The machine-readable descriptive registry is `core/capabilities.py`. Use
 `pen-testing capabilities` to list integrations that have in-repository adapters,
 and `pen-testing capabilities --include-planned` to include roadmap candidates.
-A registry entry does not mean that an external executable is installed or healthy;
+Checkov and MobSFScan are optional local-only source scanners. Their presence does not imply a full mobile binary/device workflow. A registry entry does not mean that an external executable is installed or healthy;
 runtime availability comes from adapter health checks. Planned entries are not
 dispatchable and must not be described as implemented.
 
@@ -21,7 +21,8 @@ dispatchable and must not be described as implemented.
 | [Schemathesis](https://github.com/schemathesis/schemathesis) | Schema-based API tests | OpenAPI and supported GraphQL/API inputs | Planned worker with destination and request bounds | Verify selected release | Planned | No schema-driven API adapter yet; every generated request must remain in scope. |
 | [MobSF](https://github.com/MobSF/Mobile-Security-Framework-MobSF) | Mobile app analysis | Android/iOS artifacts; static/dynamic modes differ | Planned isolated local service | GPL-3.0 | Planned | Artifact support, OS runtime requirements and distribution obligations must be reviewed. |
 | [Nmap](https://github.com/nmap/nmap) | Host/service discovery | Explicit host or CIDR / network | Planned least-privilege worker | Verify NPSL terms for selected release | Planned | No network scanner is integrated; CIDR syntax metadata is not authorization. |
-| [Checkov](https://github.com/bridgecrewio/checkov) | IaC/configuration scanning | Source path / static | Planned read-only workspace | Verify selected release | Planned | No adapter yet. |
+| [Checkov](https://github.com/bridgecrewio/checkov) `checkov==3.3.29` | IaC/configuration scanning | Local source path / static | Optional Python CLI over confined workspace; external-module downloads and uploads disabled | Apache-2.0; review transitive dependencies | Integrated adapter (optional extra) | Not a remote scanner; verify runtime health and review output. |
+| [MobSFScan](https://github.com/MobSF/mobsfscan) `mobsfscan==1.0.1` | Android/iOS source-code pattern analysis | Local source path / static | Optional Python CLI; raw source-bearing report is temporary and sanitized | LGPL-3.0-or-later; review Semgrep/rule dependencies | Integrated adapter (optional extra) | Not full MobSF; does not scan APK/IPA binaries or perform device/runtime tests. |
 | [testssl.sh](https://github.com/testssl/testssl.sh) | TLS posture assessment | Authorized host / TLS | Planned isolated worker | Verify GPL-2.0 terms for selected release | Planned | No adapter yet; only within explicitly approved hosts and ports. |
 | [Semgrep](https://github.com/semgrep/semgrep) | Candidate SAST | Source path / static | Not selected | Engine and rules need separate license review | Planned candidate | Do not redistribute rules without verified permission. |
 

@@ -16,6 +16,21 @@ Official MCP Python SDK (`mcp` 2.x) stdio server exposing constrained orchestrat
 | `list_findings` | No | Normalized findings |
 | `export_report` | No | Draft report export |
 
+## Optional local static scanners
+
+Checkov and MobSFScan are optional extras; install them separately with:
+
+```bash
+pip install -e '.[checkov,mobsfscan]'
+python -m core.cli health --tool checkov
+python -m core.cli health --tool mobsfscan
+```
+
+They accept only confined local source/configuration paths through the MCP service.
+MobSFScan covers mobile source-code patterns only, not APK/IPA binaries or device
+runtime testing. Both tools stay unavailable when their pinned dependencies fail
+their health checks.
+
 ## Capability metadata
 
 The CLI subcommand `pen-testing capabilities` lists integrations with in-repository

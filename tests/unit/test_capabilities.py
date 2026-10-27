@@ -2,7 +2,7 @@ from core.capabilities import get_capability, integrated_tool_ids, list_capabili
 
 
 def test_integrated_registry_matches_existing_adapter_set():
-    assert integrated_tool_ids() == {"shannon", "briar", "headers", "gitleaks", "trivy"}
+    assert integrated_tool_ids() == {"shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"}
 
 
 def test_planned_capabilities_are_not_listed_as_integrated_by_default():
@@ -18,6 +18,8 @@ def test_planned_capabilities_are_visible_only_when_requested():
     assert by_id["zap"]["status"] == "planned"
     assert by_id["zap"]["implemented"] is False
     assert by_id["mobsf"]["status"] == "planned"
+    assert by_id["checkov"]["status"] == "integrated"
+    assert by_id["mobsfscan"]["status"] == "integrated"
     assert by_id["nmap"]["status"] == "planned"
 
 
@@ -59,4 +61,22 @@ def test_cli_capabilities_command_outputs_json(monkeypatch, capsys, tmp_path):
     assert by_id["shannon"]["status"] == "integrated"
     assert by_id["zap"]["status"] == "planned"
     assert by_id["zap"]["implemented"] is False
+
+def test_cli_capabilities_tool_selector(monkeypatch, capsys, tmp_path):
+    import json
+    from types import SimpleNamespace
+
+    from core import cli
+
+    cfg = SimpleNamespace(
+        ensure_dirs=lambda: None,
+        scopes_file=str(tmp_path / "does-not-exist.yaml"),
+    )
+    monkeypatch.setattr(cli, "load_config", lambda _path: cfg)
+
+    assert cli.main(["capabilities", "--tool", "checkov"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["capabilities"]) == 1
+    assert payload["capabilities"][0]["tool_id"] == "checkov"
+    assert payload["capabilities"][0]["implemented"] is True
 

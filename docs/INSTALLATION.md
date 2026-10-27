@@ -18,6 +18,25 @@ python3 -m venv .venv-briar
 export PEN_BRIAR_PYTHON=$PWD/.venv-briar/bin/python
 ```
 
+## Optional local static scanners
+
+These optional dependencies are separate from the minimal MCP install. They scan
+confined local source/configuration paths; they do not provide remote web or network
+testing.
+
+```bash
+# With Python 3.10–3.12 for the pinned Checkov extra:
+pip install -e '.[checkov,mobsfscan]'
+python -m core.cli health --tool checkov
+python -m core.cli health --tool mobsfscan
+```
+
+The configured versions are Checkov 3.3.29 and MobSFScan 1.0.1. Checkov's optional
+extra is intentionally limited to Python 3.10–3.12; for other environments, use a
+separately managed supported runtime and verify the version health check. MobSFScan
+performs source-code pattern analysis only; full MobSF binary/static analysis and
+dynamic testing remain separate capabilities.
+
 Shannon still requires Docker + Node.js 18+ separately.
 
 ## One-command setup

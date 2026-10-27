@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Integrations
+
+- Add optional, version-checked Checkov 3.3.29 for confined local IaC/configuration scans; platform uploads and external Terraform-module downloads are disabled.
+- Add optional MobSFScan 1.0.1 for confined Android/iOS source-code pattern checks; this is not APK/IPA binary analysis or dynamic device testing.
+- Keep both scanner dependencies out of the default MCP install. Raw source-bearing reports are temporary and normalized output is sanitized.
+
 ### Security
 
 - Trivy and Gitleaks Docker fallbacks use digest-pinned refs from `PINNED_IMAGES` (Trivy adapter no longer floats `0.58.1`)

@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from core import __version__
+from core.capabilities import CAPABILITIES_BY_ID, get_capability, list_capabilities
 from core.config import load_config
 from core.findings import Finding
 from core.findings.redaction import redact_text
@@ -48,6 +49,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_health = sub.add_parser("health", help="Adapter health checks")
     p_health.add_argument("--tool", choices=["shannon", "briar", "headers", "gitleaks", "trivy", "all"], default="all")
+
+    p_capabilities = sub.add_parser("capabilities", help="List implemented tool capabilities and constraints")
+    p_capabilities.add_argument("--tool", choices=sorted(CAPABILITIES_BY_ID), help="Show one implemented adapter")
 
     p_run = sub.add_parser("run", help="Run an adapter (requires authorization for active tools)")
     p_run.add_argument("--tool", required=True, choices=["shannon", "briar", "headers", "gitleaks", "trivy"])
@@ -137,6 +141,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "providers":
         print(json.dumps(list_provider_status(), indent=2))
+        return 0
+
+    if args.command == "capabilities":
+        records = [get_capability(args.tool).to_dict()] if args.tool else list_capabilities()
+        print(json.dumps({"count": len(records), "capabilities": records}, indent=2))
         return 0
 
     if args.command == "scope-check":

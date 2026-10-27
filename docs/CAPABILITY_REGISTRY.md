@@ -40,7 +40,6 @@ Implement candidates as separate, optional adapter PRs. Inspect source, exact ve
 | Nuclei | https://github.com/projectdiscovery/nuclei | https://docs.projectdiscovery.io/tools/nuclei/overview | Pinned binary plus curated templates, strict scope and impact policy |
 | Schemathesis | https://github.com/schemathesis/schemathesis | https://schemathesis.readthedocs.io/en/stable/ | Schema-driven API tests using explicitly authorized OpenAPI/GraphQL targets |
 | OWASP API Security Testing Framework | https://github.com/OWASP/api-security-testing-framework | https://github.com/OWASP/api-security-testing-framework | Evaluate compatibility and licensing before implementing |
-| MobSF | https://github.com/MobSF/Mobile-Security-Framework-MobSF | https://mobsf.github.io/docs/ | Isolated mobile static analysis first; validate exact artifact formats |
 | Full MobSF | https://github.com/MobSF/Mobile-Security-Framework-MobSF | https://mobsf.github.io/docs/ | Isolated APK/IPA binary/static workflow and separately validated dynamic testing; GPL-3.0 and distribution review |
 | Nmap | https://github.com/nmap/nmap | https://nmap.org/book/ | Explicit host/CIDR and port scopes; conservative rate and timeout defaults |
 | testssl.sh | https://github.com/testssl/testssl.sh | https://testssl.sh/ | TLS posture checks against an authorized URL/host |

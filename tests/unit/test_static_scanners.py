@@ -100,6 +100,7 @@ def test_checkov_normalizes_failed_checks_and_sanitizes_raw_code(tmp_path, monke
     assert result.findings[0].severity == "high"
     assert result.findings[0].evidence_sanitized["line_numbers"] == [5]
     assert secret_marker not in Path(result.artifacts["report"]).read_text(encoding="utf-8")
+    assert not list(Path(result.artifacts["report"]).parent.glob(".raw-checkov-*"))
     assert "--skip-download" in runner.commands[0]["command"]
     assert "--skip-results-upload" in runner.commands[0]["command"]
     assert "--download-external-modules" in runner.commands[0]["command"]
@@ -150,6 +151,7 @@ def test_mobsfscan_normalizes_mobile_source_findings_without_code_snippets(tmp_p
     saved = Path(result.artifacts["report"]).read_text(encoding="utf-8")
     assert secret_marker not in saved
     assert "match_string" not in saved
+    assert not list(Path(result.artifacts["report"]).parent.glob(".raw-mobsfscan-*"))
     assert runner.commands[0]["env"]["SEMGREP_SEND_METRICS"] == "off"
 
 
@@ -191,3 +193,20 @@ def test_capability_registry_is_wired_to_both_cli_and_mcp_service():
     config = load_config()
     assert set(cli_adapters(config, None)) == set(CAPABILITIES_BY_ID)
     assert set(mcp_adapters(config, None)) == set(CAPABILITIES_BY_ID)
+
+
+
+def test_raw_scanner_reports_are_removed_when_output_is_malformed(tmp_path, monkeypatch):
+    config = _config(tmp_path, monkeypatch)
+    target = tmp_path / "source"
+    target.mkdir()
+    _install_test_versions(monkeypatch)
+    for adapter_type, runner in (
+        (CheckovAdapter, FakeRunner(checkov_report={"unexpected": True})),
+        (MobSFScanAdapter, FakeRunner(mobsfscan_report={"unexpected": True}, returncode=0)),
+    ):
+        adapter = adapter_type(config, None, runner=runner)
+        result = adapter.run(AdapterRequest(target=str(target), dry_run=False))
+        assert result.status == "failed"
+        assert not list(Path(config.reports_dir).glob(".raw-checkov-*"))
+        assert not list(Path(config.reports_dir).glob(".raw-mobsfscan-*"))

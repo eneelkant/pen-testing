@@ -180,3 +180,14 @@ def test_local_static_scanners_refuse_paths_outside_allowed_roots(tmp_path, monk
         result = adapter.run(AdapterRequest(target=str(outside), dry_run=False))
         assert result.status == "blocked"
         assert runner.commands == []
+
+
+def test_capability_registry_is_wired_to_both_cli_and_mcp_service():
+    from core.capabilities import CAPABILITIES_BY_ID
+    from core.cli import _adapters as cli_adapters
+    from core.config import load_config
+    from mcp_server.service import _adapters as mcp_adapters
+
+    config = load_config()
+    assert set(cli_adapters(config, None)) == set(CAPABILITIES_BY_ID)
+    assert set(mcp_adapters(config, None)) == set(CAPABILITIES_BY_ID)

@@ -115,11 +115,18 @@ class CheckovAdapter(SecurityAdapter):
             "--output-file-path",
             str(output_dir),
             "--skip-download",
+            "--skip-results-upload",
+            "--download-external-modules",
+            "false",
         ]
         result = self.runner.run(
             command,
             timeout=request.timeout_seconds or 900,
-            env={"CHECKOV_ENABLE_TELEMETRY": "false"},
+            env={
+                "CHECKOV_ENABLE_TELEMETRY": "false",
+                "BC_API_KEY": "",
+                "PRISMA_API_URL": "",
+            },
         )
         if result.timed_out:
             return ExecutionResult(

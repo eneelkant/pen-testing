@@ -34,6 +34,13 @@ mcp = [
 briar = [
   "briar-pentest==0.4.62",
 ]
+# Optional source/configuration scanners. They are not installed by base/MCP/dev.
+checkov = [
+  "checkov==3.3.29; python_version >= '3.10' and python_version < '3.13'",
+]
+mobsfscan = [
+  "mobsfscan==1.0.1",
+]
 dev = [
   "pytest>=8.0,<10",
   "pytest-cov>=5.0,<8",

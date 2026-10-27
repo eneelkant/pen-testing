@@ -40,3 +40,23 @@ def test_lookup_returns_a_copy_not_registry_mutable_state():
     fresh = get_capability("headers")
     assert fresh is not None
     assert fresh["target_types"] == ["web_url"]
+
+def test_cli_capabilities_command_outputs_json(monkeypatch, capsys, tmp_path):
+    import json
+    from types import SimpleNamespace
+
+    from core import cli
+
+    cfg = SimpleNamespace(
+        ensure_dirs=lambda: None,
+        scopes_file=str(tmp_path / "does-not-exist.yaml"),
+    )
+    monkeypatch.setattr(cli, "load_config", lambda _path: cfg)
+
+    assert cli.main(["capabilities", "--include-planned"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    by_id = {item["tool_id"]: item for item in payload["capabilities"]}
+    assert by_id["shannon"]["status"] == "integrated"
+    assert by_id["zap"]["status"] == "planned"
+    assert by_id["zap"]["implemented"] is False
+

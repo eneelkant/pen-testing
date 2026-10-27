@@ -33,12 +33,14 @@ flowchart TB
     HD[HeadersAdapter]
     GL[GitleaksAdapter]
     TR[TrivyAdapter]
+    CK[CheckovAdapter]
+    MS[MobSFScanAdapter]
   end
 
   subgraph isolated [Isolated runtimes]
     NPX["npx @keygraph/shannon@3.4.0 + Docker worker"]
     VENV["venv/container briar-pentest==0.4.62"]
-    SCAN["optional gitleaks/trivy containers"]
+    SCAN["optional local scanner executables / network-disabled Gitleaks and Trivy containers"]
   end
 
   REG[(scopes/registry.yaml)]
@@ -57,6 +59,10 @@ flowchart TB
   BR --> VENV
   GL --> SCAN
   TR --> SCAN
+  CK --> RUN
+  MS --> RUN
+  CK --> SCAN
+  MS --> SCAN
   adapters --> NORM
   NORM --> REP
   REP --> OUT
@@ -69,7 +75,7 @@ flowchart TB
 | Path | Role |
 |---|---|
 | `core/` | Config, execution, scope, findings, reporting, diagnostics, retention, SBOM metadata, CLI and the curated runtime capability registry |
-| `integrations/` | Tool adapters implementing `SecurityAdapter` |
+| `integrations/` | Tool adapters implementing `SecurityAdapter`, including optional local-only Checkov and MobSFScan scanners |
 | `providers/` | AI provider env detection (no secret values logged) |
 | `scopes/` | Authorization registry and examples |
 | `reports/` | Templates and generated output (generated gitignored) |
@@ -105,7 +111,8 @@ AI agreement alone must not promote a finding to human-confirmed.
 | Orchestrator | Own venv / orchestrator container; non-root |
 | Shannon | Upstream ephemeral worker via Docker; repo mount read-only (upstream behavior) |
 | Briar | Dedicated `.venv-briar` or `docker/briar` image |
-| Gitleaks/Trivy | Host binary or official container with read-only source mounts |
+| Gitleaks/Trivy | Host binary or digest-pinned container with read-only source mounts |
+| Checkov/MobSFScan | Optional, version-checked local binaries over confined workspace paths; Checkov platform uploads/external-module downloads disabled |
 
 Docker socket is **not** mounted into Briar/active-testing workers.
 

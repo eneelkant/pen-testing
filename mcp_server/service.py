@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from core import __version__
+from core.capabilities import get_capability, list_capabilities
 from core.config import PlatformConfig
 from core.diagnostics import collect_diagnostics
 from core.findings import Finding
@@ -221,13 +222,32 @@ def list_integrations() -> dict[str, Any]:
     items = {}
     for name, adapter in adapters.items():
         health = adapter.healthcheck()
+        capability = get_capability(name) or {
+            "tool_id": name,
+            "status": "unregistered",
+            "implemented": False,
+            "target_types": [],
+            "modes": [],
+            "source_url": "",
+            "license": "unknown",
+            "notes": "Adapter is not represented in the capability registry.",
+        }
         items[name] = {
+            **capability,
             "name": name,
             "version_pin": getattr(adapter, "version_pin", "unknown"),
             "requires_active_scope": getattr(adapter, "requires_active_scope", True),
             "health": health,
         }
-    return {"integrations": items}
+    planned = [
+        item for item in list_capabilities(include_planned=True)
+        if item["status"] == "planned"
+    ]
+    return {
+        "integrations": items,
+        "planned_capabilities": planned,
+        "note": "Planned entries are informational only and cannot be dispatched. Runtime availability is determined by each adapter health check.",
+    }
 
 
 def run_local_diagnostics() -> dict[str, Any]:

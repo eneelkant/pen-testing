@@ -59,7 +59,7 @@ def run_local_diagnostics() -> dict[str, Any]:
 
 @mcp.tool()
 def run_security_assessment(
-    tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy"],
+    tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"],
     target: str,
     category: Literal["passive", "active", "dast", "pentest", "dynamic"] = "active",
     mode: Literal["quick", "standard", "deep"] = "standard",

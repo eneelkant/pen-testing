@@ -1,3 +1,10 @@
+## Unreleased
+
+- Add a shared runtime capability registry surfaced in CLI and MCP integration metadata.
+- Add optional, version-checked Checkov support for confined local IaC/configuration scans.
+- Add optional MobSFScan support for confined Android/iOS source-code pattern scans; full MobSF binary/runtime analysis remains separate.
+- Preserve explicit dry-run, source-path confinement and existing authorization controls; keep optional scanner dependencies out of the default MCP installation.
+
 # Changelog
 
 ## Unreleased

@@ -11,6 +11,8 @@ Metadata reviewed: 2026-10-27. The runtime capability registry is in core/capabi
 | [HTTP security headers](https://github.com/eneelkant/pen-testing) | Selected response-header checks | Passive HTTP GET | Python standard library | Apache-2.0 repository code | Integrated; limited header checks only, no TLS grade or comprehensive DAST |
 | [Gitleaks](https://github.com/gitleaks/gitleaks) | Secret detection on configured local source | Static | Binary or digest-pinned container | MIT | Integrated; local path only; Docker fallback network-disabled |
 | [Trivy](https://github.com/aquasecurity/trivy) | Local filesystem, dependency and configuration checks | Static/dependency/configuration | Binary or digest-pinned container | Apache-2.0 | Integrated; current adapter is filesystem-oriented; not a general network or host scanner |
+| [Checkov](https://github.com/bridgecrewio/checkov) (3.3.29) | Local IaC/configuration misconfiguration checks | Static/configuration | Optional local executable; Python 3.10–3.12 extra | Apache-2.0 | Integrated; optional and version-checked; platform downloads skipped; test parsing/coverage for each format before production use |
+| [MobSFScan](https://github.com/MobSF/mobsfscan) (1.0.1) | Android/iOS source-code pattern detection | Static source analysis | Optional local executable | LGPL-3.0-or-later | Integrated; scans source paths only, not APK/IPA binaries or runtime/device behavior; transitive Semgrep/rule licensing requires review |
 
 ## Candidate integrations — NOT yet available through CLI/MCP
 
@@ -21,10 +23,8 @@ Metadata reviewed: 2026-10-27. The runtime capability registry is in core/capabi
 | Schemathesis | https://github.com/schemathesis/schemathesis | Schema-driven API testing | MIT; validate supported schemas and current version | Proposed |
 | OWASP API Security Testing Framework | https://github.com/OWASP/api-security-testing-framework | API-specific security testing | Verify repository activity, license and runtime contracts | Evaluate |
 | MobSF | https://github.com/MobSF/Mobile-Security-Framework-MobSF | Mobile static/dynamic analysis | GPL-3.0; distribution review required | Proposed |
-| MobSFScan | https://github.com/MobSF/mobsfscan | Mobile/source-code pattern analysis | Verify exact pinned-version license and behavior | Proposed |
 | Nmap | https://github.com/nmap/nmap | Authorized host/service discovery | GPL-2.0+; distribution review and explicit host/CIDR scope required | Proposed |
 | testssl.sh | https://github.com/testssl/testssl.sh | TLS posture assessment | GPL-2.0; distribution review required | Proposed |
-| Checkov | https://github.com/bridgecrewio/checkov | IaC/configuration analysis | Apache-2.0; verify supported scanners and policies | Proposed |
 | Semgrep | https://github.com/semgrep/semgrep | SAST | Review engine and individual rule licenses separately | Proposed |
 
 ## Safety, license and release notes

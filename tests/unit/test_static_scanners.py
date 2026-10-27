@@ -201,12 +201,12 @@ def test_raw_scanner_reports_are_removed_when_output_is_malformed(tmp_path, monk
     target = tmp_path / "source"
     target.mkdir()
     _install_test_versions(monkeypatch)
-    for adapter_type, runner in (
-        (CheckovAdapter, FakeRunner(checkov_report={"unexpected": True})),
-        (MobSFScanAdapter, FakeRunner(mobsfscan_report={"unexpected": True}, returncode=0)),
+    for adapter_type, runner, prefix in (
+        (CheckovAdapter, FakeRunner(checkov_report={"unexpected": True}), "checkov"),
+        (MobSFScanAdapter, FakeRunner(mobsfscan_report={"unexpected": True}, returncode=0), "mobsfscan"),
     ):
         adapter = adapter_type(config, None, runner=runner)
         result = adapter.run(AdapterRequest(target=str(target), dry_run=False))
         assert result.status == "failed"
-        assert not list(Path(config.reports_dir).glob(".raw-checkov-*"))
-        assert not list(Path(config.reports_dir).glob(".raw-mobsfscan-*"))
+        output_dir = Path(config.reports_dir) / f"{prefix}-{result.execution_id}"
+        assert not list(output_dir.glob(".raw-*"))

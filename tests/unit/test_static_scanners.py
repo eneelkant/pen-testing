@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from core.config import load_config
-from integrations import scanners
+from integrations.base import AdapterRequest
 from integrations.scanners import CheckovAdapter, MobSFScanAdapter
 from integrations.scanners import checkov as checkov_module
 from integrations.scanners import mobsfscan as mobsfscan_module
@@ -92,9 +92,6 @@ def test_checkov_normalizes_failed_checks_and_sanitizes_raw_code(tmp_path, monke
     _install_test_versions(monkeypatch)
     adapter = CheckovAdapter(config, None, runner=runner)
 
-    result = adapter.run(AdapterRequest(target=str(target), dry_run=False)) if False else None
-    from integrations.base import AdapterRequest
-
     result = adapter.run(AdapterRequest(target=str(target), dry_run=False))
 
     assert result.status == "succeeded"
@@ -139,8 +136,6 @@ def test_mobsfscan_normalizes_mobile_source_findings_without_code_snippets(tmp_p
     _install_test_versions(monkeypatch)
     adapter = MobSFScanAdapter(config, None, runner=runner)
 
-    from integrations.base import AdapterRequest
-
     result = adapter.run(AdapterRequest(target=str(target), dry_run=False))
 
     assert result.status == "succeeded"
@@ -161,8 +156,6 @@ def test_local_static_scanner_dry_run_does_not_invoke_scanner(tmp_path, monkeypa
     for adapter_type in (CheckovAdapter, MobSFScanAdapter):
         runner = FakeRunner()
         adapter = adapter_type(config, None, runner=runner)
-        from integrations.base import AdapterRequest
-
         result = adapter.run(AdapterRequest(target=str(target), dry_run=True))
         assert result.status == "skipped"
         assert result.metadata["dry_run"] is True
@@ -179,8 +172,6 @@ def test_local_static_scanners_refuse_paths_outside_allowed_roots(tmp_path, monk
     for adapter_type in (CheckovAdapter, MobSFScanAdapter):
         runner = FakeRunner()
         adapter = adapter_type(config, None, runner=runner)
-        from integrations.base import AdapterRequest
-
         result = adapter.run(AdapterRequest(target=str(outside), dry_run=False))
         assert result.status == "blocked"
         assert runner.commands == []

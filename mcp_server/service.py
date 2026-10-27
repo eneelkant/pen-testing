@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from core import __version__
+from core.capabilities import get_capability
 from core.config import PlatformConfig
 from core.diagnostics import collect_diagnostics
 from core.findings import Finding
@@ -221,10 +222,13 @@ def list_integrations() -> dict[str, Any]:
     items = {}
     for name, adapter in adapters.items():
         health = adapter.healthcheck()
+        # Fail visibly if a runtime adapter lacks the metadata used by CLI/MCP.
+        capability = get_capability(name)
         items[name] = {
             "name": name,
             "version_pin": getattr(adapter, "version_pin", "unknown"),
             "requires_active_scope": getattr(adapter, "requires_active_scope", True),
+            "capability": capability.to_dict(),
             "health": health,
         }
     return {"integrations": items}

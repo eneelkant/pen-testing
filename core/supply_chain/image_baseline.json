@@ -2,7 +2,11 @@
  "description": "Reviewed inherited-risk baseline for the merge regression gate. Not a waiver: listed findings remain open and the absolute release gate still fails on them.",
  "entries": [
   {
-   "approval": null,
+   "approval": {
+    "approval_ref": "https://github.com/eneelkant/pen-testing/pull/38",
+    "approved_by": "neelkantekbote-66degree",
+    "expires_at": "2026-11-27T08:50:38.225011+00:00"
+   },
    "db_updated_at": "2026-10-27T07:13:33.504287223Z",
    "findings": [
     {
@@ -14782,7 +14786,11 @@
    }
   },
   {
-   "approval": null,
+   "approval": {
+    "approval_ref": "https://github.com/eneelkant/pen-testing/pull/38",
+    "approved_by": "neelkantekbote-66degree",
+    "expires_at": "2026-11-27T08:50:38.225011+00:00"
+   },
    "db_updated_at": "2026-10-27T07:13:33.504287223Z",
    "findings": [
     {
@@ -15672,7 +15680,11 @@
    }
   },
   {
-   "approval": null,
+   "approval": {
+    "approval_ref": "https://github.com/eneelkant/pen-testing/pull/38",
+    "approved_by": "neelkantekbote-66degree",
+    "expires_at": "2026-11-27T08:50:38.225011+00:00"
+   },
    "db_updated_at": "2026-10-27T07:13:33.504287223Z",
    "findings": [
     {
@@ -16307,7 +16319,11 @@
    }
   },
   {
-   "approval": null,
+   "approval": {
+    "approval_ref": "https://github.com/eneelkant/pen-testing/pull/38",
+    "approved_by": "neelkantekbote-66degree",
+    "expires_at": "2026-11-27T08:50:38.225011+00:00"
+   },
    "db_updated_at": "2026-10-27T07:13:33.504287223Z",
    "findings": [
     {

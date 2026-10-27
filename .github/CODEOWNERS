@@ -1,12 +1,17 @@
 # Code owners for the image security gates.
 #
 # The baseline records inherited risk for the merge regression gate. Changes to
-# it, to the gate code, or to the workflows that enforce it need review from the
-# repository owner. CODEOWNERS only takes effect when branch protection (or a
-# ruleset) on `main` enables "Require review from Code Owners"; see
+# it, to the gate code, or to the workflows that enforce it need review from an
+# independent code owner. CODEOWNERS only takes effect when branch protection
+# (or a ruleset) on `main` enables "Require review from Code Owners"; see
 # docs/IMAGE_BASELINE.md for the required administrator settings.
+#
+# `@neelkantekbote-66degree` is proposed as a second owner so the repository
+# author is not the only possible approver. That collaborator must accept this
+# ownership via review of the PR that lands this file; listing a login here is
+# not itself a claim that they have signed off on every future change.
 
-/core/supply_chain/image_baseline.json @eneelkant
-/core/supply_chain/baseline.py @eneelkant
-/core/supply_chain/images.py @eneelkant
-/.github/ @eneelkant
+/core/supply_chain/image_baseline.json @eneelkant @neelkantekbote-66degree
+/core/supply_chain/baseline.py @eneelkant @neelkantekbote-66degree
+/core/supply_chain/images.py @eneelkant @neelkantekbote-66degree
+/.github/ @eneelkant @neelkantekbote-66degree

@@ -68,7 +68,7 @@ flowchart TB
 
 | Path | Role |
 |---|---|
-| `core/` | Config, execution, scope, findings, reporting, diagnostics, retention, SBOM metadata, CLI |
+| `core/` | Config, execution, scope, findings, reporting, diagnostics, retention, SBOM metadata, CLI and the curated runtime capability registry |
 | `integrations/` | Tool adapters implementing `SecurityAdapter` |
 | `providers/` | AI provider env detection (no secret values logged) |
 | `scopes/` | Authorization registry and examples |
@@ -85,6 +85,12 @@ All tools implement `integrations.base.SecurityAdapter`:
 1. `healthcheck()` — dependency/capability probe, no active scanning
 2. `preflight(request)` — mandatory scope enforcement for active categories
 3. `run(request)` — execute or dry-run; return `ExecutionResult` with normalized findings
+
+## Runtime capability registry
+
+`core/capabilities.py` is the metadata source used by CLI capability discovery and MCP `list_integrations`. It lists only adapters wired into the current runtime. It records target types, modes, authorization requirement, dependencies, upstream source/version pin, license, network profile and limitations.
+
+The shared target vocabulary is forward-looking; it does not make a target type supported by an adapter. Add a registry entry, adapter implementation, negative/positive tests and documentation together. Unknown or planned tool IDs are rejected by registry lookup rather than treated as available.
 
 ## Finding lifecycle
 

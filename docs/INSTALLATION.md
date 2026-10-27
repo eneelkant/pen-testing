@@ -20,6 +20,25 @@ export PEN_BRIAR_PYTHON=$PWD/.venv-briar/bin/python
 
 Shannon still requires Docker + Node.js 18+ separately.
 
+## Optional local static scanners
+
+These optional adapters are not installed by the default MCP profile. They scan only configured local source/configuration paths; they do not enable remote network scanning.
+
+Checkov 3.3.29 is pinned for Python 3.10–3.12 in this project. MobSFScan 1.0.1 checks mobile source-code patterns; it is not the MobSF APK/IPA binary analyzer and does not perform emulator/device runtime testing.
+
+~~~bash
+# Activate this repository's virtual environment first.
+python -m pip install -e ".[checkov,mobsfscan]"
+python -m core.cli health --tool checkov
+python -m core.cli health --tool mobsfscan
+python -m core.cli capabilities --tool checkov
+python -m core.cli capabilities --tool mobsfscan
+~~~
+
+For the initial run, use dry-run mode and a source/configuration directory under an allowed workspace root. A healthy dependency check does not grant permission to scan a path. The adapters refuse paths outside the configured work/report roots or current workspace.
+
+License references: [Checkov](https://github.com/bridgecrewio/checkov) (Apache-2.0), [MobSFScan](https://github.com/MobSF/mobsfscan) (LGPL-3.0-or-later). Review transitive dependencies and the intended distribution model before redistributing these optional engines.
+
 ## One-command setup
 
 ```bash

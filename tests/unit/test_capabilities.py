@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from core.cli import main
 from core.capabilities import (
     CAPABILITIES_BY_ID,
     ScanMode,
@@ -64,3 +65,28 @@ def test_unknown_target_types_are_not_silently_assigned():
     assert TargetType.ANDROID_ARTIFACT.value == "android_artifact"
     assert TargetType.IOS_ARTIFACT.value == "ios_artifact"
     assert TargetType.OPENAPI_DOCUMENT.value == "openapi_document"
+
+
+
+def test_cli_capability_command_emits_json(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PEN_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("PEN_REPORTS_DIR", str(tmp_path / "reports"))
+
+    assert main(["capabilities", "--tool", "headers"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 1
+    assert payload["capabilities"][0]["id"] == "headers"
+    assert payload["capabilities"][0]["modes"] == ["passive"]
+
+
+def test_cli_capabilities_does_not_claim_planned_tools(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PEN_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("PEN_REPORTS_DIR", str(tmp_path / "reports"))
+
+    assert main(["capabilities"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    names = {item["id"] for item in payload["capabilities"]}
+    assert names == {"shannon", "briar", "headers", "gitleaks", "trivy"}
+    assert "zap" not in names

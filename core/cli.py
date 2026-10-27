@@ -10,7 +10,7 @@ from pathlib import Path
 
 from core import __version__
 from core.config import load_config
-from core.capabilities import list_capabilities
+from core.capabilities import get_capability, integrated_tool_ids, list_capabilities
 from core.findings import Finding
 from core.findings.redaction import redact_text
 from core.net import redact_url_userinfo
@@ -20,7 +20,7 @@ from core.reporting import export_json, export_markdown, export_sarif, generate_
 from core.scope import ScopeEngine
 from core.scope.rate_limit import acquire_scan_slot, release_scan_slot
 from integrations.briar import BriarAdapter
-from integrations.scanners import GitleaksAdapter, HeadersAdapter, TrivyAdapter
+from integrations.scanners import CheckovAdapter, GitleaksAdapter, HeadersAdapter, MobSFScanAdapter, TrivyAdapter
 from integrations.shannon import ShannonAdapter
 from integrations.base import AdapterRequest
 from providers import list_provider_status
@@ -48,6 +48,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_capabilities.add_argument(
         "--include-planned", action="store_true", help="Include roadmap items that are not implemented"
     )
+    p_capabilities.add_argument(
+        "--tool",
+        choices=sorted(integrated_tool_ids()),
+        help="Show one implemented adapter",
+    )
 
     p_scope = sub.add_parser("scope-check", help="Validate a target against the authorization registry")
     p_scope.add_argument("--target", required=True)
@@ -55,10 +60,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_scope.add_argument("--scopes-file")
 
     p_health = sub.add_parser("health", help="Adapter health checks")
-    p_health.add_argument("--tool", choices=["shannon", "briar", "headers", "gitleaks", "trivy", "all"], default="all")
+    p_health.add_argument("--tool", choices=["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan", "all"], default="all")
 
     p_run = sub.add_parser("run", help="Run an adapter (requires authorization for active tools)")
-    p_run.add_argument("--tool", required=True, choices=["shannon", "briar", "headers", "gitleaks", "trivy"])
+    p_run.add_argument("--tool", required=True, choices=["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"])
     p_run.add_argument("--target", required=True, help="URL, host, or local path depending on tool")
     p_run.add_argument("--repo")
     p_run.add_argument("--mode", default="standard", help="Briar: quick|standard|deep")
@@ -125,6 +130,8 @@ def _adapters(config, scope):
         "headers": HeadersAdapter(config, scope),
         "gitleaks": GitleaksAdapter(config, scope),
         "trivy": TrivyAdapter(config, scope),
+        "checkov": CheckovAdapter(config, scope),
+        "mobsfscan": MobSFScanAdapter(config, scope),
     }
 
 
@@ -148,7 +155,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "capabilities":
-        print(json.dumps({"capabilities": list_capabilities(include_planned=args.include_planned)}, indent=2))
+        records = [get_capability(args.tool)] if args.tool else list_capabilities(include_planned=args.include_planned)
+        print(json.dumps({"capabilities": records}, indent=2))
         return 0
 
     if args.command == "scope-check":

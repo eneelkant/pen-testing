@@ -38,6 +38,18 @@ PEN_ASSUME_YES=1 bash scripts/setup_all.sh
 
 `platform_status`, `check_dependencies`, `validate_target_scope`, `list_integrations`, `run_local_diagnostics`, `run_security_assessment` (dry-run by default), `get_assessment_status`, `list_findings`, `export_report`.
 
+Capability discovery (no scanners are executed by this command):
+
+```bash
+pen-testing capabilities
+pen-testing capabilities --include-planned
+```
+
+The second command includes roadmap candidates for planning only. Planned entries are
+not runnable integrations; health checks report whether current adapters have the
+required runtime dependencies. Target descriptors validate syntax only and never
+replace the authorization registry or egress policy.
+
 Details: [`mcp_server/README.md`](mcp_server/README.md)
 
 ## AI clients

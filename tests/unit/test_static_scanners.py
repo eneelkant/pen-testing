@@ -185,14 +185,15 @@ def test_local_static_scanners_refuse_paths_outside_allowed_roots(tmp_path, monk
 
 
 def test_capability_registry_is_wired_to_both_cli_and_mcp_service():
-    from core.capabilities import CAPABILITIES_BY_ID
+    from core.capabilities import integrated_tool_ids
     from core.cli import _adapters as cli_adapters
     from core.config import load_config
     from mcp_server.service import _adapters as mcp_adapters
 
     config = load_config()
-    assert set(cli_adapters(config, None)) == set(CAPABILITIES_BY_ID)
-    assert set(mcp_adapters(config, None)) == set(CAPABILITIES_BY_ID)
+    expected = integrated_tool_ids()
+    assert set(cli_adapters(config, None)) == expected
+    assert set(mcp_adapters(config, None)) == expected
 
 
 

@@ -31,7 +31,32 @@ This repository is licensed under Apache-2.0. It integrates external tools by in
 - License: Apache-2.0
 - Usage: optional binary/container via adapter
 
-## Semgrep (proposed)
+## Checkov (optional local scanner)
+
+- Project: Checkov
+- Source: https://github.com/bridgecrewio/checkov
+- Optional distribution pin: `checkov==3.3.29` (Python 3.10–3.12 in this project's optional extra)
+- License: Apache-2.0 (verify the exact release and transitive dependencies before redistribution)
+- Usage: separate local executable invoked through an adapter; source is not vendored
+- Official CLI reference: https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html
+
+## MobSFScan (optional mobile source scanner)
+
+- Project: MobSFScan
+- Source: https://github.com/MobSF/mobsfscan
+- Optional distribution pin: `mobsfscan==1.0.1`
+- License: GNU Lesser General Public License v3 or later (LGPL-3.0-or-later), per upstream PyPI metadata
+- Usage: separate local executable invoked through an adapter; source is not vendored
+- Scope: mobile application source-code pattern checks only; not APK/IPA binary analysis or dynamic device testing
+- Upstream release: https://github.com/MobSF/mobsfscan/releases/tag/1.0.1
+- Note: MobSFScan pulls Semgrep and other dependencies. Review the full dependency license inventory before redistribution. This notice is not legal clearance.
+
+## Semgrep (proposed / transitive dependency of MobSFScan)
+
+- Source: https://github.com/semgrep/semgrep
+- Engine license: verify the exact pinned package's license; MobSFScan 1.0.1 declares semgrep==1.172.0 as a dependency
+- Rules: rules have separate terms; do not redistribute rules without license review
+
 
 - Source: https://github.com/semgrep/semgrep
 - Engine license: LGPL-2.1

@@ -132,15 +132,15 @@ def test_image_report_fails_closed_on_missing_and_unscored_data():
 
     from core.supply_chain.images import classify_trivy_document
 
-    empty = classify_trivy_document({}, image="example@sha256:abc")
+    empty = classify_trivy_document({}, image="example@sha256:" + "a" * 64)
     assert empty["status"] == "NOT_VERIFIED"
     assert empty["ok"] is False
-    schema_only = classify_trivy_document({"SchemaVersion": 2}, image="example@sha256:abc")
+    schema_only = classify_trivy_document({"SchemaVersion": 2}, image="example@sha256:" + "a" * 64)
     assert schema_only["status"] == "NOT_VERIFIED"
     unscored = classify_trivy_document(
         {
             "SchemaVersion": 2,
-            "ArtifactName": "example@sha256:abc",
+            "ArtifactName": "example@sha256:" + "a" * 64,
             "CreatedAt": "2026-10-18T00:00:00Z",
             "Metadata": {
                 "VulnerabilityDB": {
@@ -171,7 +171,7 @@ def test_image_report_fails_closed_on_missing_and_unscored_data():
                 }
             ],
         },
-        image="example@sha256:abc",
+        image="example@sha256:" + "a" * 64,
         now=datetime(2026, 10, 18, tzinfo=timezone.utc),
     )
     assert unscored["status"] == "FAIL"

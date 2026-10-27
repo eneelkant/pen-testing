@@ -191,6 +191,108 @@ def test_image_mismatched_digest_is_not_verified():
     assert "digest" in report["error"]
 
 
+def test_image_empty_digests_are_not_verified_for_digest_pins():
+    doc = _trivy_doc(artifact="")
+    doc["Metadata"]["RepoDigests"] = []
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+    assert "digest" in report["error"]
+
+
+def test_image_tag_only_artifact_is_not_verified_for_digest_pins():
+    # Tag/name match without digest evidence must fail closed.
+    tag_only = PIN.split("@", 1)[0]
+    doc = _trivy_doc(artifact=tag_only)
+    doc["Metadata"]["RepoDigests"] = []
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+    assert "digest" in report["error"]
+
+
+def test_image_artifact_carrying_digest_without_repodigests_is_accepted():
+    doc = _trivy_doc(artifact=PIN, vulns=[])
+    doc["Metadata"]["RepoDigests"] = []
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "PASS"
+    assert report["blocking_count"] == 0
+
+
+def _pin_digest() -> str:
+    return PIN.split("@", 1)[1]
+
+
+def _no_manifest_evidence_doc():
+    doc = _trivy_doc(artifact=PIN.split("@", 1)[0], vulns=[])
+    doc["Metadata"]["RepoDigests"] = []
+    return doc
+
+
+def test_image_config_digest_is_not_manifest_identity():
+    # ImageID is the config digest; equality with the pin must not count.
+    doc = _no_manifest_evidence_doc()
+    doc["Metadata"]["ImageID"] = _pin_digest()
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+    assert "digest" in report["error"]
+
+
+def test_image_layer_diffid_is_not_manifest_identity():
+    doc = _no_manifest_evidence_doc()
+    doc["Metadata"]["DiffIDs"] = [_pin_digest()]
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        # Suffix/prefix tricks must not satisfy an exact digest comparison.
+        "evil/image@sha256:" + "0" * 64 + "-" + "x",
+        "evil/image:" + "sha256-" + "@sha256:" + "f" * 64,
+        "evil/image:tag-" + PIN.split("@", 1)[1].split(":", 1)[1],
+        "evil/image@" + PIN.split("@", 1)[1] + "0",
+        "evil/image@" + PIN.split("@", 1)[1].upper(),
+        PIN.split("@", 1)[1],  # bare digest without "@" is not a manifest reference
+    ],
+)
+def test_image_digest_lookalikes_are_not_verified(artifact):
+    doc = _trivy_doc(artifact=artifact, vulns=[])
+    doc["Metadata"]["RepoDigests"] = []
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED", artifact
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda d: d["Metadata"].__setitem__("RepoDigests", "x@" + PIN.split("@", 1)[1]),
+        lambda d: d["Metadata"].__setitem__("RepoDigests", [None, 7, {"d": PIN}]),
+        lambda d: d.__setitem__("Metadata", "not-a-dict"),
+        lambda d: d.__setitem__("Metadata", None),
+        lambda d: d.__setitem__("ArtifactName", ["not", "a", "string"]),
+    ],
+)
+def test_image_malformed_identity_fields_fail_closed(mutate):
+    doc = _no_manifest_evidence_doc()
+    mutate(doc)
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+
+
+@pytest.mark.parametrize("document", [None, [], "{}", {}, {"SchemaVersion": 2}, {"Results": []}])
+def test_image_malformed_report_is_not_verified(document):
+    report = classify_trivy_document(document, image=PIN, now=NOW)
+    assert report["status"] == "NOT_VERIFIED"
+
+
+def test_image_valid_identity_from_repodigests_only_is_accepted():
+    doc = _trivy_doc(artifact=PIN.split("@", 1)[0], vulns=[])
+    doc["Metadata"]["RepoDigests"] = ["other/name@sha256:" + "a" * 64, "x/y@" + _pin_digest()]
+    report = classify_trivy_document(doc, image=PIN, now=NOW)
+    assert report["status"] == "PASS"
+    assert report["blocking_count"] == 0
+
+
 def test_image_stale_created_at_is_not_verified():
     doc = _trivy_doc(created_at="2019-01-01T00:00:00Z")
     report = classify_trivy_document(doc, image=PIN, now=NOW)

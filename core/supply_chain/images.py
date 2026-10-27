@@ -131,6 +131,29 @@ def _report_digests(document: dict[str, Any]) -> set[str]:
     return found
 
 
+def _manifest_digest_evidence(document: dict[str, Any]) -> set[str]:
+    """Digests that identify the scanned image manifest.
+
+    Only ``ArtifactName`` (``repo:tag@sha256:...``) and ``Metadata.RepoDigests``
+    (``repo@sha256:...``) name a manifest. ``ImageID`` is the config digest and
+    ``DiffIDs`` are layer digests, so neither is evidence of manifest identity.
+    The digest must follow ``@`` and be a complete ``sha256:<64 hex>`` value;
+    substring or suffix matches are not accepted.
+    """
+    candidates: list[str] = [str(document.get("ArtifactName") or "")]
+    metadata = document.get("Metadata")
+    if isinstance(metadata, dict):
+        repo_digests = metadata.get("RepoDigests")
+        if isinstance(repo_digests, list):
+            candidates.extend(item for item in repo_digests if isinstance(item, str))
+    found: set[str] = set()
+    for item in candidates:
+        _, sep, digest = item.rpartition("@")
+        if sep and _DIGEST_RE.fullmatch(digest):
+            found.add(digest)
+    return found
+
+
 def _scanner_version(document: dict[str, Any]) -> str:
     for key in ("Trivy", "trivy"):
         block = document.get(key)
@@ -238,29 +261,16 @@ def classify_trivy_document(
     if expected:
         reported = _report_digests(document)
         artifact = str(document.get("ArtifactName") or "")
-        # Accept either explicit digest metadata or an ArtifactName that carries
-        # the pinned repository/tag (local docker scans often omit RepoDigests).
-        digest_ok = any(expected in item or item.endswith(expected.split(":", 1)[-1]) for item in reported)
-        name_ok = False
-        if artifact:
-            pin_name = identity["repository"].split("/")[-1]
-            name_ok = identity["repository"] in artifact or (pin_name and pin_name in artifact)
-            if identity["tag"] and identity["tag"] in artifact:
-                name_ok = True
-        if reported and not digest_ok:
+        # Digest-pinned images require manifest-digest evidence that exactly
+        # equals the pin. Tag/name matches, config (ImageID) and layer (DiffIDs)
+        # digests, and substring/suffix matches are not identity.
+        if expected not in _manifest_digest_evidence(document):
             return _not_verified(
                 image,
                 "trivy report image digest does not match the pinned digest",
                 exit_code=exit_code,
                 artifact=artifact,
                 reported_digests=sorted(reported),
-            )
-        if not reported and not name_ok and artifact and artifact != image:
-            return _not_verified(
-                image,
-                "trivy report artifact identity does not match the pinned image",
-                exit_code=exit_code,
-                artifact=artifact,
             )
 
     clock = now or datetime.now(timezone.utc)

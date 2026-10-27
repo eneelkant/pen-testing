@@ -97,6 +97,12 @@ Closest non-passing Trivy tip is canary (0 fixed HIGH/CRITICAL, 3 unscored). Sti
 
 Committed reject inventory: `core/supply_chain/candidate_rejects.json` (includes `6e13e65c…` and `1683f097…`). Monitor status remains `NO_ACCEPTABLE_CANDIDATE`.
 
+> **Superseded on 2026-10-26** by the DB update of 2026-10-26T07:15:18Z (absolute total 1,086; Trivy `latest` now 5 blocking). Current results: [`docs/PRODUCTION_READINESS_PLAN.md`](PRODUCTION_READINESS_PLAN.md#current-state-verified-2026-10-26).
+
+## Fresh check on main `be3a023` (2026-10-25)
+
+Host Trivy **0.76.0**, DB `UpdatedAt` **2026-10-25T01:20:33.190884269Z**. `python -m core.supply_chain candidates` → **`NO_ACCEPTABLE_CANDIDATE`**. Temporal `1.9.1@sha256:150d6208…` reclassified FAIL blocking **15** (unscored `GO-2026-5932` still present). Trivy `0.76.1` / Gitleaks `v8.30.1` still FAIL. Main CI run [40153361168](https://github.com/eneelkant/pen-testing/actions/runs/40153361168): Python PASS 0; upstream FAIL **1085**. Upstream pins stay. Plan: `docs/PRODUCTION_READINESS_PLAN.md`.
+
 ## Safe pin updates justified?
 
 **Python only (PR #28).** `python:3.12.15-alpine3.24` (index `b658b05c…`, amd64 `9b98a8d3…`) passed the complete gate with fresh digest-bound evidence plus build and runtime tests, including Shannon `--validate-model` (see "Current status"). Every other candidate failed, so these pins stay:

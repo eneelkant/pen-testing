@@ -107,15 +107,21 @@ Entries stop working at `expires_at`, and the regression gate then fails for eve
 
 ## Required GitHub settings (administrator)
 
-The checks below are only *required* when GitHub enforces them. As of 2026-10-25, `main` reports `protected: false` with no required checks and no rulesets. This session could not change that, because the protection API returned HTTP 403. An administrator must configure branch protection or a ruleset for `main` with:
+Verified 2026-10-25 via `GET /repos/eneelkant/pen-testing/branches/main`: `protected: true` with required status check contexts for **non-admins** (`enforcement_level: non_admins`):
 
-- **Require a pull request before merging**, with at least one approving review.
-- **Require review from Code Owners.**
-- **Require status checks to pass:**
-  - `Pinned image regression gate`
-  - `Lint and unit tests`
-  - `Docker build and runtime`
-  - `Secret scanning (gitleaks)`
-  - `Dependency metadata check`
-- **Do not** make `Pinned image vulnerability scans` a required merge check. It stays visible on every PR and is enforced at release by `.github/workflows/release.yml`.
-- **Code-owner approval needs an independent code owner.** GitHub does not let a PR author approve their own PR. With `@eneelkant` as the only code owner and the author of PR #28, an administrator must add the selected second maintainer to `.github/CODEOWNERS` before requiring code-owner review. An ordinary review from someone who is not a code owner does not satisfy that requirement.
+- `Pinned image regression gate`
+- `Lint and unit tests`
+- `Docker build and runtime`
+- `Secret scanning (gitleaks)`
+- `Dependency metadata check`
+
+**Do not** make `Pinned image vulnerability scans` a required merge check. It stays visible on every PR and is enforced at release by `.github/workflows/release.yml`.
+
+Still incomplete / not verified from this agent (branch-protection write and GraphQL rulesets returned HTTP **403**):
+
+1. **Do not allow bypassing the above settings** (admin enforcement). Today admins can still bypass required checks.
+2. **Require a pull request before merging**, with at least one approving review, **dismiss stale reviews**, and **require approval of the most recent push** where the UI offers it.
+3. **Require review from Code Owners.**
+4. **Independent code owner.** `.github/CODEOWNERS` currently lists only `@eneelkant`. GitHub does not let a PR author approve their own PR. Add a second accepted maintainer (candidate: `@neelkantekbote-66degree`, who approved the PR #28 baseline) to CODEOWNERS **before** relying on code-owner review as the only security path. An ordinary review from a non-code-owner does not satisfy that setting.
+
+UI path: Repository → Settings → Branches → Branch protection rule for `main` (or a ruleset targeting `main`).

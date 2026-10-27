@@ -16,6 +16,8 @@ Official MCP Python SDK (`mcp` 2.x) stdio server exposing constrained orchestrat
 | `list_findings` | No | Normalized findings |
 | `export_report` | No | Draft report export |
 
+The existing `list_integrations` MCP tool includes registry metadata for each implemented adapter: supported target types and modes, authorization requirements, dependencies, upstream source, license, isolation profile and known limitations. Planned integrations are not listed as available.
+
 ## Run
 
 ```bash

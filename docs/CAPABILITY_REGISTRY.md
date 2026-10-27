@@ -25,8 +25,10 @@ A target type in the shared vocabulary is not proof that a tool supports it. Pla
 | HTTP security headers | Selected response-header checks | https://github.com/eneelkant/pen-testing | First-party repository code |
 | Gitleaks | Configured local source secret detection | https://github.com/gitleaks/gitleaks | MIT |
 | Trivy | Configured local filesystem/dependency/configuration checks | https://github.com/aquasecurity/trivy | Apache-2.0 |
+| Checkov | Local infrastructure-as-code/configuration checks (optional; pinned 3.3.29) | https://github.com/bridgecrewio/checkov | Apache-2.0; review transitive dependencies |
+| MobSFScan | Android/iOS source-code pattern checks only (optional; pinned 1.0.1) | https://github.com/MobSF/mobsfscan | LGPL-3.0-or-later; review Semgrep and other transitive dependencies |
 
-Current support does not yet mean a complete all-in-one coverage of every target category. The existing scope registry still primarily represents URL fixtures. Host/CIDR, OpenAPI documents, GraphQL-specific, mobile artifact/device and network-service targets need dedicated scope schemas and tested authorization behavior before active scanning support is advertised.
+Current support does not yet mean a complete all-in-one coverage of every target category. The existing scope registry still primarily represents URL fixtures. Checkov and MobSFScan accept local paths confined to workspace/report roots, but their actual source/configuration coverage must be validated. Host/CIDR, OpenAPI documents, GraphQL-specific, mobile artifact/device and network-service targets need dedicated scope schemas and tested authorization behavior before their related scan modes are advertised.
 
 ## Proposed integrations (not callable from CLI/MCP yet)
 
@@ -39,11 +41,10 @@ Implement candidates as separate, optional adapter PRs. Inspect source, exact ve
 | Schemathesis | https://github.com/schemathesis/schemathesis | https://schemathesis.readthedocs.io/en/stable/ | Schema-driven API tests using explicitly authorized OpenAPI/GraphQL targets |
 | OWASP API Security Testing Framework | https://github.com/OWASP/api-security-testing-framework | https://github.com/OWASP/api-security-testing-framework | Evaluate compatibility and licensing before implementing |
 | MobSF | https://github.com/MobSF/Mobile-Security-Framework-MobSF | https://mobsf.github.io/docs/ | Isolated mobile static analysis first; validate exact artifact formats |
-| MobSFScan | https://github.com/MobSF/mobsfscan | https://github.com/MobSF/mobsfscan | Optional source-code pattern checks |
+| Full MobSF | https://github.com/MobSF/Mobile-Security-Framework-MobSF | https://mobsf.github.io/docs/ | Isolated APK/IPA binary/static workflow and separately validated dynamic testing; GPL-3.0 and distribution review |
 | Nmap | https://github.com/nmap/nmap | https://nmap.org/book/ | Explicit host/CIDR and port scopes; conservative rate and timeout defaults |
 | testssl.sh | https://github.com/testssl/testssl.sh | https://testssl.sh/ | TLS posture checks against an authorized URL/host |
-| Checkov | https://github.com/bridgecrewio/checkov | https://www.checkov.io/ | IaC/container configuration scanning |
-| Semgrep | https://github.com/semgrep/semgrep | https://semgrep.dev/docs/ | SAST evaluation after engine and rules licensing review |
+| Semgrep | https://github.com/semgrep/semgrep | https://semgrep.dev/docs/ | Direct SAST adapter remains proposed; MobSFScan also depends on Semgrep internally, so review exact dependency/rule terms |
 
 ### Licensing and source reuse
 

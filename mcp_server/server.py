@@ -18,8 +18,11 @@ mcp = MCPServer(
     version=__version__,
     instructions=(
         "Authorized security-testing orchestration platform. "
-        "Always call validate_target_scope before run_security_assessment with dry_run=false. "
-        "Never expand scope silently. Prefer dry_run=true and local fixtures."
+        "For remote/web targets, call validate_target_scope before a live run. "
+        "For local source scanners (gitleaks, trivy, checkov, mobsfscan), target paths "
+        "must remain inside configured workspace/report roots; do not use the URL scope "
+        "validator for a filesystem path. Live runs still require confirm_authorized=true. "
+        "Never expand network scope silently. Prefer dry_run=true and local fixtures."
     ),
 )
 
@@ -69,10 +72,12 @@ def run_security_assessment(
     demo: bool = False,
     timeout_seconds: int = 120,
 ) -> dict[str, Any]:
-    """Start an assessment only after authorization/safety checks.
+    """Run a registered adapter only after its target-specific safety checks.
 
-    Defaults to dry_run=true. For live runs set dry_run=false and
-    confirm_authorized=true after validate_target_scope succeeds.
+    Defaults to dry_run=true. Remote active targets require scope validation first.
+    Local source adapters require a confined workspace/report path. Every non-dry-run
+    assessment requires confirm_authorized=true; this flag does not bypass path or
+    remote scope controls.
     """
     return service.run_security_assessment(
         tool=tool,

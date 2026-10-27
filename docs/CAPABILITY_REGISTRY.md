@@ -12,9 +12,20 @@ prints the supported adapters and their target types, modes, dependencies, licen
 
     python -m core.cli capabilities --tool headers
 
+    python -m core.cli capabilities --tool checkov
+    python -m core.cli capabilities --tool mobsfscan
+
 to inspect one adapter.
 
 A target type in the shared vocabulary is not proof that a tool supports it. Planned integrations are deliberately excluded from the runtime registry until their adapters, tests and execution constraints exist. Missing dependencies must remain visible in health checks; they must not be described as a successful scan.
+
+## Current implementation limits
+
+Checkov is an optional local IaC/configuration scanner. MobSFScan is an optional
+mobile source-code pattern scanner. Neither performs remote network testing.
+MobSFScan is not the full MobSF framework and does not inspect APK/IPA binaries or
+perform dynamic device/runtime testing. Those capabilities remain planned and must
+not be advertised as implemented.
 
 ## Integrated now
 

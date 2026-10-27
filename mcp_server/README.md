@@ -16,6 +16,17 @@ Official MCP Python SDK (`mcp` 2.x) stdio server exposing constrained orchestrat
 | `list_findings` | No | Normalized findings |
 | `export_report` | No | Draft report export |
 
+## Capability metadata
+
+The CLI subcommand `pen-testing capabilities` lists integrations with in-repository
+adapters. Add `--include-planned` to view roadmap candidates. Planned records are
+informational only and are not supported by `run_security_assessment`.
+
+MCP `list_integrations` returns the same metadata alongside runtime health checks.
+Typed target descriptors in `core/targets.py` validate syntax only. They do not grant
+scope, authorize a host/network, resolve DNS or confine a local path. Existing scope,
+egress and filesystem-confinement controls remain required.
+
 ## Run
 
 ```bash

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "description": "Minimum package versions each self-built candidate must contain before it can be considered acceptable or published. Checked inside the built image against /lib/apk/db/installed using apk's own version comparator. A missing or older package makes the candidate unacceptable; it never makes the build pass silently.",
+  "candidates": {
+    "shannon": {
+      "base": "keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e",
+      "packages": {
+        "nodejs-22": {
+          "minimum": "22.23.4-r0",
+          "advisories": [
+            "CVE-2026-105481",
+            "CVE-2026-105482",
+            "CVE-2026-106069",
+            "CVE-2026-106072",
+            "CVE-2026-106073",
+            "CVE-2026-106074"
+          ]
+        },
+        "curl": {
+          "minimum": "8.23.0-r0",
+          "advisories": [
+            "CVE-2026-92392"
+          ]
+        },
+        "libcurl-openssl4": {
+          "minimum": "8.23.0-r0",
+          "advisories": [
+            "CVE-2026-92392"
+          ]
+        },
+        "libbrotlicommon1": {
+          "minimum": "1.2.0-r7",
+          "advisories": [
+            "CVE-2026-111497"
+          ]
+        },
+        "libbrotlidec1": {
+          "minimum": "1.2.0-r7",
+          "advisories": [
+            "CVE-2026-111497"
+          ]
+        },
+        "libbrotlienc1": {
+          "minimum": "1.2.0-r7",
+          "advisories": [
+            "CVE-2026-111497"
+          ]
+        }
+      }
+    },
+    "trivy": {
+      "base": "aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222",
+      "packages": {
+        "libcurl": {
+          "minimum": "8.23.0-r0",
+          "advisories": [
+            "CVE-2026-92392"
+          ]
+        },
+        "brotli-libs": {
+          "minimum": "1.2.1-r0",
+          "advisories": [
+            "CVE-2026-111497"
+          ]
+        },
+        "libexpat": {
+          "minimum": "2.9.0-r0",
+          "advisories": [
+            "CVE-2026-77214"
+          ]
+        },
+        "musl": {
+          "minimum": "1.2.6-r3",
+          "advisories": [
+            "CVE-2026-107891"
+          ]
+        },
+        "musl-utils": {
+          "minimum": "1.2.6-r3",
+          "advisories": [
+            "CVE-2026-107891"
+          ]
+        }
+      }
+    }
+  },
+  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z)."
+}

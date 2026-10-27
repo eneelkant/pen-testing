@@ -311,6 +311,19 @@ TEMPORAL_STATE="$(docker inspect -f '{{.State.Status}}' shannon-temporal 2>/dev/
 echo "SHANNON_E2E_TEMPORAL_STATE $TEMPORAL_STATE"
 WORKER_IDS="$(docker ps -aq --filter name=shannon-worker- || true)"
 echo "SHANNON_E2E_WORKER_CONTAINERS ${WORKER_IDS:-none}"
+for wid in $WORKER_IDS; do
+  echo "SHANNON_E2E_WORKER_IMAGE_ID id=$wid image=$(docker inspect -f '{{.Image}}' "$wid" 2>/dev/null || echo unknown)"
+done
+# Candidate runs: prove the CLI-launched worker really used the expected image.
+if [[ -n "${PEN_SHANNON_EXPECT_WORKER_IMAGE_ID:-}" ]]; then
+  [[ -n "${WORKER_IDS}" ]] || die "no Shannon worker container to verify against PEN_SHANNON_EXPECT_WORKER_IMAGE_ID"
+  for wid in $WORKER_IDS; do
+    WIMG="$(docker inspect -f '{{.Image}}' "$wid" 2>/dev/null || true)"
+    [[ "$WIMG" == "$PEN_SHANNON_EXPECT_WORKER_IMAGE_ID" ]] || \
+      die "worker $wid ran image $WIMG, expected $PEN_SHANNON_EXPECT_WORKER_IMAGE_ID"
+  done
+  echo "SHANNON_E2E_WORKER_IMAGE_ID_VERIFIED $PEN_SHANNON_EXPECT_WORKER_IMAGE_ID"
+fi
 
 # Regression: host Temporal gRPC must remain reachable after the run (dual-home proof).
 log "== temporal host endpoint readiness (post-run regression) =="

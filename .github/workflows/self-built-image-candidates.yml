@@ -1,0 +1,221 @@
+name: Self-built image candidates
+
+# Builds patched candidates of the Shannon worker and Trivy scanner images,
+# verifies them with the project's fail-closed candidate policy, and runtime-
+# tests the Shannon candidate. Evidence collection only: this workflow never
+# changes production pins (core/supply_chain/images.py) and never merges.
+# Publication to GHCR is a manual opt-in from main and requires both
+# candidates to be acceptable (clean scan + all package requirements met).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "docker/candidates/**"
+      - "scripts/verify_image_candidate.py"
+      - "scripts/verify_self_built_candidates.sh"
+      - "scripts/shannon_e2e_verify.sh"
+      - "scripts/shannon_net_prepare.sh"
+      - ".github/workflows/self-built-image-candidates.yml"
+      - "docs/SELF_BUILT_IMAGE_CANDIDATES.md"
+  workflow_dispatch:
+    inputs:
+      publish_candidates:
+        description: "Publish to GHCR only when both candidates are acceptable"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-candidates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-and-scan:
+    name: Build, scan, and runtime-test candidates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      shannon_acceptable: ${{ steps.candidate-evidence.outputs.shannon_acceptable }}
+      trivy_acceptable: ${{ steps.candidate-evidence.outputs.trivy_acceptable }}
+    steps:
+      - name: Reject publish request from any ref other than main
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_candidates
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main" || {
+            echo "::error::Candidate publication is allowed only from main."
+            exit 1
+          }
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install project test dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Set up Node.js for Shannon E2E
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      # Outputs are written by the script only after every build, package,
+      # scan-verification and runtime step has succeeded.
+      - name: Build candidates, verify raw scans, and run runtime validation
+        id: candidate-evidence
+        env:
+          PUBLISH_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_candidates }}
+        run: |
+          if [ "$PUBLISH_REQUESTED" = "true" ]; then
+            bash scripts/verify_self_built_candidates.sh --require-clean
+          else
+            bash scripts/verify_self_built_candidates.sh
+          fi
+
+      - name: Refuse requested publication unless both candidates are acceptable
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_candidates
+        env:
+          SHANNON_ACCEPTABLE: ${{ steps.candidate-evidence.outputs.shannon_acceptable }}
+          TRIVY_ACCEPTABLE: ${{ steps.candidate-evidence.outputs.trivy_acceptable }}
+        run: |
+          test "$SHANNON_ACCEPTABLE" = "true"
+          test "$TRIVY_ACCEPTABLE" = "true"
+
+      - name: Upload local build and scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-built-image-candidate-evidence
+          path: candidate-reports/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-clean-candidates:
+    name: Publish clean candidate digests to GHCR
+    needs: [build-and-scan]
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.publish_candidates == true &&
+      github.ref == 'refs/heads/main' &&
+      needs.build-and-scan.outputs.shannon_acceptable == 'true' &&
+      needs.build-and-scan.outputs.trivy_acceptable == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install project test dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]" -r requirements/dev.txt
+
+      - name: Set up Node.js for Shannon E2E
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      # The images pushed below are exactly the ones verified here.
+      - name: Rebuild candidates and require acceptable local evidence
+        run: bash scripts/verify_self_built_candidates.sh --require-clean
+
+      - name: Login to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish candidate tags and record immutable digests
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          OWNER="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          TAG="candidate-${GITHUB_SHA:0:12}"
+          push_and_capture() {
+            local local_ref="$1" target="$2" log_file="$3" digest
+            docker tag "$local_ref" "$target:$TAG"
+            docker push "$target:$TAG" 2>&1 | tee "$log_file" >&2
+            digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' "$log_file" | tail -n1)"
+            test -n "$digest" || { echo "::error::Registry push did not return a manifest digest for $target:$TAG" >&2; exit 1; }
+            printf '%s@%s\n' "$target" "$digest"
+          }
+          SHANNON_REF="$(push_and_capture "local/shannon-worker-candidate:${GITHUB_SHA:0:12}" "ghcr.io/$OWNER/pen-testing-shannon-candidate" candidate-reports/shannon-push.log)"
+          TRIVY_REF="$(push_and_capture "local/trivy-scanner-candidate:${GITHUB_SHA:0:12}" "ghcr.io/$OWNER/pen-testing-trivy-candidate" candidate-reports/trivy-push.log)"
+          printf '%s\n' "$SHANNON_REF" > candidate-reports/shannon-published-digest.txt
+          printf '%s\n' "$TRIVY_REF" > candidate-reports/trivy-published-digest.txt
+          echo "shannon_ref=$SHANNON_REF" >> "$GITHUB_OUTPUT"
+          echo "trivy_ref=$TRIVY_REF" >> "$GITHUB_OUTPUT"
+
+      # Independent rescan of each published digest straight from the registry
+      # (--image-src remote), with a DB probe and an in-image package check.
+      - name: Rescan and verify published digests
+        env:
+          SHANNON_REF: ${{ steps.publish.outputs.shannon_ref }}
+          TRIVY_REF: ${{ steps.publish.outputs.trivy_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCANNER="$(python -c 'from core.supply_chain.images import TRIVY_IMAGE; print(TRIVY_IMAGE)')"
+          CACHE="$HOME/.cache/trivy"; mkdir -p "$CACHE"
+          verify_published() {
+            local name="$1" ref="$2" rc
+            python - "$name" <<'PY' > "candidate-reports/$name-published-requirements.txt"
+          import json, sys
+          for package, item in sorted(json.load(open("docker/candidates/requirements.json"))["candidates"][sys.argv[1]]["packages"].items()):
+              print(f"{package} {item['minimum']}")
+          PY
+            docker pull --platform linux/amd64 "$ref" >/dev/null
+            docker run -i --rm --platform linux/amd64 --user 0 --entrypoint /bin/sh "$ref" -c '
+          set -eu
+          while read -r name min; do
+            [ -n "$name" ] || continue
+            v=$(awk -v n="$name" "/^P:/{p=substr(\$0,3)} /^V:/{if(p==n){print substr(\$0,3); exit}}" /lib/apk/db/installed)
+            if [ -z "$v" ]; then printf "%s\t%s\t-\tmissing\n" "$name" "$min"; continue; fi
+            c=$(apk version -t "$v" "$min")
+            case "$c" in ">"|"=") s=satisfied;; "<") s=unsatisfied;; *) s=unknown;; esac
+            printf "%s\t%s\t%s\t%s\n" "$name" "$min" "$v" "$s"
+          done' < "candidate-reports/$name-published-requirements.txt" > "candidate-reports/$name-published-packages.tsv"
+            set +e
+            docker run --rm --platform linux/amd64 -v "$PWD/candidate-reports:/reports" -v "$CACHE:/root/.cache/trivy" \
+              "$SCANNER" image --scanners vuln --format json --quiet --image-src remote --platform linux/amd64 \
+              --output "/reports/$name-published-scan.json" "$ref"
+            rc=$?
+            set -e
+            docker run --rm --platform linux/amd64 -v "$CACHE:/root/.cache/trivy" "$SCANNER" version --format json \
+              > "candidate-reports/$name-published-trivy-version.json" || true
+            python scripts/verify_image_candidate.py --candidate "$name" --image-ref "$ref" \
+              --report "candidate-reports/$name-published-scan.json" \
+              --db-probe "candidate-reports/$name-published-trivy-version.json" --trivy-exit-code "$rc" \
+              --package-check "candidate-reports/$name-published-packages.tsv" \
+              --summary "candidate-reports/$name-published-summary.json" --require-clean
+          }
+          docker pull --platform linux/amd64 "$SCANNER" >/dev/null
+          verify_published shannon "$SHANNON_REF"
+          verify_published trivy "$TRIVY_REF"
+
+      - name: Upload final digest-bound evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-built-image-published-candidate-evidence
+          path: candidate-reports/
+          if-no-files-found: error
+          retention-days: 30

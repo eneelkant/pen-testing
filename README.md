@@ -49,7 +49,7 @@ python -m core.cli capabilities
 python -m core.cli capabilities --tool headers
 ```
 
-The registry describes only adapters that exist in the runtime. Planned tools such as ZAP, Nuclei, MobSF, Nmap, Checkov and Schemathesis are tracked in [docs/CAPABILITY_REGISTRY.md](docs/CAPABILITY_REGISTRY.md) and are not callable until their adapters and tests are implemented.
+The registry describes only adapters that exist in the runtime. The optional Checkov and MobSFScan adapters cover local IaC/configuration and mobile-source checks only. Full MobSF APK/IPA analysis and runtime testing, ZAP, Nuclei, Nmap and Schemathesis remain planned and are tracked in [docs/CAPABILITY_REGISTRY.md](docs/CAPABILITY_REGISTRY.md).
 
 ## AI clients
 

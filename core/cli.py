@@ -20,7 +20,7 @@ from core.reporting import export_json, export_markdown, export_sarif, generate_
 from core.scope import ScopeEngine
 from core.scope.rate_limit import acquire_scan_slot, release_scan_slot
 from integrations.briar import BriarAdapter
-from integrations.scanners import GitleaksAdapter, HeadersAdapter, TrivyAdapter
+from integrations.scanners import CheckovAdapter, GitleaksAdapter, HeadersAdapter, MobSFScanAdapter, TrivyAdapter
 from integrations.shannon import ShannonAdapter
 from integrations.base import AdapterRequest
 from providers import list_provider_status
@@ -48,13 +48,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_scope.add_argument("--scopes-file")
 
     p_health = sub.add_parser("health", help="Adapter health checks")
-    p_health.add_argument("--tool", choices=["shannon", "briar", "headers", "gitleaks", "trivy", "all"], default="all")
+    p_health.add_argument("--tool", choices=["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan", "all"], default="all")
 
     p_capabilities = sub.add_parser("capabilities", help="List implemented tool capabilities and constraints")
     p_capabilities.add_argument("--tool", choices=sorted(CAPABILITIES_BY_ID), help="Show one implemented adapter")
 
     p_run = sub.add_parser("run", help="Run an adapter (requires authorization for active tools)")
-    p_run.add_argument("--tool", required=True, choices=["shannon", "briar", "headers", "gitleaks", "trivy"])
+    p_run.add_argument("--tool", required=True, choices=["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"])
     p_run.add_argument("--target", required=True, help="URL, host, or local path depending on tool")
     p_run.add_argument("--repo")
     p_run.add_argument("--mode", default="standard", help="Briar: quick|standard|deep")
@@ -121,6 +121,8 @@ def _adapters(config, scope):
         "headers": HeadersAdapter(config, scope),
         "gitleaks": GitleaksAdapter(config, scope),
         "trivy": TrivyAdapter(config, scope),
+        "checkov": CheckovAdapter(config, scope),
+        "mobsfscan": MobSFScanAdapter(config, scope),
     }
 
 

@@ -178,14 +178,14 @@ class CheckovAdapter(SecurityAdapter):
         for item in failed_checks:
             if not isinstance(item, dict):
                 continue
-            raw_severity = str(item.get("severity") or "medium").upper()
+            raw_severity = str(item.get("severity") or "INFO").upper()
             severity = {
                 "CRITICAL": "critical",
                 "HIGH": "high",
                 "MEDIUM": "medium",
                 "LOW": "low",
                 "INFO": "info",
-            }.get(raw_severity, "medium")
+            }.get(raw_severity, "info")
             lines = []
             code_block = item.get("code_block")
             if isinstance(code_block, list):
@@ -213,6 +213,8 @@ class CheckovAdapter(SecurityAdapter):
                         "file_path": item.get("file_path"),
                         "line_numbers": sorted(set(lines)),
                         "check_type": item.get("check_type"),
+                        "source_severity": raw_severity,
+                        "severity_available": raw_severity in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"},
                     },
                     references=[guideline] if isinstance(guideline, str) and guideline.startswith("https://") else [],
                     remediation=remediation,

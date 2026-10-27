@@ -1,24 +1,41 @@
 # Tool Matrix
 
-Verification date: 2026-10-12.
+Last reviewed: 2026-10-27.
 
-| Tool | Purpose | Testing mode | Runtime | License | Integration | Limitations | Status |
-|---|---|---|---|---|---|---|---|
-| [Shannon](https://github.com/KeygraphHQ/shannon) (`@keygraph/shannon@3.4.0`) | AI white-box web/API pentest with exploit validation | Dynamic + source-informed | Node.js 18+ launcher, Docker worker, LLM provider | AGPL-3.0-only | Adapter via `npx` | Requires Docker + source repo path; mutative exploits; model cost/time | Integrated (adapter) |
-| [Briar](https://github.com/Stiimy/briar) (`briar-pentest==0.4.62`) | AI black-box/optional white-box web pentest | Dynamic (+ optional source) | Python ≥3.10; Docker optional | AGPL-3.0 | Adapter via isolated venv/container | Alpha; README outdated; browser via `full`/deep mode | Integrated (adapter) |
-| Headers adapter (in-repo) | Missing security headers | Passive HTTP GET | Python stdlib | Apache-2.0 | `HeadersAdapter` | Header presence only; no TLS grade | Integrated / tested |
-| [Gitleaks](https://github.com/gitleaks/gitleaks) | Secret detection | Static | Go binary or container | MIT | `GitleaksAdapter` | Needs binary/Docker | Integrated (optional binary) |
-| [Trivy](https://github.com/aquasecurity/trivy) | FS/dependency vulns | Dependency / config | Binary or container | Apache-2.0 | `TrivyAdapter` | Needs binary/Docker; DB download | Integrated (optional binary) |
-| [Semgrep CE](https://github.com/semgrep/semgrep) | SAST | Static | Python/CLI | LGPL-2.1 engine; **rules often non-OSI** | Proposed reference only | Do not redistribute Semgrep Registry rules in a competing SaaS | Proposed |
-| [Nuclei](https://github.com/projectdiscovery/nuclei) | Template DAST | Dynamic | Go binary | MIT | Not integrated in v0.1 | Template quality varies; still needs scope controls | Proposed |
-| SSL Labs scan clients | TLS posture | Passive/remote | Various | Apache-2.0 (legacy tool) | Not integrated | External dependency on Qualys service for full grades | Proposed |
+The machine-readable descriptive registry is `core/capabilities.py`. Use
+`pen-testing capabilities` to list integrations that have in-repository adapters,
+and `pen-testing capabilities --include-planned` to include roadmap candidates.
+A registry entry does not mean that an external executable is installed or healthy;
+runtime availability comes from adapter health checks. Planned entries are not
+dispatchable and must not be described as implemented.
 
-## Selection rationale
+| Tool | Purpose | Target types / modes | Runtime / isolation | License (verify selected release) | Status | Important limitations |
+|---|---|---|---|---|---|---|
+| [Shannon](https://github.com/KeygraphHQ/shannon) `@keygraph/shannon@3.4.0` | AI-assisted web assessment | Web URL / active | Node.js+npx; upstream Docker worker | AGPL-3.0-only | Integrated adapter | Requires Docker and compatible target/source setup; mutative behavior possible; not an API-schema test runner. |
+| [Briar](https://github.com/Stiimy/briar) `briar-pentest==0.4.62` | AI-assisted black-box web assessment | Web URL / active | Dedicated venv or Compose worker | AGPL-3.0 | Integrated adapter | Check runtime health and current upstream compatibility; no claim of comprehensive coverage. |
+| Headers adapter | Small set of HTTP security-header checks | Web URL / passive | In-process HTTP GET with destination controls | Apache-2.0 | Integrated / tested | Not a comprehensive web scanner; does not provide TLS grading. |
+| [Gitleaks](https://github.com/gitleaks/gitleaks) | Secret detection | Source path / static | Pinned binary or isolated container | MIT | Integrated adapter | Absence of a finding does not prove that no secret exists. |
+| [Trivy](https://github.com/aquasecurity/trivy) | Filesystem, dependency and supported configuration analysis | Source path / static | Pinned binary or isolated container | Apache-2.0 | Integrated adapter | Image release gate is separate; current absolute pinned-image gate may block release. |
+| [OWASP ZAP](https://github.com/zaproxy/zaproxy) | Web/API DAST | Web/API URL / passive then active | Planned isolated automation worker | Apache-2.0 | Planned | No adapter yet; do not advertise as runnable. |
+| [Nuclei](https://github.com/projectdiscovery/nuclei) | Template-driven security checks | Web/API URL and host / active | Planned pinned worker and reviewed template policy | MIT | Planned | Template integrity, quality, license, impact and scope must be controlled. |
+| [Schemathesis](https://github.com/schemathesis/schemathesis) | Schema-based API tests | OpenAPI and supported GraphQL/API inputs | Planned worker with destination and request bounds | Verify selected release | Planned | No schema-driven API adapter yet; every generated request must remain in scope. |
+| [MobSF](https://github.com/MobSF/Mobile-Security-Framework-MobSF) | Mobile app analysis | Android/iOS artifacts; static/dynamic modes differ | Planned isolated local service | GPL-3.0 | Planned | Artifact support, OS runtime requirements and distribution obligations must be reviewed. |
+| [Nmap](https://github.com/nmap/nmap) | Host/service discovery | Explicit host or CIDR / network | Planned least-privilege worker | Verify NPSL terms for selected release | Planned | No network scanner is integrated; CIDR syntax metadata is not authorization. |
+| [Checkov](https://github.com/bridgecrewio/checkov) | IaC/configuration scanning | Source path / static | Planned read-only workspace | Verify selected release | Planned | No adapter yet. |
+| [testssl.sh](https://github.com/testssl/testssl.sh) | TLS posture assessment | Authorized host / TLS | Planned isolated worker | Verify GPL-2.0 terms for selected release | Planned | No adapter yet; only within explicitly approved hosts and ports. |
+| [Semgrep](https://github.com/semgrep/semgrep) | Candidate SAST | Source path / static | Not selected | Engine and rules need separate license review | Planned candidate | Do not redistribute rules without verified permission. |
 
-v0.1 prioritizes:
+## Integration rules
 
-1. Verified Shannon + Briar adapters with scope gates
-2. One pure-Python passive checker for reliable CI tests
-3. Two widely maintained SCA/secret tools with permissive licenses
+- Every integrated adapter must have version metadata, a health check, timeout behavior, normalized output, negative tests and a documented isolation profile.
+- Syntax validation is not authorization. A valid target must still pass the existing scope, egress and local-path confinement controls before any live action.
+- Do not add arbitrary community templates or silently enable destructive scans.
+- Distinguish `integrated`, `planned`, `unavailable`, `blocked_by_scope`, `failed` and `completed`; never turn a missing scanner into a clean result.
+- Review license terms for the exact version and separately for rules, templates, embedded data and redistributable assets.
 
-Nuclei/Semgrep remain extension points without bundling aggressive templates or non-redistributable rules.
+## Reference standards and test labs
+
+- [OWASP Web Security Testing Guide](https://owasp.org/projects/web-security-testing-guide)
+- [OWASP API Security](https://owasp.org/API-Security/)
+- [OWASP Mobile Application Security Testing Guide](https://mas.owasp.org/MASTG/)
+- [OWASP crAPI](https://github.com/OWASP/crAPI) and [OWASP Juice Shop](https://github.com/juice-shop/juice-shop) for isolated, intentionally vulnerable test environments.

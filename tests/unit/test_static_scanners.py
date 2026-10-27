@@ -101,7 +101,12 @@ def test_checkov_normalizes_failed_checks_and_sanitizes_raw_code(tmp_path, monke
     assert result.findings[0].evidence_sanitized["line_numbers"] == [5]
     assert secret_marker not in Path(result.artifacts["report"]).read_text(encoding="utf-8")
     assert "--skip-download" in runner.commands[0]["command"]
+    assert "--skip-results-upload" in runner.commands[0]["command"]
+    assert "--download-external-modules" in runner.commands[0]["command"]
+    assert runner.commands[0]["command"][runner.commands[0]["command"].index("--download-external-modules") + 1] == "false"
     assert runner.commands[0]["env"]["CHECKOV_ENABLE_TELEMETRY"] == "false"
+    assert runner.commands[0]["env"]["BC_API_KEY"] == ""
+    assert runner.commands[0]["env"]["PRISMA_API_URL"] == ""
 
 
 def test_mobsfscan_normalizes_mobile_source_findings_without_code_snippets(tmp_path, monkeypatch):

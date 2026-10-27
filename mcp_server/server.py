@@ -18,8 +18,10 @@ mcp = MCPServer(
     version=__version__,
     instructions=(
         "Authorized security-testing orchestration platform. "
-        "Always call validate_target_scope before run_security_assessment with dry_run=false. "
-        "Never expand scope silently. Prefer dry_run=true and local fixtures."
+        "For remote/web targets, call validate_target_scope before a live assessment. "
+        "Local source scanners require paths confined to configured work/report roots and do not use URL scope validation. "
+        "All live assessments require confirm_authorized=true; this does not bypass target-specific policy. "
+        "Never expand network scope silently. Prefer dry_run=true and local fixtures."
     ),
 )
 
@@ -59,7 +61,7 @@ def run_local_diagnostics() -> dict[str, Any]:
 
 @mcp.tool()
 def run_security_assessment(
-    tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy"],
+    tool: Literal["shannon", "briar", "headers", "gitleaks", "trivy", "checkov", "mobsfscan"],
     target: str,
     category: Literal["passive", "active", "dast", "pentest", "dynamic"] = "active",
     mode: Literal["quick", "standard", "deep"] = "standard",

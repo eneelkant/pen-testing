@@ -178,7 +178,7 @@ jobs:
 
       - name: Upload Python image scan
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-scan-python
           path: image-scan-python.json
@@ -229,7 +229,7 @@ jobs:
 
       - name: Upload upstream image scan
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-scan-upstream
           path: image-scan-upstream.json
@@ -241,7 +241,7 @@ jobs:
       # raw findings instead of trusting the summary.
       - name: Upload raw Trivy evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-scan-raw
           path: image-scan-raw/
@@ -299,7 +299,7 @@ jobs:
 
       - name: Upload regression gate report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-regression-gate
           path: |

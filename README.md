@@ -8,7 +8,7 @@ Integrates verified upstream engines out-of-process:
 |---|---|---|
 | [Shannon](https://github.com/KeygraphHQ/shannon) | `@keygraph/shannon@3.4.0` | White-box web/API pentest (Docker worker) |
 | [Briar](https://pypi.org/project/briar-pentest/) | `briar-pentest==0.4.62` | Black-box / optional white-box |
-| Headers / Gitleaks / Trivy | see `docs/TOOL_MATRIX.md` | Passive headers, secrets, SCA |
+| Headers / Gitleaks / Trivy / Checkov / MobSFScan | see `docs/TOOL_MATRIX.md` | Passive headers, secrets, SCA, IaC and mobile-source static analysis |
 
 > **Legal/ethical use only.** Public websites are not in scope unless listed in `scopes/registry.yaml`.
 

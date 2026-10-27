@@ -220,7 +220,7 @@ jobs:
           images = report.get("images") or []
           if not images:
               raise SystemExit("No per-image results returned; report is not actionable.")
-          print("\\nPer-image remediation summary:")
+          print("\nPer-image remediation summary:")
           for image in images:
               name = image.get("pin_name") or image.get("name") or image.get("image") or "unknown"
               blockers = image.get("findings") or []

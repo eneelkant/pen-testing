@@ -29,13 +29,13 @@ from core.results import ExecutionResult
 from core.scope import ScopeEngine
 from integrations.base import AdapterRequest
 from integrations.briar import BriarAdapter
-from integrations.scanners import GitleaksAdapter, HeadersAdapter, TrivyAdapter
+from integrations.scanners import CheckovAdapter, GitleaksAdapter, HeadersAdapter, MobSFScanAdapter, TrivyAdapter
 from integrations.shannon import ShannonAdapter
 from mcp_server.config import assessments_dir, resolve_platform_config
 from providers import list_provider_status
 
 ACTIVE_TOOLS = {"shannon", "briar", "headers"}
-LOCAL_PATH_TOOLS = {"gitleaks", "trivy"}
+LOCAL_PATH_TOOLS = {"gitleaks", "trivy", "checkov", "mobsfscan"}
 ALLOWED_TOOLS = ACTIVE_TOOLS | LOCAL_PATH_TOOLS
 _ASSESSMENT_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -110,6 +110,8 @@ def _adapters(cfg: PlatformConfig, scope: ScopeEngine | None) -> dict[str, Any]:
         "headers": HeadersAdapter(cfg, scope),
         "gitleaks": GitleaksAdapter(cfg, scope),
         "trivy": TrivyAdapter(cfg, scope),
+        "checkov": CheckovAdapter(cfg, scope),
+        "mobsfscan": MobSFScanAdapter(cfg, scope),
     }
 
 

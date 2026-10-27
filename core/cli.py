@@ -10,6 +10,7 @@ from pathlib import Path
 
 from core import __version__
 from core.config import load_config
+from core.capabilities import list_capabilities
 from core.findings import Finding
 from core.findings.redaction import redact_text
 from core.net import redact_url_userinfo
@@ -40,6 +41,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="Run environment diagnostics")
     sub.add_parser("providers", help="Show AI provider configuration status (no secrets)")
+
+    p_capabilities = sub.add_parser(
+        "capabilities", help="List supported scanner capabilities without executing tools"
+    )
+    p_capabilities.add_argument(
+        "--include-planned", action="store_true", help="Include roadmap items that are not implemented"
+    )
 
     p_scope = sub.add_parser("scope-check", help="Validate a target against the authorization registry")
     p_scope.add_argument("--target", required=True)
@@ -137,6 +145,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "providers":
         print(json.dumps(list_provider_status(), indent=2))
+        return 0
+
+    if args.command == "capabilities":
+        print(json.dumps({"capabilities": list_capabilities(include_planned=args.include_planned)}, indent=2))
         return 0
 
     if args.command == "scope-check":

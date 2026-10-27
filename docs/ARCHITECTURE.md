@@ -103,6 +103,25 @@ AI agreement alone must not promote a finding to human-confirmed.
 
 Docker socket is **not** mounted into Briar/active-testing workers.
 
+## Typed targets and capability registry
+
+`core/targets.py` defines syntax-validated target descriptors for web/API URLs,
+OpenAPI documents, local source paths, hosts/CIDRs and mobile artifacts/device IDs.
+These descriptors do **not** grant authorization, resolve DNS, confine filesystem
+paths or enable scanner dispatch. Existing `ScopeEngine`, egress checks and local
+path confinement remain mandatory before any live operation.
+
+`core/capabilities.py` is the shared descriptive registry for current adapters and
+planned candidates. `pen-testing capabilities` lists implemented adapters;
+`pen-testing capabilities --include-planned` adds informational roadmap entries.
+MCP `list_integrations` returns the same metadata alongside adapter health checks.
+A planned capability is not installed or executable simply because it appears in
+the registry.
+
+New integrations must preserve the adapter contract and are to be introduced only in
+separate PRs with pinned versions, license review, isolated runtime tests, negative
+scope tests, normalized findings and updated CI evidence.
+
 ## Adding a scanner
 
 1. Create `integrations/<name>/adapter.py` subclassing `SecurityAdapter`

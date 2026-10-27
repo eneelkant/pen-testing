@@ -188,9 +188,9 @@ jobs:
         if: always()
         run: |
           set +e
-          # Fixed HIGH/CRITICAL and unscored findings fail the gate. Do not add an
-          # ignore file to turn it green. Pins stay put until a replacement is
-          # compatibility-tested.
+          # Fixed HIGH/CRITICAL and unscored findings fail the absolute release gate.
+          # Keep production pins until a candidate passes the same scan policy AND
+          # any required compatibility/runtime tests. Never suppress inherited CVEs.
           python -m core.supply_chain images \
             --name shannon-worker \
             --name temporal \
@@ -205,6 +205,7 @@ jobs:
           import json
           import os
           from pathlib import Path
+
           report = json.loads(Path("image-scan-upstream.json").read_text())
           print(
               "upstream_image_scan",
@@ -216,15 +217,43 @@ jobs:
               "db=", (report.get("database") or {}).get("updated_at"),
               "exit=", os.environ.get("SCAN_EXIT"),
           )
-          for image in report.get("images") or []:
+          images = report.get("images") or []
+          if not images:
+              raise SystemExit("No per-image results returned; report is not actionable.")
+          print("\\nPer-image remediation summary:")
+          for image in images:
+              name = image.get("pin_name") or image.get("name") or image.get("image") or "unknown"
+              blockers = image.get("findings") or []
+              grouped = {}
+              for finding in blockers:
+                  if not finding.get("blocking"):
+                      continue
+                  key = (
+                      str(finding.get("severity") or "UNKNOWN").upper(),
+                      str(finding.get("id") or "NO_ID"),
+                      str(finding.get("package") or "unknown"),
+                      str(finding.get("fixed") or ""),
+                  )
+                  grouped[key] = grouped.get(key, 0) + 1
               print(
-                  " ",
-                  image.get("pin_name") or image.get("name"),
-                  "blocking=", image.get("blocking_count"),
-                  "unscored=", image.get("unscored_count"),
-                  "status=", image.get("status"),
-                  "db=", (image.get("database") or {}).get("updated_at"),
+                  f"  {name}: status={image.get('status')} "
+                  f"blocking={image.get('blocking_count')} "
+                  f"unscored={image.get('unscored_count')} "
+                  f"unfixed={image.get('unfixed_count')} "
+                  f"digest={image.get('digest') or 'missing'}"
               )
+              for (severity, cve, package, fixed), count in sorted(
+                  grouped.items(), key=lambda item: (-item[1], item[0])
+              )[:10]:
+                  suffix = f" -> fixed in {fixed}" if fixed else " (no fixed version recorded)"
+                  print(f"    {count}x {severity} {cve} package={package}{suffix}")
+              if len(grouped) > 10:
+                  print(f"    ... {len(grouped) - 10} more grouped blocker(s); see raw artifact")
+          print(
+              "Remediation: run the self-built image candidate workflow; update a production "
+              "digest only after a clean verified scan and compatibility/runtime tests. "
+              "Do not add .trivyignore entries or change the threshold to make this job green."
+          )
           PY
 
       - name: Upload upstream image scan

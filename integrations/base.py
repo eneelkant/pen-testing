@@ -67,6 +67,9 @@ class SecurityAdapter(ABC):
                     "PEN_REQUIRE_SCOPE is disabled but PEN_ALLOW_SCOPE_DISABLE is not set; "
                     "refusing to weaken authorization (operator dual-gate)."
                 )
+            # Disabling the registry must not disable live rate control.
+            if not request.dry_run:
+                enforce_unscoped_rate_limit()
             return
         if self.scope_engine is None:
             raise PermissionError("Scope engine is required for active testing")

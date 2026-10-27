@@ -146,6 +146,31 @@ def test_scope_skip_still_rate_limits_live_preflight(monkeypatch):
     adapter.preflight(AdapterRequest(target="http://127.0.0.1:9/", dry_run=True, skip_scope_check=True))
 
 
+def test_require_scope_false_dual_gate_still_rate_limits_live(monkeypatch, tmp_path):
+    monkeypatch.setenv("PEN_ALLOW_SCOPE_DISABLE", "1")
+    monkeypatch.setenv("PEN_SKIP_SCOPE_RATE_LIMIT_RPS", "1")
+    stamps = iter(
+        [
+            datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc),
+        ]
+    )
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return next(stamps)
+
+    monkeypatch.setattr("core.scope.rate_limit.datetime", _FrozenDateTime)
+    adapter = HeadersAdapter(PlatformConfig(require_scope_for_active=False), None)
+    adapter.preflight(AdapterRequest(target="http://127.0.0.1:9/", dry_run=False))
+    with pytest.raises(PermissionError, match="scope-skipped|Rate limit"):
+        adapter.preflight(AdapterRequest(target="http://127.0.0.1:9/", dry_run=False))
+    # Dry-run must not consume the unscoped budget.
+    adapter.preflight(AdapterRequest(target="http://127.0.0.1:9/", dry_run=True))
+    adapter.preflight(AdapterRequest(target="http://127.0.0.1:9/", dry_run=True))
+
+
 def test_invalid_inflight_cap_fails_closed(monkeypatch):
     monkeypatch.setenv("PEN_MAX_INFLIGHT_SCANS", "0")
     with pytest.raises(PermissionError, match="1 to 64"):

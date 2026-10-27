@@ -42,7 +42,7 @@ jobs:
           path: |
             image-scan-release.json
             image-scan-raw/
-          if-no-files-found: warn
+          if-no-files-found: error
 
   github-release:
     name: Create GitHub Release

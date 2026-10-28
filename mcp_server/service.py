@@ -123,10 +123,22 @@ def platform_status() -> dict[str, Any]:
     # machine-readable readiness summary for MCP clients.
     diag = dict(diag)
     diag.update({
+        # Keep collect_diagnostics()["tools"] intact: it includes daemon and
+        # Compose health, not just executable paths.
+        "dependency_tools": deps["present"],
         "core_ok": deps["core_ok"],
         "active_engines_ready": deps["active_engines_ready"],
-        "tools": deps["present"],
+        "missing_core": deps["missing_core"],
+        "missing_engines": deps["missing_engines"],
+        "optional_absent": deps["optional_absent"],
+        "engines": deps["engines"],
+        # Compatibility: this legacy field has always been engine-oriented
+        # in this endpoint. The scope is now explicit; use all_dependency_failures
+        # for a combined core + engine list.
         "dependency_failures": deps["missing_engines"],
+        "dependency_failures_scope": "engine_prerequisites_only",
+        "core_dependency_failures": deps["missing_core"],
+        "all_dependency_failures": [*deps["missing_core"], *deps["missing_engines"]],
         "unhealthy_integrations": [
             name for name, healthy in deps["engines"].items() if not healthy
         ],

@@ -264,7 +264,10 @@ def test_cli_images_raw_dir_writes_hashed_evidence(tmp_path: Path, monkeypatch):
 
 
 def test_ci_uploads_raw_trivy_evidence_for_both_gates():
-    text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    text = "\n".join(
+        (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+        for name in ("ci.yml", "image-gates.yml")
+    )
     assert "--raw-dir image-scan-raw/python" in text
     assert "--raw-dir image-scan-raw/upstream" in text
     assert "name: image-scan-raw" in text

@@ -821,7 +821,11 @@ def test_acceptable_only_after_fresh_exact_digest_pass():
 
 
 def test_ci_keeps_python_and_upstream_image_gates_separate():
-    text = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[2]
+    text = "\n".join(
+        (root / ".github/workflows" / name).read_text(encoding="utf-8")
+        for name in ("ci.yml", "image-gates.yml")
+    )
     assert "Pinned base image vulnerability scan" in text
     assert "Pinned upstream image vulnerability scan" in text
     assert "image-scan-python" in text

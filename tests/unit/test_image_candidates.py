@@ -323,13 +323,16 @@ def test_cli_without_live_db_probe_is_not_verified(tmp_path: Path, monkeypatch):
     assert payload["acceptable"] == []
     assert "live" in payload["error"].lower()
 
-def test_workflow_is_manual_and_scheduled_not_on_pull_request():
+def test_workflow_is_manual_scheduled_and_path_limited_on_pull_request():
     text = (Path(__file__).resolve().parents[2] / ".github/workflows/image-candidate-monitor.yml").read_text(
         encoding="utf-8"
     )
     assert "workflow_dispatch" in text
     assert "schedule:" in text
-    assert "pull_request" not in text
+    assert "pull_request:" in text
+    assert "branches: [main]" in text
+    assert "core/supply_chain/candidates.py" in text
+    assert "docker/candidates/**" in text
     assert "Never updates pins" in text
     assert "core.supply_chain candidates" in text
     rejects = Path(__file__).resolve().parents[2] / "core/supply_chain/candidate_rejects.json"

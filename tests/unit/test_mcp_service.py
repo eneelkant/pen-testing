@@ -78,7 +78,7 @@ def test_export_outdir_confined(tmp_path, monkeypatch):
         dry_run=True,
     )
     aid = created["assessment_id"]
-    bad = service.export_report(aid, outdir="/tmp/pen-testing-escape")
+    bad = service.export_report(aid, outdir=str(tmp_path.parent / "pen-testing-escape"))
     assert bad["ok"] is False
     assert "inside reports_dir" in bad["error"]
 

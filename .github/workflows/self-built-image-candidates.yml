@@ -53,10 +53,10 @@ jobs:
           }
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: "3.12"
 
@@ -66,7 +66,7 @@ jobs:
           pip install -e ".[dev]" -r requirements/dev.txt
 
       - name: Set up Node.js for Shannon E2E
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
         with:
           node-version: "20"
 
@@ -94,7 +94,7 @@ jobs:
 
       - name: Upload local build and scan evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: self-built-image-candidate-evidence
           path: candidate-reports/
@@ -116,10 +116,10 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: "3.12"
 
@@ -129,7 +129,7 @@ jobs:
           pip install -e ".[dev]" -r requirements/dev.txt
 
       - name: Set up Node.js for Shannon E2E
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
         with:
           node-version: "20"
 
@@ -213,7 +213,7 @@ jobs:
 
       - name: Upload final digest-bound evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: self-built-image-published-candidate-evidence
           path: candidate-reports/

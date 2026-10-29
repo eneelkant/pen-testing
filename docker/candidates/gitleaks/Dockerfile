@@ -1,40 +1,39 @@
-# Candidate only. Keep the upstream production pin unchanged until the
-# custom image passes fresh digest-bound scans and all required verification.
-FROM zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46
+# Candidate only. Tests the upstream Gitleaks v8.30.1 image (immutable
+# multi-platform index digest) plus additive OS package updates.
+# It must not replace the production pin unless fresh digest-bound Trivy
+# evidence, the package requirements, image regression gate, and the
+# Gitleaks runtime smoke test all pass.
+FROM zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
 
 LABEL org.opencontainers.image.title="Gitleaks patched candidate" \
       org.opencontainers.image.description="Test candidate; not a production pin"
 
+# Upstream release: zricethezav/gitleaks v8.30.1 (released 2026-03-21).
+#   - 9 minor versions ahead of the production pin (v8.21.2 -> v8.30.1).
+#   - Upstream release notes not yet inspected for security content; this PR
+#     stages v8.30.1 as a VERIFICATION CANDIDATE. CI must prove that the
+#     v8.30.1 image, when scanned with the production-pinned Trivy scanner
+#     (v0.76.0) against the current vulnerability DB, resolves the inherited
+#     Go-module findings (stdlib, golang.org/x/sys, golang.org/x/text,
+#     golang.org/x/crypto) AND the OS-package findings (openssh, git, musl,
+#     libexpat). If any finding remains, the candidate is unacceptable and
+#     the production pin stays at v8.21.2.
+#
 # Package provenance:
-# - The base image (zricethezav/gitleaks:v8.21.2) is Alpine 3.20-based with the
+# - The base image (zricethezav/gitleaks:v8.30.1) is Alpine-based with the
 #   standard Alpine main/community repositories already configured and trusted.
 # - The base image's default USER is non-root; apk needs root to write its
 #   log/cache. Switch to root for the apk layer; the candidate inherits the
 #   base image's runtime USER for the entrypoint.
-# - 2026-10-29 addition (PR ci/extend-candidate-images): upgrade the seven OS
-#   packages that have fixed versions per the in-repo image baseline:
-#     * openssh-client-common, openssh-client-default, openssh-keygen
-#       (9.6_p1-r1 -> 9.7_p1-r0)
-#     * git (2.43.5-r0 -> 2.43.6-r0)
-#     * musl, musl-utils (1.2.4_git20230717-r4 -> -r5)
-#     * libexpat (2.6.3-r0 -> 2.7.2-r0)
-#   Following the Shannon candidate pattern: the version constraint is OMITTED
-#   from `apk add` for these packages, because the fixed versions may not yet
-#   be available in the base image's pinned Alpine 3.20 repos. apk installs
-#   whatever's newest signed-and-available; if that's older than the minimum
-#   recorded in docker/candidates/requirements.json, scripts/verify_self_built_
-#   candidates.sh::check_packages flags the candidate as `unsatisfied` and the
-#   candidate is marked unacceptable. The minimum in requirements.json is the
-#   single source of truth; the candidate is never relabeled acceptable based
-#   on a successful apk exit alone.
-# - The remaining ~34 findings are Go modules embedded in the gitleaks binary
-#   (stdlib, golang.org/x/sys, golang.org/x/text, golang.org/x/crypto). These
-#   CANNOT be fixed via apk — they require rebuilding the gitleaks binary
-#   from source with updated Go module dependencies, which is out of scope for
-#   this PR and would require coordinating with the upstream
-#   zricethezav/gitleaks project. The candidate will continue to fail the
-#   absolute image gate on those findings until upstream releases a fixed
-#   gitleaks image.
+# - Following the Shannon candidate pattern: the version constraint is OMITTED
+#   from `apk add` for packages whose fixed versions may not be available in
+#   the base image's pinned apk repos. apk installs whatever's newest
+#   signed-and-available; if that's older than the minimum recorded in
+#   docker/candidates/requirements.json, scripts/verify_self_built_candidates.sh
+#   ::check_packages flags the candidate as `unsatisfied` and the candidate is
+#   marked unacceptable. The minimum in requirements.json is the single source
+#   of truth; the candidate is never relabeled acceptable based on a successful
+#   apk exit alone.
 USER root
 RUN apk add --no-cache --upgrade \
       openssh-client-common \

@@ -24,10 +24,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: "3.12"
 
@@ -82,7 +82,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Verify Docker Engine and Compose on runner
         run: |
@@ -93,12 +93,12 @@ jobs:
           docker info >/dev/null
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: "3.12"
 
       - name: Set up Node.js (Shannon CLI via npx)
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
         with:
           node-version: "20"
 
@@ -136,7 +136,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
 
@@ -150,9 +150,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: "3.12"
       - name: Show locked intent

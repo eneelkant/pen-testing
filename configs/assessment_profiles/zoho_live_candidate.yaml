@@ -1,0 +1,74 @@
+# PROPOSED live Zoho VRP profile — DISABLED BY DEFAULT.
+#
+# This file is a template for human review after an exact authorized host is
+# verified. It must remain live_execution_enabled: false until a human:
+#   1) re-verifies https://bugbounty.zohocorp.com/bb/info and Service-Specific Terms
+#   2) adds the EXACT host/URL to scopes/registry.yaml with evidence
+#   3) replaces PLACEHOLDER values below
+#   4) enables live_execution_enabled deliberately in a reviewed change
+#
+# Do NOT put real Zoho hostnames, cookies, tokens, or account identifiers here.
+# Do NOT enable Shannon/Briar here without a separate, reviewed isolation plan.
+
+profile_id: zoho_live_candidate
+display_name: Zoho VRP live candidate (disabled)
+description: >
+  Proposed low-impact live profile for one explicitly authorized Zoho web
+  application or API after human scope verification. Disabled by default.
+live_execution_enabled: false
+program_reference: https://bugbounty.zohocorp.com/bb/info
+policy_version: "1"
+require_synthetic_targets: false
+# Keep synthetic suffixes listed for local dry-run rehearsal only.
+synthetic_target_suffixes:
+  - ".test"
+  - ".invalid"
+  - ".localhost"
+  - ".local"
+max_timeout_seconds: 120
+allowed_categories:
+  - passive
+allowed_tools:
+  - headers
+allowed_capabilities:
+  - headers
+  - headers.passive
+  - headers.security_headers
+prohibited_capabilities:
+  - shannon.active
+  - shannon.deep
+  - briar.active
+  - enumeration.users
+  - enumeration.email
+  - credential.guessing
+  - dos
+  - ddos
+  - rate_limit_stress
+  - content_discovery.broad
+  - dns.bruteforce
+  - subdomain.bruteforce
+  - crawl.high_volume
+  - upload.arbitrary
+  - data.modification
+  - cross_user_access
+  - network.scan_outside_allowlist
+  - exploit.active
+prohibited_actions:
+  - dos
+  - ddos
+  - data_destruction
+  - social_engineering
+  - email_bombing
+  - credential_stuffing
+  - privilege_escalation
+  - access_other_users_data
+notes: >
+  PLACEHOLDER_TARGET_ID: REPLACE_WITH_REGISTRY_TARGET_ID
+  PLACEHOLDER_EXACT_ASSET: REPLACE_WITH_EXACT_AUTHORIZED_HOST_AND_BASE_URL
+  PLACEHOLDER_SCOPE_EVIDENCE: human must record URL + retrieval date + product page
+  RATE_BUDGET_OPERATOR: <=1 rps, <=60 live requests/session (operator safety, not Zoho policy)
+  APPROVAL_REQUIRED: MCP authorize_assessment + confirm_authorized + bound approval_id
+  ROLLBACK: leave live_execution_enabled false; remove any draft registry entry that
+  was never human-verified; revoke unused approvals by process restart / store reset.
+  Missing security headers without demonstrated impact remain out of reportable scope
+  under Zoho exclusions. Unvalidated automated findings are excluded.

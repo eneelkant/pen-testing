@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from mcp.server.fastmcp import FastMCP
+from core import __version__
+from mcp.server.mcpserver import MCPServer
 
 from mcp_server import service
 
-mcp = FastMCP(
+mcp = MCPServer(
     name="pen-testing",
+    version=__version__,
     instructions=(
         "Authorized security-testing orchestration platform. "
         "For remote/web targets, call validate_target_scope before a live assessment. "

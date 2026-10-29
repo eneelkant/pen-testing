@@ -1,11 +1,9 @@
 name: Self-built image candidates
 
-# Builds patched candidates of the Shannon worker and Trivy scanner images,
-# verifies them with the project's fail-closed candidate policy, and runtime-
-# tests the Shannon candidate. Evidence collection only: this workflow never
-# changes production pins (core/supply_chain/images.py) and never merges.
-# Publication to GHCR is a manual opt-in from main and requires both
-# candidates to be acceptable (clean scan + all package requirements met).
+# Builds patched candidates for Shannon, Trivy, Temporal, and Gitleaks,
+# verifies fresh raw scan evidence and package requirements, and runtime-tests
+# each candidate. Production pins remain unchanged. Publication is manual and
+# requires every candidate to be acceptable (clean scan + package minimums).
 
 on:
   pull_request:
@@ -43,6 +41,8 @@ jobs:
     outputs:
       shannon_acceptable: ${{ steps.candidate-evidence.outputs.shannon_acceptable }}
       trivy_acceptable: ${{ steps.candidate-evidence.outputs.trivy_acceptable }}
+      temporal_acceptable: ${{ steps.candidate-evidence.outputs.temporal_acceptable }}
+      gitleaks_acceptable: ${{ steps.candidate-evidence.outputs.gitleaks_acceptable }}
     steps:
       - name: Reject publish request from any ref other than main
         if: github.event_name == 'workflow_dispatch' && inputs.publish_candidates
@@ -83,14 +83,18 @@ jobs:
             bash scripts/verify_self_built_candidates.sh
           fi
 
-      - name: Refuse requested publication unless both candidates are acceptable
+      - name: Refuse requested publication unless all candidates are acceptable
         if: github.event_name == 'workflow_dispatch' && inputs.publish_candidates
         env:
           SHANNON_ACCEPTABLE: ${{ steps.candidate-evidence.outputs.shannon_acceptable }}
           TRIVY_ACCEPTABLE: ${{ steps.candidate-evidence.outputs.trivy_acceptable }}
+          TEMPORAL_ACCEPTABLE: ${{ steps.candidate-evidence.outputs.temporal_acceptable }}
+          GITLEAKS_ACCEPTABLE: ${{ steps.candidate-evidence.outputs.gitleaks_acceptable }}
         run: |
           test "$SHANNON_ACCEPTABLE" = "true"
           test "$TRIVY_ACCEPTABLE" = "true"
+          test "$TEMPORAL_ACCEPTABLE" = "true"
+          test "$GITLEAKS_ACCEPTABLE" = "true"
 
       - name: Upload local build and scan evidence
         if: always()
@@ -108,7 +112,9 @@ jobs:
       github.event_name == 'workflow_dispatch' && inputs.publish_candidates == true &&
       github.ref == 'refs/heads/main' &&
       needs.build-and-scan.outputs.shannon_acceptable == 'true' &&
-      needs.build-and-scan.outputs.trivy_acceptable == 'true'
+      needs.build-and-scan.outputs.trivy_acceptable == 'true' &&
+      needs.build-and-scan.outputs.temporal_acceptable == 'true' &&
+      needs.build-and-scan.outputs.gitleaks_acceptable == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -159,10 +165,16 @@ jobs:
           }
           SHANNON_REF="$(push_and_capture "local/shannon-worker-candidate:${GITHUB_SHA:0:12}" "ghcr.io/$OWNER/pen-testing-shannon-candidate" candidate-reports/shannon-push.log)"
           TRIVY_REF="$(push_and_capture "local/trivy-scanner-candidate:${GITHUB_SHA:0:12}" "ghcr.io/$OWNER/pen-testing-trivy-candidate" candidate-reports/trivy-push.log)"
+          TEMPORAL_REF="$(push_and_capture "local/temporal-candidate:${GITHUB_SHA:0:12}" "ghcr.io/$OWNER/pen-testing-temporal-candidate" candidate-reports/temporal-push.log)"
+          GITLEAKS_REF="$(push_and_capture "local/gitleaks-candidate:${GITHUB_SHA:0:12}" "ghcr.io/$OWNER/pen-testing-gitleaks-candidate" candidate-reports/gitleaks-push.log)"
           printf '%s\n' "$SHANNON_REF" > candidate-reports/shannon-published-digest.txt
           printf '%s\n' "$TRIVY_REF" > candidate-reports/trivy-published-digest.txt
+          printf '%s\n' "$TEMPORAL_REF" > candidate-reports/temporal-published-digest.txt
+          printf '%s\n' "$GITLEAKS_REF" > candidate-reports/gitleaks-published-digest.txt
           echo "shannon_ref=$SHANNON_REF" >> "$GITHUB_OUTPUT"
           echo "trivy_ref=$TRIVY_REF" >> "$GITHUB_OUTPUT"
+          echo "temporal_ref=$TEMPORAL_REF" >> "$GITHUB_OUTPUT"
+          echo "gitleaks_ref=$GITLEAKS_REF" >> "$GITHUB_OUTPUT"
 
       # Independent rescan of each published digest straight from the registry
       # (--image-src remote), with a DB probe and an in-image package check.
@@ -170,6 +182,8 @@ jobs:
         env:
           SHANNON_REF: ${{ steps.publish.outputs.shannon_ref }}
           TRIVY_REF: ${{ steps.publish.outputs.trivy_ref }}
+          TEMPORAL_REF: ${{ steps.publish.outputs.temporal_ref }}
+          GITLEAKS_REF: ${{ steps.publish.outputs.gitleaks_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -210,6 +224,8 @@ jobs:
           docker pull --platform linux/amd64 "$SCANNER" >/dev/null
           verify_published shannon "$SHANNON_REF"
           verify_published trivy "$TRIVY_REF"
+          verify_published temporal "$TEMPORAL_REF"
+          verify_published gitleaks "$GITLEAKS_REF"
 
       - name: Upload final digest-bound evidence
         if: always()

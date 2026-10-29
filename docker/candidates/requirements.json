@@ -3,7 +3,7 @@
   "description": "Minimum package versions each self-built candidate must contain before it can be considered acceptable or published. Checked inside the built image against /lib/apk/db/installed using apk's own version comparator. A missing or older package makes the candidate unacceptable; it never makes the build pass silently.",
   "candidates": {
     "shannon": {
-      "base": "keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e",
+      "base": "keygraph/shannon:3.5.0@sha256:7824cff7c54d63836d321a057bdc59c54d85dc0dde7fe486f837592a36a58c4e",
       "packages": {
         "nodejs-22": {
           "minimum": "22.23.4-r0",
@@ -84,5 +84,5 @@
       }
     }
   },
-  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z)."
+  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z). Shannon candidate base updated in verification branch to the official republished v3.5.0 multi-platform digest (index sha256:7824cff7c54d63836d321a057bdc59c54d85dc0dde7fe486f837592a36a58c4e); this is a candidate only and must pass package, fresh scan, regression, and runtime gates before any production pin change."
 }

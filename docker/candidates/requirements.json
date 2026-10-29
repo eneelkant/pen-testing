@@ -110,7 +110,7 @@
       }
     },
     "temporal": {
-      "base": "temporalio/temporal:1.7.0@sha256:9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4",
+      "base": "temporalio/temporal:1.9.1@sha256:ad4c82c97bd12b417d1ea942610dbcd511afb250c4d5ed26c694009533df447e",
       "packages": {
         "musl": {
           "minimum": "1.2.5-r24",
@@ -174,5 +174,5 @@
       }
     }
   },
-  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z). Extended 2026-10-29 in PR ci/extend-candidate-images to add chromium, node-gyp, ca-certificates, ca-certificates-bundle to shannon; musl, musl-utils, libcrypto3, libssl3 to temporal; openssh, git, musl, musl-utils, libexpat to gitleaks. Only result_class=os-pkgs findings are tracked here; cargo (e.g. quinn-proto) and node-pkg findings are not apk-installable and require upstream releases."
+  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z). Extended 2026-10-29 in PR ci/extend-candidate-images to add chromium, node-gyp, ca-certificates, ca-certificates-bundle to shannon; musl, musl-utils, libcrypto3, libssl3 to temporal; openssh, git, musl, musl-utils, libexpat to gitleaks. Only result_class=os-pkgs findings are tracked here; cargo (e.g. quinn-proto) and node-pkg findings are not apk-installable and require upstream releases. Temporal candidate base updated in this PR to v1.9.1 (upstream release 2026-09-14) for verification; production pin in core/supply_chain/images.py remains at 1.7.0."
 }

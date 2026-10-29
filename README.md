@@ -168,6 +168,26 @@ python -m core.cli health --tool mobsfscan
 
 **Not available yet:** OWASP ZAP, Nuclei, Nmap, Schemathesis, and full MobSF binary/device testing are roadmap items, not runnable integrations. See the [tool matrix](docs/TOOL_MATRIX.md).
 
+## 📋 Production readiness
+
+**Current status (2026-10-29, `main@33a6b06`): NOT_PRODUCTION_READY.**
+
+Reasons:
+
+- Pinned upstream container images (`shannon-worker`, `temporal`, `gitleaks`, `trivy-scanner`) inherit 1,090 blocking vulnerability findings, all `awaiting-upstream-release`. The repo's policy is fail-closed — the absolute image gate blocks any release tag until upstream releases a fix and a verified pin-update PR passes the regression gate without suppressions. See [issue #52](https://github.com/eneelkant/pen-testing/issues/52).
+- Issue [#39](https://github.com/eneelkant/pen-testing/issues/39) lists 12 ROADMAP adapter integrations (ZAP, Nuclei, Schemathesis, Semgrep, MobSF service, Nmap, etc.) and 2 BLOCKED by environment (Android emulator, iOS runtime). See the [capability matrix](reports/production-readiness/capability-matrix.md).
+- Adversarial regression tests for the authorization boundary are not yet implemented.
+
+Evidence and detailed status:
+
+- [Baseline report](reports/production-readiness/baseline.md) — Phase A evidence and SHAs.
+- [Capability matrix](reports/production-readiness/capability-matrix.md) — supported vs. roadmap.
+- [Security findings](reports/production-readiness/security-findings.md) — Phase A.4 audit results.
+- [Test evidence](reports/production-readiness/test-evidence.md) — what was PASS / BLOCKED / NOT RUN.
+- [Release checklist](reports/production-readiness/release-checklist.md) — 14 mandatory acceptance criteria.
+- [Production operations runbook](docs/PRODUCTION_OPERATIONS.md) — install / health / IR / upgrade.
+- [Historical production-readiness plan](docs/PRODUCTION_READINESS_PLAN.md) — earlier dated entries for provenance.
+
 ## 🧪 CI pipeline
 
 Every pull request runs quality, security and runtime checks. The image regression check looks for newly introduced or unreviewed image findings. A separate absolute image scan is a stricter security gate for release.

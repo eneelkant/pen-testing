@@ -345,11 +345,30 @@ def _from_line(path):
     return re.search(r"^FROM\s+(\S+)", (ROOT / path).read_text(encoding="utf-8"), re.M).group(1)
 
 
-def test_candidates_build_on_the_current_production_pins():
+def test_candidate_bases_match_their_manifest_and_production_pins():
+    """Candidate Dockerfiles must match their manifest base AND be digest-pinned.
+
+    Candidates may differ from production pins (they are verification candidates
+    for upstream releases that may resolve inherited findings). Production pins
+    in core/supply_chain/images.py:PINNED_IMAGES must remain at their current
+    versions; this test fails closed if either production pin drifts.
+    """
     pins = {item["name"]: item["ref"] for item in PINNED_IMAGES}
     requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))["candidates"]
-    assert _from_line("docker/candidates/shannon/Dockerfile") == requirements["shannon"]["base"] == pins["shannon-worker"]
-    assert _from_line("docker/candidates/trivy/Dockerfile") == requirements["trivy"]["base"] == pins["trivy-scanner"]
+    # Each candidate Dockerfile must match its manifest base, both digest-pinned.
+    assert _from_line("docker/candidates/shannon/Dockerfile") == requirements["shannon"]["base"]
+    assert "@sha256:" in requirements["shannon"]["base"]
+    assert _from_line("docker/candidates/trivy/Dockerfile") == requirements["trivy"]["base"]
+    assert "@sha256:" in requirements["trivy"]["base"]
+    # Production pins must stay unchanged at their current versions:
+    assert pins["shannon-worker"].startswith("keygraph/shannon:3.4.0@sha256:"), (
+        "production shannon-worker pin drifted from 3.4.0; refusing to merge a "
+        "candidate PR that also moves production."
+    )
+    assert pins["trivy-scanner"].startswith("aquasec/trivy:0.76.0@sha256:"), (
+        "production trivy-scanner pin drifted from 0.76.0; refusing to merge a "
+        "candidate PR that also moves production."
+    )
 
 
 def test_candidate_dockerfiles_are_digest_pinned_and_never_skip_signatures():

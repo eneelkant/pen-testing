@@ -49,7 +49,7 @@
       }
     },
     "trivy": {
-      "base": "aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222",
+      "base": "aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c",
       "packages": {
         "libcurl": {
           "minimum": "8.23.0-r0",
@@ -84,5 +84,5 @@
       }
     }
   },
-  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z)."
+  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z). Shannon candidate base may track a verification upstream digest (separate PR); Trivy candidate base updated in this PR to v0.76.1 (upstream security release, Go 1.27.3 + eMudhra CA mitigation). Production pins in core/supply_chain/images.py remain unchanged."
 }

@@ -129,6 +129,31 @@ def _adapters(cfg: PlatformConfig, scope: ScopeEngine | None) -> dict[str, Any]:
 def platform_status() -> dict[str, Any]:
     cfg = resolve_platform_config()
     diag = collect_diagnostics(cfg)
+    deps = check_dependencies()
+    # Preserve the full diagnostics collector output while adding a stable,
+    # machine-readable readiness summary for MCP clients.
+    diag = dict(diag)
+    diag.update({
+        # Keep collect_diagnostics()["tools"] intact: it includes daemon and
+        # Compose health, not just executable paths.
+        "dependency_tools": deps["present"],
+        "core_ok": deps["core_ok"],
+        "active_engines_ready": deps["active_engines_ready"],
+        "missing_core": deps["missing_core"],
+        "missing_engines": deps["missing_engines"],
+        "optional_absent": deps["optional_absent"],
+        "engines": deps["engines"],
+        # Compatibility: this legacy field has always been engine-oriented
+        # in this endpoint. The scope is now explicit; use all_dependency_failures
+        # for a combined core + engine list.
+        "dependency_failures": deps["missing_engines"],
+        "dependency_failures_scope": "engine_prerequisites_only",
+        "core_dependency_failures": deps["missing_core"],
+        "all_dependency_failures": [*deps["missing_core"], *deps["missing_engines"]],
+        "unhealthy_integrations": [
+            name for name, healthy in deps["engines"].items() if not healthy
+        ],
+    })
     return {
         "ok": True,
         "platform_version": __version__,
@@ -159,43 +184,109 @@ def _retention_status() -> dict[str, Any]:
 
 
 def check_dependencies() -> dict[str, Any]:
-    cfg = resolve_platform_config()
-    missing: list[str] = []
-    present: dict[str, Any] = {}
-    for name in ("python3", "git", "node", "npx", "docker"):
-        path = shutil.which(name if name != "python3" else "python3") or shutil.which("python")
-        if name == "python3":
-            path = sys.executable
-        present[name] = path
-        if name in {"docker"} and not path:
-            missing.append("docker (required for Shannon workers)")
-        if name in {"node", "npx"} and not path:
-            missing.append(f"{name} (required for Shannon launcher)")
-    try:
-        import yaml  # noqa: F401
-        import jsonschema  # noqa: F401
+    """Report core MCP runtime requirements separately from engine prerequisites.
 
-        present["pyyaml"] = True
-        present["jsonschema"] = True
-    except ImportError as exc:
-        missing.append(str(exc))
-    mcp_ok = False
-    try:
-        import mcp  # noqa: F401
+    Executable paths are resolved independently; a missing binary never inherits
+    the path of a different executable. This is a PATH/prerequisite check, not a
+    guarantee that the Docker daemon is running or that a live assessment works.
+    """
+    tools = {
+        "python3": sys.executable,
+        "git": shutil.which("git"),
+        "node": shutil.which("node"),
+        "npx": shutil.which("npx"),
+        "docker": shutil.which("docker"),
+    }
+    present: dict[str, Any] = dict(tools)
+    missing_core: list[str] = []
+    missing_engines: list[str] = []
+    optional_absent: list[str] = []
 
-        mcp_ok = True
-    except ImportError:
-        missing.append("mcp (install with: pip install 'pen-testing-platform[mcp]')")
-    present["mcp"] = mcp_ok
-    briar = BriarAdapter(cfg).healthcheck()
-    shannon = ShannonAdapter(cfg).healthcheck()
+    if not sys.executable:
+        missing_core.append("python3 executable missing")
+
+    if not present["git"]:
+        optional_absent.append("git is missing from PATH (optional)")
+    for name in ("docker", "node", "npx"):
+        if not present[name]:
+            missing_engines.append(f"{name} is missing from PATH")
+
+    # These imports are part of the MCP runtime, unlike optional scanner CLIs.
+    for module, display in (
+        ("yaml", "pyyaml"),
+        ("jsonschema", "jsonschema"),
+        ("mcp", "mcp"),
+    ):
+        try:
+            __import__(module)
+            present[display] = True
+        except ImportError:
+            present[display] = False
+            missing_core.append(
+                f"{display} is unavailable (install the MCP runtime dependencies)"
+            )
+
+    shannon_status = check_shannon_health()
+    briar_status = check_briar_health()
+    engines = {
+        "shannon": bool(shannon_status.get("healthy", False)),
+        "briar": bool(briar_status.get("healthy", False)),
+    }
+    core_ok = not missing_core
+    active_engines_ready = all(engines.values())
+    recommendations: list[str] = []
+    if missing_engines:
+        recommendations.append(
+            f"Install missing engine binaries: {', '.join(missing_engines)}"
+        )
+    if not active_engines_ready:
+        recommendations.append("Check Shannon and Briar engine prerequisites")
+
     return {
-        "ok": len(missing) == 0,
+        # Legacy fields remain available to existing clients.
+        "ok": core_ok,
         "present": present,
-        "missing": missing,
-        "shannon": shannon,
-        "briar": briar,
-        "recommendations": collect_diagnostics(cfg).get("recommendations", []),
+        "missing": [*missing_core, *missing_engines],
+        "shannon": shannon_status,
+        "briar": briar_status,
+        "recommendations": recommendations,
+        # Additive readiness fields.
+        "core_ok": core_ok,
+        "active_engines_ready": active_engines_ready,
+        "missing_core": missing_core,
+        "missing_engines": missing_engines,
+        "optional_absent": optional_absent,
+        "engines": engines,
+        "note": (
+            "ok indicates core MCP runtime readiness; active_engines_ready "
+            "indicates Shannon/Briar executable prerequisites are present."
+        ),
+    }
+
+
+def check_shannon_health() -> dict[str, Any]:
+    """Check PATH prerequisites for the Shannon worker launcher."""
+    has_docker = shutil.which("docker") is not None
+    has_node = shutil.which("node") is not None
+    has_npx = shutil.which("npx") is not None
+    healthy = has_docker and has_node and has_npx
+    missing = [
+        name for name, available in (
+            ("docker", has_docker), ("node", has_node), ("npx", has_npx)
+        ) if not available
+    ]
+    return {
+        "healthy": healthy,
+        "details": "Ready" if healthy else f"Missing from PATH: {', '.join(missing)}",
+    }
+
+
+def check_briar_health() -> dict[str, Any]:
+    """Check the Docker executable prerequisite for Briar."""
+    has_docker = shutil.which("docker") is not None
+    return {
+        "healthy": has_docker,
+        "details": "Ready" if has_docker else "Docker required for live execution",
     }
 
 

@@ -8,6 +8,9 @@ LABEL org.opencontainers.image.title="Gitleaks patched candidate" \
 # Package provenance:
 # - The base image (zricethezav/gitleaks:v8.21.2) is Alpine 3.20-based with the
 #   standard Alpine main/community repositories already configured and trusted.
+# - The base image's default USER is non-root; apk needs root to write its
+#   log/cache. Switch to root for the apk layer; the candidate inherits the
+#   base image's runtime USER for the entrypoint.
 # - 2026-10-29 addition (PR ci/extend-candidate-images): upgrade the seven OS
 #   packages that have fixed versions per the in-repo image baseline:
 #     * openssh-client-common, openssh-client-default, openssh-keygen
@@ -15,8 +18,15 @@ LABEL org.opencontainers.image.title="Gitleaks patched candidate" \
 #     * git (2.43.5-r0 -> 2.43.6-r0)
 #     * musl, musl-utils (1.2.4_git20230717-r4 -> -r5)
 #     * libexpat (2.6.3-r0 -> 2.7.2-r0)
-#   All seven are standard Alpine packages and should be available from the
-#   base image's existing apk repositories.
+#   Following the Shannon candidate pattern: the version constraint is OMITTED
+#   from `apk add` for these packages, because the fixed versions may not yet
+#   be available in the base image's pinned Alpine 3.20 repos. apk installs
+#   whatever's newest signed-and-available; if that's older than the minimum
+#   recorded in docker/candidates/requirements.json, scripts/verify_self_built_
+#   candidates.sh::check_packages flags the candidate as `unsatisfied` and the
+#   candidate is marked unacceptable. The minimum in requirements.json is the
+#   single source of truth; the candidate is never relabeled acceptable based
+#   on a successful apk exit alone.
 # - The remaining ~34 findings are Go modules embedded in the gitleaks binary
 #   (stdlib, golang.org/x/sys, golang.org/x/text, golang.org/x/crypto). These
 #   CANNOT be fixed via apk — they require rebuilding the gitleaks binary
@@ -25,11 +35,12 @@ LABEL org.opencontainers.image.title="Gitleaks patched candidate" \
 #   zricethezav/gitleaks project. The candidate will continue to fail the
 #   absolute image gate on those findings until upstream releases a fixed
 #   gitleaks image.
+USER root
 RUN apk add --no-cache --upgrade \
-      'openssh-client-common>=9.7_p1-r0' \
-      'openssh-client-default>=9.7_p1-r0' \
-      'openssh-keygen>=9.7_p1-r0' \
-      'git>=2.43.6-r0' \
-      'musl>=1.2.4_git20230717-r5' \
-      'musl-utils>=1.2.4_git20230717-r5' \
-      'libexpat>=2.7.2-r0'
+      openssh-client-common \
+      openssh-client-default \
+      openssh-keygen \
+      git \
+      musl \
+      musl-utils \
+      libexpat

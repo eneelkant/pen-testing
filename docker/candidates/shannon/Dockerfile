@@ -19,6 +19,11 @@ LABEL org.opencontainers.image.title="Shannon patched candidate" \
 #   minimum is enforced after the build by scripts/verify_self_built_candidates.sh
 #   (docker/candidates/requirements.json). An unmet minimum makes the candidate
 #   unacceptable and blocks publication; it is never reported as fixed.
+# - chromium >= 154.0.8037.92-r0 is also not published in the configured signed
+#   repositories; CI currently resolves 149.0.7827.53-r0. Do not force that
+#   unavailable minimum into apk add: leave Chromium unchanged, retain the
+#   minimum in requirements.json, and let package verification + Trivy evidence
+#   mark the candidate unacceptable until a fixed signed package is available.
 # - 2026-10-29 extension (PR ci/extend-candidate-images): also upgrade chromium,
 #   node-gyp, ca-certificates, and ca-certificates-bundle to their fixed versions
 #   per the in-repo image baseline. Each is a Wolfi OS package
@@ -41,7 +46,6 @@ RUN set -eu; \
       'libbrotlicommon1>=1.2.0-r7' \
       'libbrotlidec1>=1.2.0-r7' \
       'libbrotlienc1>=1.2.0-r7' \
-      'chromium>=154.0.8037.92-r0' \
       'node-gyp>=13.1.0-r1' \
       'ca-certificates>=20260909-r3' \
       'ca-certificates-bundle>=20260909-r3' \

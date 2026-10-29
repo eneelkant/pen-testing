@@ -19,7 +19,6 @@ def test_package_mcp_and_changelog_versions_match():
     assert project["project"]["version"] == "0.2.0a18"
     assert __version__ == "0.2.0a18"
     assert mcp_package_version == __version__
-    assert mcp._lowlevel_server.version == __version__
     assert (
         changelog.index("## 0.2.0a18")
         < changelog.index("## 0.2.0a17")

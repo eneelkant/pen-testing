@@ -61,10 +61,6 @@ pen-testing-mcp
 - Assessment profiles (for example `zoho_non_destructive`) can disable live execution
 - Upstream Shannon/Briar may still navigate beyond the initial URL
 - Zoho / third-party hosts must never be probed unless listed in `scopes/registry.yaml`
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
 
 
 ## Dependency Health & Readiness Semantics
@@ -101,5 +97,3 @@ that a Shannon/Briar live invocation will succeed. Use the preserved diagnostic
 fields for daemon/Compose health. `platform_status.ok` means the status request
 completed; it is not an aggregate all-dependencies-healthy flag. Status checks do
 not launch scans or guarantee that a live engine invocation will succeed.
->>>>>>> main
->>>>>>> main

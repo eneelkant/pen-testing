@@ -20,9 +20,18 @@ async def _call(name: str, args: dict):
 
 
 def _payload(result) -> dict:
+    # FastMCP's call_tool returns a tuple: (content_list, structured_content_dict)
+    if isinstance(result, tuple):
+        if len(result) >= 2 and result[1]:
+            return dict(result[1])
+        for item in result[0] or []:
+            text = getattr(item, "text", None)
+            if text:
+                return json.loads(text)
+        return {}
+    # Legacy: object with .structured_content / .content attrs
     if getattr(result, "structured_content", None):
         return dict(result.structured_content)
-    # Fallback parse text content
     for item in result.content or []:
         text = getattr(item, "text", None)
         if text:

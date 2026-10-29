@@ -20,10 +20,19 @@
 
 ### Security
 
+- Bound MCP live approvals: `plan_assessment` / `authorize_assessment` issue single-use, expiring `approval_id` values tied to target, tool, mode, and profile; `confirm_authorized` alone is no longer sufficient
+- Zoho non-destructive assessment profile (`configs/assessment_profiles/zoho_non_destructive.yaml`) disabled for live execution and limited to synthetic fixtures
+- Scope records gain optional schemes/ports/`live_execution_allowed`/policy audit fields without silently widening legacy registries
+- Finding `ValidationStatus` + evidence policy; high scanner severity cannot self-validate
+- Markdown/HTML escaping in report export; blocked findings omitted from drafts
 - Trivy and Gitleaks Docker fallbacks use digest-pinned refs from `PINNED_IMAGES` (Trivy adapter no longer floats `0.58.1`)
 - Live preflight under `PEN_REQUIRE_SCOPE=false` + `PEN_ALLOW_SCOPE_DISABLE` still applies the unscoped rate limit
 - MCP local-path scanners confine to `work_dir` and `reports_dir` only (process cwd is not an authorized root)
 - Regression-gate and release absolute-image artifact uploads fail closed when files are missing (`if-no-files-found: error`)
+
+### Documentation
+
+- Add Zoho assessment baseline, program-requirements mapping, runbook, and VRP submission template (no live Zoho probing)
 
 ### Supply chain
 

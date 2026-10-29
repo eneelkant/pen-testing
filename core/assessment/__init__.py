@@ -1,17 +1,9 @@
-"""Assessment profile loading and live-execution policy helpers."""
+"""Assessment planning, profiles, and safe orchestration helpers."""
 
-from .profile import (
-    AssessmentProfile,
-    load_assessment_profile,
-    profile_blocks_live_execution,
-    profile_allows_capability,
-    TRANSACTION_CAPABILITIES,
-)
+from .profile import AssessmentProfile, load_assessment_profile, validate_profile_request
 
 __all__ = [
     "AssessmentProfile",
     "load_assessment_profile",
-    "profile_blocks_live_execution",
-    "profile_allows_capability",
-    "TRANSACTION_CAPABILITIES",
+    "validate_profile_request",
 ]

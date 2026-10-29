@@ -1,111 +1,112 @@
-"""Bound, expiring execution approvals for live assessments.
+"""Bound, short-lived assessment approvals for live MCP/CLI execution.
 
-A client-supplied ``confirm_authorized=true`` flag is not proof of authorization.
-Approvals are issued only after a successful scope decision and are bound to the
-exact target, tool, category, optional assessment profile, execution plan hash,
-and a fingerprint of the matched authorization policy. They expire, are single-use
-for live execution, and fail closed on mismatch or policy change.
+``confirm_authorized=true`` alone is not an authorization grant. Live runs must
+present a single-use approval issued after scope and profile checks, bound to a
+specific target, tool, category, mode, and plan fingerprint.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
+from urllib.parse import urlparse
 
-from core.findings.redaction import redact_secrets
-from core.scope.models import AuthorizationRecord, ScopeDecision
+DEFAULT_APPROVAL_TTL_SECONDS = 900
+POLICY_VERSION = "assessment-approval-v1"
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_dt(value: str) -> datetime:
-    text = value.strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    dt = datetime.fromisoformat(text)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+def normalize_approval_target(target: str) -> str:
+    """Canonicalize a target for approval binding without resolving DNS."""
+    text = (target or "").strip()
+    if not text:
+        raise ValueError("Target is empty")
+    if text.startswith(("http://", "https://")):
+        parsed = urlparse(text)
+        if parsed.username or parsed.password:
+            raise ValueError("URL userinfo is not allowed in approval targets")
+        if not parsed.hostname:
+            raise ValueError("URL is missing a hostname")
+        scheme = parsed.scheme.lower()
+        host = parsed.hostname.lower().rstrip(".")
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise ValueError("Hostname is not a valid IDN") from exc
+        port = parsed.port
+        if port is None:
+            port = 443 if scheme == "https" else 80
+        path = parsed.path or "/"
+        if path != "/" and path.endswith("/"):
+            path = path.rstrip("/")
+        query = f"?{parsed.query}" if parsed.query else ""
+        return f"{scheme}://{host}:{port}{path}{query}"
+    # Local path / opaque targets: exact stripped form only.
+    if "\x00" in text or any(ord(ch) < 32 for ch in text):
+        raise ValueError("Target contains control characters")
+    return text
 
 
-def policy_fingerprint(record: AuthorizationRecord | None, *, registry_digest: str = "") -> str:
-    """Stable fingerprint of the authorizing policy used at approval time."""
-    payload = {
-        "registry_digest": registry_digest,
-        "record": record.to_dict() if record else None,
-    }
-    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
-
-def execution_plan_hash(
+def plan_fingerprint(
     *,
     tool: str,
     target: str,
     category: str,
-    mode: str = "standard",
-    profile_id: str | None = None,
-    capabilities: list[str] | None = None,
+    mode: str,
+    profile_id: str,
     extra: dict[str, Any] | None = None,
 ) -> str:
     payload = {
-        "tool": tool.lower().strip(),
-        "target": target.strip(),
-        "category": category.lower().strip(),
-        "mode": mode.lower().strip(),
-        "profile_id": profile_id,
-        "capabilities": sorted(capabilities or []),
+        "tool": (tool or "").strip().lower(),
+        "target": normalize_approval_target(target),
+        "category": (category or "").strip().lower(),
+        "mode": (mode or "").strip().lower(),
+        "profile_id": (profile_id or "").strip().lower(),
         "extra": extra or {},
+        "policy_version": POLICY_VERSION,
     }
-    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
-
-def registry_content_digest(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    raw = repr(sorted(payload.items())).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 @dataclass
-class ExecutionApproval:
+class AssessmentApproval:
     approval_id: str
     target: str
     tool: str
     category: str
-    profile_id: str | None
-    execution_plan_hash: str
-    policy_fingerprint: str
-    issued_at: str
-    expires_at: str
-    used: bool = False
-    status: str = "active"  # active | consumed | expired | revoked
+    mode: str
+    profile_id: str
+    plan_fingerprint: str
+    policy_version: str = POLICY_VERSION
+    issued_at: str = field(default_factory=lambda: _utcnow().isoformat())
+    expires_at: str = ""
+    consumed: bool = False
+    single_use: bool = True
+    scope_target_id: str = ""
     reason: str = ""
-    audit: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return redact_secrets(asdict(self))
-
-    def is_expired(self, *, now: datetime | None = None) -> bool:
-        moment = now or _utcnow()
-        return moment > _parse_dt(self.expires_at)
+        return asdict(self)
 
 
 class ApprovalStore:
-    """Process-local approval ledger. Fail closed when validation cannot complete."""
+    """Process-local approval ledger. Not a multi-node authorization service."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._items: dict[str, ExecutionApproval] = {}
+        self._grants: dict[str, AssessmentApproval] = {}
 
-    def clear(self) -> None:
+    def reset(self) -> None:
         with self._lock:
-            self._items.clear()
+            self._grants.clear()
 
     def issue(
         self,
@@ -113,57 +114,40 @@ class ApprovalStore:
         target: str,
         tool: str,
         category: str,
-        decision: ScopeDecision,
-        plan_hash: str,
-        profile_id: str | None = None,
-        registry_digest: str = "",
-        ttl_seconds: int = 900,
+        mode: str,
+        profile_id: str,
+        plan_fingerprint: str,
+        ttl_seconds: int = DEFAULT_APPROVAL_TTL_SECONDS,
+        scope_target_id: str = "",
+        reason: str = "Operator issued bound live-execution approval",
         now: datetime | None = None,
-        audit: dict[str, Any] | None = None,
-    ) -> ExecutionApproval:
-        if ttl_seconds < 60 or ttl_seconds > 86_400:
-            raise PermissionError("Approval TTL must be between 60 and 86400 seconds")
-        if not decision.allowed:
-            raise PermissionError(f"Cannot issue approval: {decision.reason}")
-        if not target.strip() or not tool.strip() or not category.strip() or not plan_hash.strip():
-            raise PermissionError("Approval requires target, tool, category, and execution plan hash")
-
+    ) -> AssessmentApproval:
+        if ttl_seconds < 30 or ttl_seconds > 86_400:
+            raise ValueError("ttl_seconds must be between 30 and 86400")
         moment = now or _utcnow()
-        approval = ExecutionApproval(
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        normalized = normalize_approval_target(target)
+        grant = AssessmentApproval(
             approval_id=str(uuid4()),
-            target=target.strip(),
-            tool=tool.lower().strip(),
-            category=category.lower().strip(),
-            profile_id=profile_id,
-            execution_plan_hash=plan_hash.strip(),
-            policy_fingerprint=policy_fingerprint(decision.matched_record, registry_digest=registry_digest),
+            target=normalized,
+            tool=tool.strip().lower(),
+            category=category.strip().lower(),
+            mode=mode.strip().lower(),
+            profile_id=(profile_id or "").strip().lower(),
+            plan_fingerprint=plan_fingerprint,
             issued_at=moment.isoformat(),
             expires_at=(moment + timedelta(seconds=ttl_seconds)).isoformat(),
-            reason=decision.reason,
-            audit=redact_secrets(
-                {
-                    "policy_reference": decision.policy_reference,
-                    "decided_at": decision.decided_at,
-                    **(audit or {}),
-                }
-            ),
+            scope_target_id=scope_target_id,
+            reason=reason,
         )
         with self._lock:
-            self._items[approval.approval_id] = approval
-        return approval
+            self._grants[grant.approval_id] = grant
+        return grant
 
-    def get(self, approval_id: str) -> ExecutionApproval | None:
+    def peek(self, approval_id: str) -> AssessmentApproval | None:
         with self._lock:
-            return self._items.get(approval_id)
-
-    def revoke(self, approval_id: str, *, reason: str = "revoked") -> ExecutionApproval:
-        with self._lock:
-            item = self._items.get(approval_id)
-            if item is None:
-                raise PermissionError("Approval not found")
-            item.status = "revoked"
-            item.reason = reason
-            return item
+            return self._grants.get(approval_id)
 
     def consume(
         self,
@@ -172,39 +156,44 @@ class ApprovalStore:
         target: str,
         tool: str,
         category: str,
-        plan_hash: str,
-        policy_fingerprint_now: str,
-        profile_id: str | None = None,
+        mode: str,
+        profile_id: str,
+        plan_fingerprint: str,
         now: datetime | None = None,
-    ) -> ExecutionApproval:
-        """Validate binding and mark the approval consumed. Fail closed on any mismatch."""
+    ) -> AssessmentApproval:
+        if not approval_id or not str(approval_id).strip():
+            raise PermissionError("Live execution requires a bound approval_id")
         moment = now or _utcnow()
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        normalized = normalize_approval_target(target)
         with self._lock:
-            item = self._items.get(approval_id)
-            if item is None:
-                raise PermissionError("Approval not found")
-            if item.status == "revoked":
-                raise PermissionError("Approval has been revoked")
-            if item.status == "consumed" or item.used:
+            grant = self._grants.get(approval_id.strip())
+            if grant is None:
+                raise PermissionError("Approval not found or already invalid")
+            if grant.consumed and grant.single_use:
                 raise PermissionError("Approval has already been consumed")
-            if item.is_expired(now=moment):
-                item.status = "expired"
+            expires = datetime.fromisoformat(grant.expires_at)
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if moment > expires:
                 raise PermissionError("Approval has expired")
-            if item.target != target.strip():
-                raise PermissionError("Approval target mismatch")
-            if item.tool != tool.lower().strip():
-                raise PermissionError("Approval tool mismatch")
-            if item.category != category.lower().strip():
-                raise PermissionError("Approval category mismatch")
-            if (item.profile_id or None) != (profile_id or None):
-                raise PermissionError("Approval profile mismatch")
-            if item.execution_plan_hash != plan_hash.strip():
-                raise PermissionError("Approval execution plan mismatch")
-            if item.policy_fingerprint != policy_fingerprint_now:
-                raise PermissionError("Authorization policy changed since approval was issued")
-            item.used = True
-            item.status = "consumed"
-            return item
+            if grant.policy_version != POLICY_VERSION:
+                raise PermissionError("Approval policy version mismatch")
+            if grant.target != normalized:
+                raise PermissionError("Approval target does not match the requested target")
+            if grant.tool != tool.strip().lower():
+                raise PermissionError("Approval tool does not match the requested tool")
+            if grant.category != category.strip().lower():
+                raise PermissionError("Approval category does not match the request")
+            if grant.mode != mode.strip().lower():
+                raise PermissionError("Approval mode does not match the request")
+            if grant.profile_id != (profile_id or "").strip().lower():
+                raise PermissionError("Approval profile does not match the request")
+            if grant.plan_fingerprint != plan_fingerprint:
+                raise PermissionError("Approval plan fingerprint does not match the request")
+            grant.consumed = True
+            return grant
 
 
 _STORE = ApprovalStore()
@@ -215,5 +204,4 @@ def get_approval_store() -> ApprovalStore:
 
 
 def reset_approval_store() -> None:
-    """Test helper."""
-    _STORE.clear()
+    _STORE.reset()

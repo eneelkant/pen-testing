@@ -1,177 +1,159 @@
-"""Evidence quality gates for normalized findings.
+"""Evidence validation policy for normalized findings.
 
-Scanner severity alone never promotes a candidate to a validated finding.
-Human confirmation remains a separate lifecycle step.
+Scanner output alone never promotes a finding to validated. Primary evidence
+must reference the same assessment and in-scope asset, and must not be stale,
+summary-only, or contradictory.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
 
-from core.findings.redaction import redact_secrets
-from core.findings.schema import Finding, FindingLifecycle, VerificationState
+from .schema import Finding, ValidationStatus, VerificationState
 
-
-class EvidenceValidationStatus(str, Enum):
-    CANDIDATE = "candidate"
-    NEEDS_REVIEW = "needs_review"
-    VALIDATED = "validated"
-    REJECTED = "rejected"
-    DUPLICATE = "duplicate"
-    BLOCKED = "blocked"
-
-
-_AUTOMATIC_VALIDATED_BLOCKLIST = {
-    VerificationState.HUMAN_CONFIRMED.value,
-    "validated",
-}
+_VALID_SEVERITIES = {"info", "low", "medium", "high", "critical", "unknown"}
 
 
 @dataclass(frozen=True)
-class EvidenceContext:
-    assessment_id: str
-    approved_target: str
-    source_tool: str
-    source_tool_version: str = "unknown"
-    allowed_account_ids: tuple[str, ...] = ()
-    known_finding_fingerprints: tuple[str, ...] = ()
+class EvidenceDecision:
+    accepted: bool
+    status: str
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"accepted": self.accepted, "status": self.status, "reason": self.reason}
 
 
-def _host(url: str) -> str:
+def _parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
     try:
-        return (urlparse(url).hostname or "").lower()
-    except Exception:
-        return ""
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
-def finding_fingerprint(finding: Finding | dict[str, Any]) -> str:
-    data = finding.to_dict() if isinstance(finding, Finding) else dict(finding)
-    parts = [
-        str(data.get("title") or "").strip().lower(),
-        str(data.get("category") or "").strip().lower(),
-        str(data.get("asset") or "").strip().lower(),
-        str(data.get("source_tool") or "").strip().lower(),
-    ]
-    return "|".join(parts)
+def validate_severity(value: str) -> bool:
+    return (value or "").strip().lower() in _VALID_SEVERITIES
 
 
-def validate_finding_evidence(
+def assess_evidence(
     finding: Finding | dict[str, Any],
-    context: EvidenceContext,
-) -> dict[str, Any]:
-    """Return a validation decision. Never auto-sets human_confirmed."""
-    data = redact_secrets(finding.to_dict() if isinstance(finding, Finding) else dict(finding))
-    reasons: list[str] = []
-    status = EvidenceValidationStatus.CANDIDATE
+    *,
+    assessment_id: str,
+    in_scope_assets: list[str] | None = None,
+    evidence: dict[str, Any] | None = None,
+    require_primary: bool = True,
+    max_age_hours: int = 72,
+    now: datetime | None = None,
+) -> EvidenceDecision:
+    """Return whether evidence can support a human-review promotion.
 
-    assessment_ref = str(data.get("execution_id") or data.get("assessment_id") or "").strip()
-    if context.assessment_id and assessment_ref and assessment_ref != context.assessment_id:
-        status = EvidenceValidationStatus.BLOCKED
-        reasons.append("Finding assessment/execution id does not match the current assessment")
+    Never returns ``validated`` solely because scanner severity is high.
+    """
+    data = finding.to_dict() if isinstance(finding, Finding) else dict(finding)
+    status = str(data.get("validation_status") or ValidationStatus.CANDIDATE.value)
+    if status == ValidationStatus.DUPLICATE.value:
+        return EvidenceDecision(False, ValidationStatus.DUPLICATE.value, "Finding is marked duplicate")
+    if status == ValidationStatus.BLOCKED.value:
+        return EvidenceDecision(False, ValidationStatus.BLOCKED.value, "Finding verification is blocked")
+    if status == ValidationStatus.REJECTED.value:
+        return EvidenceDecision(False, ValidationStatus.REJECTED.value, "Finding was rejected")
 
-    asset = str(data.get("asset") or "").strip()
-    if context.approved_target and asset:
-        approved_host = _host(context.approved_target)
-        asset_host = _host(asset) if "://" in asset else asset.lower()
-        if approved_host and asset_host and approved_host != asset_host:
-            status = EvidenceValidationStatus.BLOCKED
-            reasons.append("Finding asset host is outside the approved target")
-        elif asset.rstrip("/") != context.approved_target.rstrip("/") and not (
-            approved_host and asset_host and approved_host == asset_host
-        ):
-            # Same host with different path is needs_review, not auto-validated.
-            if status == EvidenceValidationStatus.CANDIDATE:
-                status = EvidenceValidationStatus.NEEDS_REVIEW
-                reasons.append("Finding asset does not exactly match approved target")
+    severity = str(data.get("severity") or "").lower()
+    if not validate_severity(severity):
+        return EvidenceDecision(
+            False, ValidationStatus.REJECTED.value, f"Invalid severity value: {severity!r}"
+        )
 
-    source_tool = str(data.get("source_tool") or "").strip().lower()
-    if context.source_tool and source_tool and source_tool != context.source_tool.lower():
-        status = EvidenceValidationStatus.BLOCKED
-        reasons.append("Finding source tool does not match the assessment tool")
+    asset = str(data.get("asset") or "")
+    if in_scope_assets is not None and asset:
+        normalized_assets = {a.rstrip("/") for a in in_scope_assets}
+        # Also accept host-only allowlist entries via exact normalized string forms.
+        if asset.rstrip("/") not in normalized_assets and asset not in in_scope_assets:
+            return EvidenceDecision(
+                False,
+                ValidationStatus.BLOCKED.value,
+                "Finding asset is out of authorized scope for this assessment",
+            )
 
-    if not data.get("title") or not data.get("category"):
-        status = EvidenceValidationStatus.REJECTED
-        reasons.append("Finding is missing mandatory title or category")
+    payload = evidence if evidence is not None else data.get("evidence_sanitized") or {}
+    if not isinstance(payload, dict):
+        return EvidenceDecision(
+            False, ValidationStatus.REJECTED.value, "Evidence payload must be an object"
+        )
 
-    evidence = data.get("evidence_sanitized") or {}
-    if not isinstance(evidence, dict):
-        status = EvidenceValidationStatus.REJECTED
-        reasons.append("Evidence must be an object after sanitization")
-        evidence = {}
+    if require_primary:
+        if payload.get("summary_only") is True:
+            return EvidenceDecision(
+                False,
+                ValidationStatus.NEEDS_REVIEW.value,
+                "Summary-only scanner output is insufficient for validation",
+            )
+        primary = payload.get("primary") or payload.get("http_exchange") or payload.get("artifact_refs")
+        if not primary:
+            return EvidenceDecision(
+                False,
+                ValidationStatus.NEEDS_REVIEW.value,
+                "Primary evidence is missing",
+            )
 
-    # Cross-account fixture mixing.
-    account_ids = set()
-    for key in ("account_id", "account", "client_id"):
-        value = evidence.get(key)
-        if isinstance(value, str) and value.strip():
-            account_ids.add(value.strip())
-    nested_accounts = evidence.get("accounts")
-    if isinstance(nested_accounts, list):
-        for item in nested_accounts:
-            if isinstance(item, str) and item.strip():
-                account_ids.add(item.strip())
-    if context.allowed_account_ids and account_ids:
-        unexpected = account_ids - set(context.allowed_account_ids)
-        if unexpected:
-            status = EvidenceValidationStatus.BLOCKED
-            reasons.append("Evidence references account identifiers outside the approved synthetic set")
-        if len(account_ids) > 1:
-            status = EvidenceValidationStatus.BLOCKED
-            reasons.append("Evidence combines multiple unrelated account identifiers")
+    linked = str(payload.get("assessment_id") or data.get("execution_id") or "")
+    if assessment_id and linked and linked != assessment_id and linked != data.get("execution_id"):
+        # Allow execution_id equality; reject clearly foreign assessment ids.
+        if payload.get("assessment_id") and payload.get("assessment_id") != assessment_id:
+            return EvidenceDecision(
+                False,
+                ValidationStatus.REJECTED.value,
+                "Evidence assessment_id does not match the current assessment",
+            )
 
-    fingerprint = finding_fingerprint(data)
-    if fingerprint in set(context.known_finding_fingerprints):
-        status = EvidenceValidationStatus.DUPLICATE
-        reasons.append("Duplicate finding fingerprint for this assessment")
+    moment = now or datetime.now(timezone.utc)
+    evidence_ts = _parse_ts(str(payload.get("captured_at") or data.get("timestamp") or ""))
+    if evidence_ts is not None:
+        age_hours = (moment - evidence_ts).total_seconds() / 3600.0
+        if age_hours > max_age_hours:
+            return EvidenceDecision(
+                False, ValidationStatus.REJECTED.value, "Evidence is stale for this assessment"
+            )
 
-    # Contradictory or missing proof for authorization-style claims.
-    category = str(data.get("category") or "").lower()
-    if "authorization" in category or "access-control" in category or "idor" in category:
-        expected = str(data.get("expected_behavior") or "").strip()
-        observed = str(data.get("observed_behavior") or "").strip()
-        if not expected or not observed:
-            if status in {EvidenceValidationStatus.CANDIDATE, EvidenceValidationStatus.NEEDS_REVIEW}:
-                status = EvidenceValidationStatus.NEEDS_REVIEW
-            reasons.append("Authorization findings require expected and observed behavior")
-        if expected and observed and expected == observed:
-            status = EvidenceValidationStatus.REJECTED
-            reasons.append("Expected and observed behavior are identical; no authorization failure demonstrated")
+    if payload.get("contradicts_claim") is True:
+        return EvidenceDecision(
+            False, ValidationStatus.REJECTED.value, "Evidence contradicts the reported claim"
+        )
 
-    # Scanner severity must not auto-validate.
-    if str(data.get("verification_state") or "") in _AUTOMATIC_VALIDATED_BLOCKLIST:
-        # Downgrade automatic promotion attempts.
-        data["verification_state"] = VerificationState.UNVERIFIED.value
-        if status == EvidenceValidationStatus.CANDIDATE:
-            status = EvidenceValidationStatus.NEEDS_REVIEW
-        reasons.append("Scanner or import attempted automatic human validation; downgraded")
+    # High scanner severity still only reaches needs_review — never auto-validated.
+    if str(data.get("verification_state")) == VerificationState.HUMAN_CONFIRMED.value:
+        return EvidenceDecision(
+            True, ValidationStatus.VALIDATED.value, "Human confirmation recorded"
+        )
 
-    if str(data.get("lifecycle") or "") == FindingLifecycle.SUBMITTED.value:
-        status = EvidenceValidationStatus.BLOCKED
-        reasons.append("Automated submission lifecycle is not permitted")
+    return EvidenceDecision(
+        False,
+        ValidationStatus.NEEDS_REVIEW.value,
+        "Evidence accepted for human review; scanner severity alone does not validate the finding",
+    )
 
-    if status == EvidenceValidationStatus.CANDIDATE and evidence and data.get("severity"):
-        # Presence of sanitized evidence only moves to needs_review, never validated.
-        status = EvidenceValidationStatus.NEEDS_REVIEW
-        reasons.append("Evidence present; human review required before validation")
 
-    if status == EvidenceValidationStatus.VALIDATED:
-        # Defensive: this function never returns validated automatically.
-        status = EvidenceValidationStatus.NEEDS_REVIEW
-        reasons.append("Automatic validation is refused")
-
-    return {
-        "ok": status not in {
-            EvidenceValidationStatus.REJECTED,
-            EvidenceValidationStatus.BLOCKED,
-            EvidenceValidationStatus.DUPLICATE,
-        },
-        "validation_status": status.value,
-        "reasons": reasons,
-        "fingerprint": fingerprint,
-        "redaction_status": "redacted",
-        "finding": data,
-        "note": "Severity from a scanner never promotes a finding to validated or human_confirmed.",
-    }
+def apply_validation_status(
+    finding: Finding,
+    decision: EvidenceDecision,
+) -> Finding:
+    finding.validation_status = decision.status
+    if decision.status == ValidationStatus.VALIDATED.value:
+        finding.verification_state = VerificationState.HUMAN_CONFIRMED.value
+    elif decision.status == ValidationStatus.REJECTED.value:
+        finding.verification_state = VerificationState.FALSE_POSITIVE.value
+    elif decision.status == ValidationStatus.NEEDS_REVIEW.value:
+        finding.verification_state = VerificationState.PARTIAL.value
+    elif decision.status == ValidationStatus.BLOCKED.value:
+        finding.verification_state = VerificationState.UNVERIFIED.value
+    return finding

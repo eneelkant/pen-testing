@@ -499,7 +499,11 @@ def test_scan_download_db_failure_is_not_verified():
 
 
 def test_ci_separates_docker_runtime_from_image_scan_gate():
-    text = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[2]
+    text = "\n".join(
+        (root / ".github/workflows" / name).read_text(encoding="utf-8")
+        for name in ("ci.yml", "image-gates.yml")
+    )
     assert "name: Docker build and runtime" in text
     assert "name: Pinned image vulnerability scans" in text
     assert "Enforce pinned image scan gates" in text

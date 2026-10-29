@@ -9,7 +9,7 @@ A small orchestration layer that connects approved security tools, checks scope 
 [![CI Pipeline](https://github.com/eneelkant/pen-testing/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/eneelkant/pen-testing/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/Tests-Pytest%20%2B%20Docker-informational?logo=pytest)](tests/)
 [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![MCP](https://img.shields.io/badge/MCP-11%20tools-7558e6)](mcp_server/README.md)
+[![MCP](https://img.shields.io/badge/MCP-9%20tools-7558e6)](mcp_server/README.md)
 [![License](https://img.shields.io/badge/License-Apache--2.0-2ea44f)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Alpha%20%7C%20Controlled%20testing-orange)](docs/READINESS_SCORECARD.md)
 
@@ -39,7 +39,7 @@ flowchart TB
     CLIENT["Cursor or Claude Desktop"]
     CLI["Terminal / CLI"]
 
-    MCP["MCP server<br/>11 purpose-built tools"]
+    MCP["MCP server<br/>9 purpose-built tools"]
     CORE["Core orchestrator<br/>configuration · scope · limits"]
     SCOPE[("Approved targets<br/>scopes/registry.yaml")]
     GATE{"In scope and authorized?"}
@@ -135,10 +135,12 @@ For Claude Desktop, use `python installers/configure_claude.py --apply`. See the
 | `validate_target_scope` | Check whether a target is allowed |
 | `list_integrations` | Discover available tools and their health |
 | `run_local_diagnostics` | Run non-destructive diagnostics |
-| `run_security_assessment` | Preview or run an assessment; dry-run by default |
+| `plan_assessment` | Build an assessment plan without launching scanners |
+| `authorize_assessment` | Issue a bound, expiring live-execution approval |
+| `run_security_assessment` | Dry-run by default; live needs `confirm_authorized` + `approval_id` |
 | `get_assessment_status` | Check assessment progress and status |
 | `list_findings` | Review collected findings |
-| `export_report` | Export a report draft |
+| `export_report` | Export a report draft (never auto-submits) |
 
 **Example prompt for your connected AI client**
 
@@ -203,10 +205,10 @@ flowchart TB
 ## 🔒 Important security note
 
 - Add only approved systems to `scopes/registry.yaml`; a valid URL is not proof of permission.
-- Start with a dry run. Live MCP assessments require explicit authorization confirmation; bound profiles also need a single-use `approval_id`. The CLI defaults to dry-run.
+- Start with a dry run. Live MCP assessments require `confirm_authorized` plus a bound `approval_id` from `authorize_assessment`; the CLI also defaults to dry-run.
 - Do not expose an unauthenticated MCP server to the internet. Local stdio is the documented default; a public ChatGPT-compatible endpoint is **not** deployed by default.
+- Zoho / third-party bug-bounty work: see [program requirements](docs/ZOHO_PROGRAM_REQUIREMENTS.md), [runbook](docs/ZOHO_ASSESSMENT_RUNBOOK.md), and the disabled-by-default [non-destructive profile](configs/assessment_profiles/zoho_non_destructive.yaml). Do not probe real program hosts unless they are explicitly listed in `scopes/registry.yaml`.
 - This project is for controlled testing, not a multi-user production security service. Its pinned upstream container images still have blocking vulnerability findings. Follow the [production readiness plan](docs/PRODUCTION_READINESS_PLAN.md).
-- FYERS bounty readiness is documented for synthetic/dry-run workflows only; it is not authorization to assess FYERS production systems. See the [FYERS assessment runbook](docs/FYERS_ASSESSMENT_RUNBOOK.md).
 
 ## 🗺️ Explore the project
 
@@ -216,8 +218,10 @@ flowchart TB
 - [Installation guide](docs/INSTALLATION.md)
 - [MCP server details](mcp_server/README.md)
 - [Scope and authorization checks](docs/SECURITY_VALIDATION.md)
-- [FYERS assessment runbook](docs/FYERS_ASSESSMENT_RUNBOOK.md)
 - [Isolation design](docs/SCANNER_ISOLATION.md)
+- [Zoho assessment baseline](docs/ZOHO_ASSESSMENT_BASELINE.md)
+- [Zoho program requirements mapping](docs/ZOHO_PROGRAM_REQUIREMENTS.md)
+- [Zoho assessment runbook](docs/ZOHO_ASSESSMENT_RUNBOOK.md)
 - [Roadmap / tool coverage](docs/TOOL_MATRIX.md)
 - [Third-party licenses](THIRD_PARTY_NOTICES.md)
 

@@ -574,7 +574,10 @@ def test_codeowners_protects_baseline_and_gate():
 
 
 def test_ci_runs_regression_gate_as_separate_fail_closed_job():
-    text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    text = "\n".join(
+        (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+        for name in ("ci.yml", "image-gates.yml")
+    )
     assert "name: Pinned image regression gate" in text
     assert "--baseline core/supply_chain/image_baseline.json" in text
     assert "baseline guard --base-ref" in text

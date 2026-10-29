@@ -345,11 +345,16 @@ def _from_line(path):
     return re.search(r"^FROM\s+(\S+)", (ROOT / path).read_text(encoding="utf-8"), re.M).group(1)
 
 
-def test_candidates_build_on_the_current_production_pins():
+def test_candidate_bases_match_their_manifest_and_production_scanner_pin():
     pins = {item["name"]: item["ref"] for item in PINNED_IMAGES}
     requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))["candidates"]
-    assert _from_line("docker/candidates/shannon/Dockerfile") == requirements["shannon"]["base"] == pins["shannon-worker"]
+    # Shannon may be a distinct, immutable upstream verification candidate.
+    # It must match its manifest but does not become the production pin here.
+    assert _from_line("docker/candidates/shannon/Dockerfile") == requirements["shannon"]["base"]
+    assert "@sha256:" in requirements["shannon"]["base"]
+    # The Trivy candidate is still based on the pinned production scanner.
     assert _from_line("docker/candidates/trivy/Dockerfile") == requirements["trivy"]["base"] == pins["trivy-scanner"]
+    assert pins["shannon-worker"].startswith("keygraph/shannon:3.4.0@sha256:")
 
 
 def test_candidate_dockerfiles_are_digest_pinned_and_never_skip_signatures():

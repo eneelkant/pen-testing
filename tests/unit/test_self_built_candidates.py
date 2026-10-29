@@ -345,19 +345,32 @@ def _from_line(path):
     return re.search(r"^FROM\s+(\S+)", (ROOT / path).read_text(encoding="utf-8"), re.M).group(1)
 
 
-def test_candidates_build_on_the_current_production_pins():
+def test_candidate_bases_match_their_manifest_and_production_pins():
+    """Candidate Dockerfiles must match their manifest base AND be digest-pinned.
+
+    Candidates may differ from production pins (they are verification candidates
+    for upstream releases that may resolve inherited findings). Production pins
+    in core/supply_chain/images.py:PINNED_IMAGES must remain at their current
+    versions; this test fails closed if any production pin drifts.
+    """
     pins = {item["name"]: item["ref"] for item in PINNED_IMAGES}
     requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))["candidates"]
     expected = {
-        "shannon": ("docker/candidates/shannon/Dockerfile", "shannon-worker"),
-        "trivy": ("docker/candidates/trivy/Dockerfile", "trivy-scanner"),
-        "temporal": ("docker/candidates/temporal/Dockerfile", "temporal"),
-        "gitleaks": ("docker/candidates/gitleaks/Dockerfile", "gitleaks"),
+        "shannon": ("docker/candidates/shannon/Dockerfile", "shannon-worker", "keygraph/shannon:3.4.0@sha256:"),
+        "trivy": ("docker/candidates/trivy/Dockerfile", "trivy-scanner", "aquasec/trivy:0.76.0@sha256:"),
+        "temporal": ("docker/candidates/temporal/Dockerfile", "temporal", "temporalio/temporal:1.7.0@sha256:"),
+        "gitleaks": ("docker/candidates/gitleaks/Dockerfile", "gitleaks", "zricethezav/gitleaks:v8.21.2@sha256:"),
     }
     assert set(expected) <= set(requirements)
-    for candidate, (path, pin_name) in expected.items():
-        assert _from_line(path) == requirements[candidate]["base"] == pins[pin_name]
-
+    for candidate, (path, pin_name, prod_prefix) in expected.items():
+        # Candidate Dockerfile FROM must match its manifest base, both digest-pinned.
+        assert _from_line(path) == requirements[candidate]["base"], candidate
+        assert "@sha256:" in requirements[candidate]["base"], candidate
+        # Production pin must stay at its current version (drift = blocker).
+        assert pins[pin_name].startswith(prod_prefix), (
+            f"production {pin_name} pin drifted from {prod_prefix}; refusing to merge "
+            f"a candidate PR that also moves production."
+        )
 
 def test_candidate_dockerfiles_are_digest_pinned_and_never_skip_signatures():
     for path in (

@@ -26,6 +26,8 @@ SHA="${GITHUB_SHA:-local}"
 TAG="$(printf '%s' "$SHA" | cut -c1-12 | tr '[:upper:]' '[:lower:]')"
 SHANNON_IMAGE="local/shannon-worker-candidate:$TAG"
 TRIVY_CANDIDATE_IMAGE="local/trivy-scanner-candidate:$TAG"
+TEMPORAL_IMAGE="local/temporal-candidate:$TAG"
+GITLEAKS_IMAGE="local/gitleaks-candidate:$TAG"
 # The Shannon 3.4.0 CLI (npx mode) always runs the worker image keygraph/shannon:3.4.0
 # by tag and uses a local image with that tag when present. To runtime-test the
 # candidate, that tag is pointed at the candidate for the duration of the E2E and
@@ -131,11 +133,17 @@ scan_and_verify() {
 
 build_candidate shannon docker/candidates/shannon/Dockerfile "$SHANNON_IMAGE"
 build_candidate trivy docker/candidates/trivy/Dockerfile "$TRIVY_CANDIDATE_IMAGE"
+build_candidate temporal docker/candidates/temporal/Dockerfile "$TEMPORAL_IMAGE"
+build_candidate gitleaks docker/candidates/gitleaks/Dockerfile "$GITLEAKS_IMAGE"
 SHANNON_ID="$(cat "$REPORTS/shannon-image-id.txt")"
 TRIVY_ID="$(cat "$REPORTS/trivy-image-id.txt")"
+TEMPORAL_ID="$(cat "$REPORTS/temporal-image-id.txt")"
+GITLEAKS_ID="$(cat "$REPORTS/gitleaks-image-id.txt")"
 
 check_packages shannon "$SHANNON_IMAGE"
 check_packages trivy "$TRIVY_CANDIDATE_IMAGE"
+check_packages temporal "$TEMPORAL_IMAGE"
+check_packages gitleaks "$GITLEAKS_IMAGE"
 
 log "== Trivy candidate: binary, database download, and scanning still work =="
 docker run --rm --platform linux/amd64 "$TRIVY_CANDIDATE_IMAGE" --version | tee "$REPORTS/trivy-candidate-version.txt"
@@ -153,6 +161,8 @@ fi
 docker pull --platform linux/amd64 "$TRIVY_SCANNER" >/dev/null
 scan_and_verify shannon "$SHANNON_IMAGE" docker "$SHANNON_ID"
 scan_and_verify trivy "$TRIVY_CANDIDATE_IMAGE" docker "$TRIVY_ID"
+scan_and_verify temporal "$TEMPORAL_IMAGE" docker "$TEMPORAL_ID"
+scan_and_verify gitleaks "$GITLEAKS_IMAGE" docker "$GITLEAKS_ID"
 
 log "== Shannon controlled E2E with the CANDIDATE worker image =="
 PREVIOUS_WORKER_TAG_ID="$(docker image inspect --format '{{.Id}}' "$SHANNON_CLI_WORKER_TAG" 2>/dev/null || true)"
@@ -168,14 +178,42 @@ restore_worker_tag
 RETAGGED=""
 status "shannon candidate passed the controlled --validate-model E2E (worker image $SHANNON_ID)"
 
-# Only now, after every check above has run without error, publish outputs.
+log "== Temporal candidate runtime smoke test =="
+docker run --rm --platform linux/amd64 --entrypoint /bin/sh "$TEMPORAL_IMAGE" -ec '
+  test -r /lib/apk/db/installed
+  for command_name in temporal-server temporal; do
+    if command -v "$command_name" >/dev/null 2>&1; then
+      "$command_name" --version
+      exit 0
+    fi
+  done
+  echo "Temporal executable not found in candidate image" >&2
+  exit 1
+' 2>&1 | tee "$REPORTS/temporal-runtime.log"
+status "temporal candidate passed executable/runtime smoke test"
+
+log "== Gitleaks candidate runtime smoke test =="
+docker run --rm --platform linux/amd64 --entrypoint /bin/sh "$GITLEAKS_IMAGE" -ec '
+  test -r /lib/apk/db/installed
+  command -v gitleaks
+  gitleaks version
+' 2>&1 | tee "$REPORTS/gitleaks-runtime.log"
+status "gitleaks candidate passed executable/runtime smoke test"
+
+# Only now, after every build, scan, package check and runtime test has run,
+# publish acceptance outputs. A candidate may be unacceptable while its
+# evidence workflow succeeds; --require-clean makes that a hard failure.
 SHANNON_OK="$(python -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["acceptable"] is True).lower())' "$REPORTS/shannon-summary.json")"
 TRIVY_OK="$(python -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["acceptable"] is True).lower())' "$REPORTS/trivy-summary.json")"
-status "shannon acceptable=$SHANNON_OK trivy acceptable=$TRIVY_OK"
+TEMPORAL_OK="$(python -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["acceptable"] is True).lower())' "$REPORTS/temporal-summary.json")"
+GITLEAKS_OK="$(python -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["acceptable"] is True).lower())' "$REPORTS/gitleaks-summary.json")"
+status "candidate acceptability: shannon=$SHANNON_OK trivy=$TRIVY_OK temporal=$TEMPORAL_OK gitleaks=$GITLEAKS_OK"
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
     echo "shannon_acceptable=$SHANNON_OK"
     echo "trivy_acceptable=$TRIVY_OK"
+    echo "temporal_acceptable=$TEMPORAL_OK"
+    echo "gitleaks_acceptable=$GITLEAKS_OK"
   } >> "$GITHUB_OUTPUT"
 fi
 log "Candidate build and runtime evidence collected."

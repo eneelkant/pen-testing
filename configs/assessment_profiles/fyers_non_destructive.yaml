@@ -1,0 +1,57 @@
+# FYERS non-destructive assessment profile (LOCAL / SYNTHETIC ONLY)
+#
+# This profile does NOT authorize assessment of FYERS production systems.
+# live_execution_enabled is false. Do not add real FYERS hostnames here.
+# Synthetic hostname below is a fixture name only.
+
+profile_id: fyers_non_destructive
+display_name: FYERS non-destructive (synthetic / dry-run)
+live_execution_enabled: false
+allow_live_override: false
+require_bound_approval: true
+require_scope_check: true
+dry_run_default: true
+synthetic_targets_only: true
+allowed_synthetic_hosts:
+  - fyers-api.example.test
+  - 127.0.0.1
+  - localhost
+allowed_categories:
+  - passive
+allowed_tools:
+  - headers
+allowed_capabilities:
+  - passive_tls_headers_review
+  - authentication_configuration_review
+  - session_management_review
+  - readonly_api_authorization_review
+  - synthetic_object_level_authorization
+  - safe_error_handling_review
+prohibited_capabilities:
+  - place_order
+  - modify_order
+  - cancel_order
+  - exit_position
+  - fund_transfer
+  - withdrawal
+  - trading_transaction
+  - transaction
+  - credential_stuffing
+  - password_guessing
+  - otp_bruteforce
+  - mfa_bypass
+  - dos
+  - ddos
+  - high_volume
+  - data_destruction
+  - account_enumeration
+  - customer_enumeration
+max_concurrency: 1
+timeout_seconds: 60
+rate_limit_rps: 1
+redact_sensitive_output: true
+notes: >
+  Disabled for live execution by default. Use only with synthetic fixtures and
+  human-reviewed authorization. Transaction-capable operations are excluded.
+  Confirm current https://fyers.in/bug-bounty-program rules before any live work.
+  Never auto-submit reports to FYERS.

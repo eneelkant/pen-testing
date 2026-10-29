@@ -34,9 +34,12 @@ PINNED_IMAGES = (
         "platform_digest": "sha256:9b98a8d37794ca093ba8d5afe1ffac52f5a15168b9b4e67594d86c20e14fa681",
     },
     {
-        "name": "shannon-worker",
-        "ref": "keygraph/shannon:3.4.0@sha256:4e726ed8f3a0b10e2a1dbb41185a526f20ea6fccc98740ca553e3c00c2a6bd0e",
-        "platform_digest": "sha256:9e53649ed684d9e6667740677474fcbe757387c7c71605eedd5f2130d0f8644a",
+        "name": "shannon-worker-3.5.0-candidate",
+        # Verification-only: upstream v3.5.0 exists, but this tag is not an
+        # approved production pin. Resolve its immutable digest and validate
+        # scan, regression, package, and runtime evidence before adoption.
+        "ref": "keygraph/shannon:3.5.0",
+        "platform_digest": "",
     },
     {
         "name": "temporal",

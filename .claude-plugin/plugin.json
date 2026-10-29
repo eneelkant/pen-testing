@@ -1,0 +1,17 @@
+{
+  "name": "pen-testing",
+  "version": "0.2.0",
+  "description": "Authorized security-testing orchestration through a constrained MCP server.",
+  "author": {
+    "name": "eneelkant"
+  },
+  "homepage": "https://github.com/eneelkant/pen-testing",
+  "repository": "https://github.com/eneelkant/pen-testing",
+  "license": "Apache-2.0",
+  "keywords": [
+    "security",
+    "penetration-testing",
+    "bug-bounty",
+    "mcp"
+  ]
+}

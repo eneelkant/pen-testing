@@ -1,0 +1,28 @@
+{
+  "name": "pen-testing-marketplace",
+  "owner": {
+    "name": "eneelkant"
+  },
+  "metadata": {
+    "description": "Claude Code plugin marketplace for the pen-testing authorized security-testing platform.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "pen-testing",
+      "source": "./",
+      "description": "Authorized security-testing orchestration through a constrained MCP server. Live assessments require scope validation and explicit confirmation.",
+      "version": "0.2.0",
+      "author": {
+        "name": "eneelkant"
+      },
+      "license": "Apache-2.0",
+      "keywords": [
+        "security",
+        "penetration-testing",
+        "bug-bounty",
+        "mcp"
+      ]
+    }
+  ]
+}

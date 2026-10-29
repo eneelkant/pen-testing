@@ -28,7 +28,11 @@ def normalize_approval_target(target: str) -> str:
     text = (target or "").strip()
     if not text:
         raise ValueError("Target is empty")
-    if text.startswith(("http://", "https://")):
+    # Reject controls before urlparse: URL parsers may silently strip tabs/newlines,
+    # which could make the approved string differ from the operator-supplied value.
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in text):
+        raise ValueError("Target contains control characters")
+    if text[:7].lower() == "http://" or text[:8].lower() == "https://":
         parsed = urlparse(text)
         if parsed.username or parsed.password:
             raise ValueError("URL userinfo is not allowed in approval targets")
@@ -49,8 +53,6 @@ def normalize_approval_target(target: str) -> str:
         query = f"?{parsed.query}" if parsed.query else ""
         return f"{scheme}://{host}:{port}{path}{query}"
     # Local path / opaque targets: exact stripped form only.
-    if "\x00" in text or any(ord(ch) < 32 for ch in text):
-        raise ValueError("Target contains control characters")
     return text
 
 

@@ -20,13 +20,18 @@ LABEL org.opencontainers.image.title="Shannon patched candidate" \
 #   (docker/candidates/requirements.json). An unmet minimum makes the candidate
 #   unacceptable and blocks publication; it is never reported as fixed.
 # - 2026-10-29 extension (PR ci/extend-candidate-images): also upgrade chromium,
-#   node-gyp, ca-certificates, ca-certificates-bundle, and quinn-proto to their
-#   fixed versions per the in-repo image baseline. Each is an OS package and
-#   therefore fixable via apk without rebuilding the Shannon Node.js application.
-#   The 40 Node.js node_modules findings (zod, @grpc/grpc-js, brace-expansion,
-#   etc.) are NOT fixable via apk — they live inside /app/node_modules and require
-#   either a new upstream keygraph/shannon release or an in-image `npm audit fix`
-#   which risks breaking the worker; that path is intentionally not taken here.
+#   node-gyp, ca-certificates, and ca-certificates-bundle to their fixed versions
+#   per the in-repo image baseline. Each is a Wolfi OS package
+#   (result_class=os-pkgs) and therefore fixable via apk without rebuilding the
+#   Shannon Node.js application.
+#   NOT touched in this PR:
+#     * quinn-proto 0.11.13 -> 0.11.14+ (CVE-2026-*) — result_type=cargo, a Rust
+#       crate compiled into the Shannon binary. NOT apk-installable; requires
+#       a new upstream keygraph/shannon release with a rebuilt binary.
+#     * The 40 Node.js node_modules findings (zod, @grpc/grpc-js, brace-expansion,
+#       etc.) — result_type=node-pkg, live inside /app/node_modules. Require a
+#       new upstream release or an in-image `npm audit fix` which risks breaking
+#       the worker; that path is intentionally not taken here.
 RUN set -eu; \
     printf '%s\n' "https://packages.wolfi.dev/os" >> /etc/apk/repositories; \
     test -f /etc/apk/keys/wolfi-signing.rsa.pub; \
@@ -40,5 +45,4 @@ RUN set -eu; \
       'node-gyp>=13.1.0-r1' \
       'ca-certificates>=20260909-r3' \
       'ca-certificates-bundle>=20260909-r3' \
-      'quinn-proto>=0.11.14' \
       nodejs-22

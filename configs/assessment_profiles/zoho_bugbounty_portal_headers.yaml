@@ -1,0 +1,67 @@
+# Zoho VRP submission-portal profile — passive headers only.
+# Synthetic fixture profile (zoho_non_destructive) is intentionally unchanged.
+#
+# Live execution is permitted by this profile flag, but MCP still requires:
+#   validate_target_scope → plan_assessment → authorize_assessment →
+#   run_security_assessment(dry_run=false, confirm_authorized=true, approval_id=...)
+#
+# Program reference: https://bugbounty.zohocorp.com/bb/info
+# Rules retrieved: 2026-10-27 (Asia/Calcutta); page stamp 11 Apr 2024.
+# Residual uncertainty: portal host is covered by "Zoho Corporation owned assets"
+# but is not individually named; Service-Specific Terms for the portal are UNVERIFIED.
+
+profile_id: zoho_bugbounty_portal_headers
+display_name: Zoho bug-bounty portal — passive headers
+description: >
+  Narrow profile for https://bugbounty.zohocorp.com/ (exact host only).
+  Permits the existing headers integration in passive mode. Disables Shannon,
+  Briar, and other active/destructive capabilities.
+live_execution_enabled: true
+program_reference: https://bugbounty.zohocorp.com/bb/info
+policy_version: "1"
+require_synthetic_targets: false
+max_timeout_seconds: 60
+allowed_categories:
+  - passive
+allowed_tools:
+  - headers
+allowed_capabilities:
+  - headers
+  - headers.passive
+  - headers.security_headers
+prohibited_capabilities:
+  - shannon.active
+  - shannon.deep
+  - briar.active
+  - enumeration.users
+  - enumeration.email
+  - credential.guessing
+  - dos
+  - ddos
+  - rate_limit_stress
+  - content_discovery.broad
+  - dns.bruteforce
+  - subdomain.bruteforce
+  - crawl.high_volume
+  - upload.arbitrary
+  - data.modification
+  - cross_user_access
+  - network.scan_outside_allowlist
+  - exploit.active
+  - form_submission
+prohibited_actions:
+  - dos
+  - ddos
+  - data_destruction
+  - social_engineering
+  - email_bombing
+  - credential_stuffing
+  - privilege_escalation
+  - access_other_users_data
+  - form_submission
+  - file_upload
+notes: >
+  Operator budget (not Zoho policy): <=1 rps and <=60 live requests/session.
+  Do not treat missing headers alone as a Zoho-reportable finding without
+  demonstrated eligible impact. Unvalidated automated findings are excluded.
+  Do not submit forms, create bug reports, or change portal records.

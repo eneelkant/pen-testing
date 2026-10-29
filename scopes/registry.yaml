@@ -44,3 +44,57 @@ authorizations:
     environment: staging
     notes: Used by unit tests to verify expiry rejection.
     last_verified_at: "2026-10-12T00:00:00+00:00"
+
+  # Narrow Zoho VRP portal entry for human-reviewed passive headers checks only.
+  # Eligibility basis: published scope bullet "Zoho Corporation owned assets"
+  # (https://bugbounty.zohocorp.com/bb/info, page last updated 11 Apr 2024;
+  # rules retrieved 2026-10-27 Asia/Calcutta). The portal hostname is not
+  # individually enumerated; Service-Specific Terms for this portal are UNVERIFIED.
+  # This entry does NOT authorize www.zoho.com, accounts.zoho.com, or any other host.
+  - program_name: zoho-vrp-portal
+    program_url: https://bugbounty.zohocorp.com/bb/info
+    target_id: zoho-bugbounty-portal
+    asset_type: url
+    scope_source: program-policy
+    policy_reference: https://bugbounty.zohocorp.com/bb/info
+    allowed_assets:
+      - https://bugbounty.zohocorp.com/
+      - https://bugbounty.zohocorp.com
+      - bugbounty.zohocorp.com
+    excluded_assets: []
+    allowed_test_categories:
+      - passive
+    prohibited_actions:
+      - dos
+      - ddos
+      - data_destruction
+      - social_engineering
+      - email_bombing
+      - credential_stuffing
+      - privilege_escalation
+      - access_other_users_data
+      - form_submission
+      - file_upload
+      - crawl
+      - fuzzing
+      - enumeration
+    rate_limit_rps: 1
+    authorization_start: "2026-10-27T00:00:00+00:00"
+    authorization_expiry: "2026-11-27T00:00:00+00:00"
+    environment: production
+    allowed_schemes:
+      - https
+    allowed_ports:
+      - 443
+    live_execution_allowed: true
+    policy_version: "1"
+    max_requests_per_assessment: 60
+    approval_evidence: >
+      Human-reviewed config for exact portal host only. MCP live runs still require
+      confirm_authorized plus a bound approval_id. Missing headers without direct
+      impact remain excluded by Zoho program rules.
+    notes: >
+      Passive security-headers checks only via the headers integration. Do not enable
+      Shannon/Briar/active categories. Do not submit reports, upload files, or alter
+      portal records during assessment. Re-verify program rules before expiry.
+    last_verified_at: "2026-10-27T14:45:00+00:00"

@@ -7,7 +7,13 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from .redaction import redact_secrets
-from .schema import FINDING_JSON_SCHEMA, Finding, FindingLifecycle, VerificationState
+from .schema import (
+    FINDING_JSON_SCHEMA,
+    Finding,
+    FindingLifecycle,
+    ValidationStatus,
+    VerificationState,
+)
 
 _VALIDATOR = Draft202012Validator(FINDING_JSON_SCHEMA)
 
@@ -33,6 +39,7 @@ def normalize_generic_finding(
     references: list[str] | None = None,
     execution_id: str = "",
     verification_state: str = VerificationState.UNVERIFIED.value,
+    validation_status: str = ValidationStatus.CANDIDATE.value,
     lifecycle: str = FindingLifecycle.CANDIDATE.value,
     confidence: str = "low",
     raw_refs: dict[str, Any] | None = None,
@@ -40,8 +47,14 @@ def normalize_generic_finding(
     severity_rationale: str = "",
     expected_behavior: str = "",
     observed_behavior: str = "",
+    assessment_id: str = "",
+    related_finding_ids: list[str] | None = None,
 ) -> Finding:
     """Build a sanitized normalized Finding from generic scanner output."""
+    # Scanner severity must never auto-promote validation_status to validated.
+    if validation_status == ValidationStatus.VALIDATED.value:
+        if verification_state != VerificationState.HUMAN_CONFIRMED.value:
+            validation_status = ValidationStatus.NEEDS_REVIEW.value
     finding = Finding(
         title=redact_secrets(title) if isinstance(title, str) else title,
         category=category,
@@ -54,8 +67,11 @@ def normalize_generic_finding(
         reproduction_steps=redact_secrets(list(reproduction_steps or [])),
         remediation=redact_secrets(list(remediation or [])),
         references=redact_secrets(list(references or [])),
+        related_finding_ids=list(related_finding_ids or []),
         execution_id=execution_id,
+        assessment_id=assessment_id,
         verification_state=verification_state,
+        validation_status=validation_status,
         lifecycle=lifecycle,
         confidence=confidence,
         raw_refs=redact_secrets(raw_refs or {}),

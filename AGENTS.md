@@ -36,7 +36,7 @@ pen-testing-mcp   # MCP stdio server
 python -m pytest -q tests/unit
 ```
 
-MCP assessments default to `dry_run=true`. Live runs require `confirm_authorized=true` after `validate_target_scope`.
+MCP assessments default to `dry_run=true`. Live runs require `confirm_authorized=true` and a bound `approval_id` from `authorize_assessment` after `validate_target_scope` / `plan_assessment`.
 
 Active Shannon/Briar scans require human intent, valid scope, and (for Shannon) Docker.
 

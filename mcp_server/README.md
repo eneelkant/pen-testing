@@ -11,10 +11,12 @@ Official MCP Python SDK (`mcp` 2.x) stdio server exposing constrained orchestrat
 | `validate_target_scope` | No | Authorization check |
 | `list_integrations` | No | Adapter capabilities |
 | `run_local_diagnostics` | No | Combined non-destructive checks |
-| `run_security_assessment` | Maybe | Dry-run by default; live requires `confirm_authorized` |
+| `plan_assessment` | No | Build a plan; never launches a scanner |
+| `authorize_assessment` | No | Issue a bound, expiring, single-use live approval |
+| `run_security_assessment` | Maybe | Dry-run by default; live requires `confirm_authorized` + `approval_id` |
 | `get_assessment_status` | No | Assessment record |
 | `list_findings` | No | Normalized findings |
-| `export_report` | No | Draft report export |
+| `export_report` | No | Draft report export (no auto-submit) |
 
 ## Optional local static scanners
 
@@ -54,8 +56,12 @@ pen-testing-mcp
 ## Security
 
 - No arbitrary shell/filesystem tools
-- Active assessments require scope + explicit confirmation
+- Transport is stdio only (remote/unauthenticated listeners are refused)
+- Active assessments require scope + `confirm_authorized` + a bound `approval_id`
+- Assessment profiles (for example `zoho_non_destructive`) can disable live execution
 - Upstream Shannon/Briar may still navigate beyond the initial URL
+- Zoho / third-party hosts must never be probed unless listed in `scopes/registry.yaml`
+
 
 ## Dependency Health & Readiness Semantics
 

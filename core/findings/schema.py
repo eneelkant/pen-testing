@@ -27,6 +27,22 @@ class VerificationState(str, Enum):
     HUMAN_CONFIRMED = "human_confirmed"
 
 
+class ValidationStatus(str, Enum):
+    """Operator-facing validation gate used by Zoho-workflow reporting.
+
+    Distinct from ``VerificationState`` / ``FindingLifecycle``. Scanner output
+    starts as ``candidate`` and must never jump to ``validated`` without human
+    confirmation and accepted primary evidence.
+    """
+
+    CANDIDATE = "candidate"
+    NEEDS_REVIEW = "needs_review"
+    VALIDATED = "validated"
+    REJECTED = "rejected"
+    DUPLICATE = "duplicate"
+    BLOCKED = "blocked"
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -43,6 +59,7 @@ class Finding:
     program: str = ""
     asset: str = ""
     verification_state: str = VerificationState.UNVERIFIED.value
+    validation_status: str = ValidationStatus.CANDIDATE.value
     confidence: str = "low"
     lifecycle: str = FindingLifecycle.CANDIDATE.value
     preconditions: list[str] = field(default_factory=list)
@@ -55,8 +72,10 @@ class Finding:
     severity_rationale: str = ""
     remediation: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
+    related_finding_ids: list[str] = field(default_factory=list)
     timestamp: str = field(default_factory=_utcnow)
     execution_id: str = ""
+    assessment_id: str = ""
     raw_refs: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -94,6 +113,10 @@ FINDING_JSON_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": [e.value for e in VerificationState],
         },
+        "validation_status": {
+            "type": "string",
+            "enum": [e.value for e in ValidationStatus],
+        },
         "confidence": {"type": "string"},
         "lifecycle": {
             "type": "string",
@@ -109,8 +132,10 @@ FINDING_JSON_SCHEMA: dict[str, Any] = {
         "severity_rationale": {"type": "string"},
         "remediation": {"type": "array", "items": {"type": "string"}},
         "references": {"type": "array", "items": {"type": "string"}},
+        "related_finding_ids": {"type": "array", "items": {"type": "string"}},
         "timestamp": {"type": "string"},
         "execution_id": {"type": "string"},
+        "assessment_id": {"type": "string"},
         "raw_refs": {"type": "object"},
     },
     "additionalProperties": True,

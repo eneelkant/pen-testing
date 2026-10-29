@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "pen-testing": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${CLAUDE_PLUGIN_ROOT}",
+        "--extra",
+        "mcp",
+        "pen-testing-mcp"
+      ]
+    }
+  }
+}

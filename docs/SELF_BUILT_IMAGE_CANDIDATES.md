@@ -97,3 +97,10 @@ A published candidate is **not** adopted automatically. Changing `PINNED_IMAGES`
 - Package repositories are mutable, so candidate builds are not bit-reproducible. What is pinned and recorded is the base image digest, the repository URLs and signing keys, the minimum versions, and the full installed-package database of every build.
 - A green "Build, scan, and runtime-test candidates" job means *the evidence is complete*, not that a candidate is clean. Check `shannon_acceptable` and `trivy_acceptable`, or the `*-summary.json` files.
 - The existing pinned-image absolute and regression gates are unchanged by this work.
+
+
+## Latest upstream scan context (2026-10-27)
+
+The upstream scan in CI run [40524341823](https://github.com/eneelkant/pen-testing/actions/runs/40524341823) reported 1,091 absolute blockers across the four pinned images. Shannon had 985 blockers (420 unscored), and the regression gate identified one new unscored Chromium finding: `CVE-2026-106414`, installed `149.0.7827.53-r0`, reported fixed version `155.0.8059.39-r0`. Its gate status was `awaiting-upstream-release`.
+
+These numbers come from a newer scan/database snapshot than the local candidate evidence above; they are not interchangeable. This report does **not** establish that a fixed Chromium build is available in the candidate's signed Wolfi/Chainguard repositories, nor that a candidate is acceptable. Re-run the candidate workflow and inspect its raw scan, package inventory, summary, and runtime evidence before deciding on any image-pin change. Do not add an ignore or treat `--ignore-unfixed` output as the release-gate result.

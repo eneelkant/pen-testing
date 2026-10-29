@@ -56,3 +56,38 @@ pen-testing-mcp
 - No arbitrary shell/filesystem tools
 - Active assessments require scope + explicit confirmation
 - Upstream Shannon/Briar may still navigate beyond the initial URL
+
+## Dependency Health & Readiness Semantics
+
+The `check_dependencies` tool distinguishes MCP runtime requirements from the
+executable prerequisites used by the Shannon and Briar integrations.
+
+| Field | Meaning |
+|---|---|
+| `ok` / `core_ok` | Core MCP runtime imports and Python executable are available. |
+| `active_engines_ready` | The required engine executables are discoverable on `PATH`; this is not a live Docker-daemon or end-to-end test. |
+| `present` | Exact executable paths resolved independently with `shutil.which`; Python uses `sys.executable`. Missing tools remain `None`. |
+| `missing_core` | Missing core runtime requirements. |
+| `missing_engines` | Missing engine prerequisites such as `docker`, `node`, or `npx`. |
+| `optional_absent` | Optional tools missing from `PATH`, such as `git`; these do not make `core_ok` false. |
+| `engines` | Per-engine prerequisite readiness for Shannon and Briar. |
+
+The legacy `missing`, `present`, `shannon`, `briar`, and
+`recommendations` fields remain available.
+
+`platform_status.diagnostics.tools` retains the original diagnostics collector
+shape, including `docker_daemon_ok`, `compose`, and `compose_ok`. The additive
+`dependency_tools` field contains the independent executable-path results from
+`check_dependencies`. `dependency_failures` remains engine-prerequisite-only
+for compatibility; `dependency_failures_scope` labels that meaning,
+`core_dependency_failures` reports core runtime failures, and
+`all_dependency_failures` combines core and engine failures.
+`missing_core`, `missing_engines`, `optional_absent`, and `engines` are also
+available in the diagnostics summary.
+
+Engine readiness means only that the configured executable prerequisites were
+found on `PATH`. It does not prove the Docker daemon or Compose is usable, nor
+that a Shannon/Briar live invocation will succeed. Use the preserved diagnostic
+fields for daemon/Compose health. `platform_status.ok` means the status request
+completed; it is not an aggregate all-dependencies-healthy flag. Status checks do
+not launch scans or guarantee that a live engine invocation will succeed.

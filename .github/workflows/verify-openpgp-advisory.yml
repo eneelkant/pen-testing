@@ -1,0 +1,132 @@
+name: Verify GO-2026-5932 openpgp advisory applicability
+
+# Controlled experiment: compare a binary that imports bcrypt only with one
+# that imports the affected openpgp package. This tests Trivy's reporting
+# granularity; it does NOT establish applicability for production images.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-openpgp-advisory.yml"
+      - "scripts/verify_openpgp_advisory.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-scan:
+    name: Build controlled Go binaries and scan for GO-2026-5932
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Build binary WITHOUT openpgp
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/testapp-no-openpgp
+          cat > /tmp/testapp-no-openpgp/go.mod <<'GOMOD'
+          module testapp-no-openpgp
+          go 1.23
+          require golang.org/x/crypto v0.31.0
+          GOMOD
+          cat > /tmp/testapp-no-openpgp/main.go <<'GO'
+          package main
+          import (
+            "fmt"
+            "golang.org/x/crypto/bcrypt"
+          )
+          func main() {
+            h, err := bcrypt.GenerateFromPassword([]byte("test"), bcrypt.DefaultCost)
+            if err != nil { panic(err) }
+            fmt.Println(string(h))
+          }
+          GO
+          cd /tmp/testapp-no-openpgp
+          go mod tidy
+          CGO_ENABLED=0 go build -o /tmp/test-binary-no-openpgp .
+          go version -m /tmp/test-binary-no-openpgp
+          if go tool nm /tmp/test-binary-no-openpgp 2>/dev/null | grep -E 'golang\.org/x/crypto/openpgp([./]|$)'; then
+            echo "::error::Unexpected openpgp code symbols in bcrypt-only control"
+            exit 1
+          fi
+          echo "Confirmed: bcrypt-only binary has no openpgp package symbols"
+
+      - name: Build binary WITH openpgp
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/testapp-with-openpgp
+          cat > /tmp/testapp-with-openpgp/go.mod <<'GOMOD'
+          module testapp-with-openpgp
+          go 1.23
+          require golang.org/x/crypto v0.31.0
+          GOMOD
+          cat > /tmp/testapp-with-openpgp/main.go <<'GO'
+          package main
+          import (
+            "fmt"
+            "golang.org/x/crypto/openpgp"
+          )
+          func main() {
+            entity := &openpgp.Entity{}
+            fmt.Printf("openpgp entity: %p\\n", entity)
+          }
+          GO
+          cd /tmp/testapp-with-openpgp
+          go mod tidy
+          CGO_ENABLED=0 go build -o /tmp/test-binary-with-openpgp .
+          go version -m /tmp/test-binary-with-openpgp
+          if ! go tool nm /tmp/test-binary-with-openpgp 2>/dev/null | grep -E 'golang\.org/x/crypto/openpgp([./]|$)'; then
+            echo "::error::Expected openpgp code symbols are absent from positive control"
+            exit 1
+          fi
+          echo "Confirmed: positive-control binary contains openpgp package symbols"
+
+      - name: Scan both binaries with pinned Trivy
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCANNER="$(python -c 'from core.supply_chain.images import TRIVY_IMAGE; print(TRIVY_IMAGE)')"
+          echo "Pinned scanner: $SCANNER"
+          docker pull --platform linux/amd64 "$SCANNER"
+          mkdir -p /tmp/scan-output
+          for name in no-openpgp with-openpgp; do
+            echo "=== scanning test-binary-$name ==="
+            mkdir -p "/tmp/scan-target-$name"
+            cp "/tmp/test-binary-$name" "/tmp/scan-target-$name/test-binary"
+            docker run --rm --platform linux/amd64 \
+              -v "/tmp/scan-target-$name:/target:ro" \
+              -v /tmp/scan-output:/reports \
+              "$SCANNER" rootfs --scanners vuln --format json --quiet \
+              --output "/reports/scan-$name.json" /target
+            test -s "/tmp/scan-output/scan-$name.json"
+          done
+
+      - name: Analyze results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_openpgp_advisory.py \
+            --no-openpgp-scan /tmp/scan-output/scan-no-openpgp.json \
+            --with-openpgp-scan /tmp/scan-output/scan-with-openpgp.json
+
+      - name: Upload scan evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: openpgp-advisory-test-evidence
+          path: /tmp/scan-output/
+          if-no-files-found: warn
+          retention-days: 30

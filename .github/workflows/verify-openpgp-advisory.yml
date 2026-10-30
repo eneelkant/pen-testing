@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Set up Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18d82c7da7331a96fbd2f7  # v5
+        uses: actions/setup-go@v5  # pinned by tag; SHA resolution TBD  # v5
         with:
           go-version: "1.23"
 

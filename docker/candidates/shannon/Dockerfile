@@ -19,6 +19,24 @@ LABEL org.opencontainers.image.title="Shannon patched candidate" \
 #   minimum is enforced after the build by scripts/verify_self_built_candidates.sh
 #   (docker/candidates/requirements.json). An unmet minimum makes the candidate
 #   unacceptable and blocks publication; it is never reported as fixed.
+# - chromium >= 154.0.8037.92-r0 is also not published in the configured signed
+#   repositories; CI currently resolves 149.0.7827.53-r0. Do not force that
+#   unavailable minimum into apk add: leave Chromium unchanged, retain the
+#   minimum in requirements.json, and let package verification + Trivy evidence
+#   mark the candidate unacceptable until a fixed signed package is available.
+# - 2026-10-29 extension (PR ci/extend-candidate-images): also upgrade chromium,
+#   node-gyp, ca-certificates, and ca-certificates-bundle to their fixed versions
+#   per the in-repo image baseline. Each is a Wolfi OS package
+#   (result_class=os-pkgs) and therefore fixable via apk without rebuilding the
+#   Shannon Node.js application.
+#   NOT touched in this PR:
+#     * quinn-proto 0.11.13 -> 0.11.14+ (CVE-2026-*) — result_type=cargo, a Rust
+#       crate compiled into the Shannon binary. NOT apk-installable; requires
+#       a new upstream keygraph/shannon release with a rebuilt binary.
+#     * The 40 Node.js node_modules findings (zod, @grpc/grpc-js, brace-expansion,
+#       etc.) — result_type=node-pkg, live inside /app/node_modules. Require a
+#       new upstream release or an in-image `npm audit fix` which risks breaking
+#       the worker; that path is intentionally not taken here.
 RUN set -eu; \
     printf '%s\n' "https://packages.wolfi.dev/os" >> /etc/apk/repositories; \
     test -f /etc/apk/keys/wolfi-signing.rsa.pub; \
@@ -28,4 +46,7 @@ RUN set -eu; \
       'libbrotlicommon1>=1.2.0-r7' \
       'libbrotlidec1>=1.2.0-r7' \
       'libbrotlienc1>=1.2.0-r7' \
+      'node-gyp>=13.1.0-r1' \
+      'ca-certificates>=20260909-r3' \
+      'ca-certificates-bundle>=20260909-r3' \
       nodejs-22

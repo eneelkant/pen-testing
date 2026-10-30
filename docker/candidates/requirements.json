@@ -45,6 +45,32 @@
           "advisories": [
             "CVE-2026-111497"
           ]
+        },
+        "chromium": {
+          "minimum": "154.0.8037.92-r0",
+          "advisories": [
+            "CVE-2026-106195",
+            "CVE-2026-106237",
+            "CVE-2026-13032",
+            "CVE-2026-13033",
+            "CVE-2026-13038",
+            "CVE-2026-13785"
+          ]
+        },
+        "node-gyp": {
+          "minimum": "13.1.0-r1",
+          "advisories": [
+            "CVE-2026-109383",
+            "CVE-2026-109829"
+          ]
+        },
+        "ca-certificates": {
+          "minimum": "20260909-r3",
+          "advisories": []
+        },
+        "ca-certificates-bundle": {
+          "minimum": "20260909-r3",
+          "advisories": []
         }
       }
     },
@@ -82,7 +108,71 @@
           ]
         }
       }
+    },
+    "temporal": {
+      "base": "temporalio/temporal:1.7.0@sha256:9c5b386d86bca59ba08f32ddc4c51287351c8c616b6a8359f03e96a585e137f4",
+      "packages": {
+        "musl": {
+          "minimum": "1.2.5-r24",
+          "advisories": [
+            "CVE-2026-107891"
+          ]
+        },
+        "musl-utils": {
+          "minimum": "1.2.5-r24",
+          "advisories": [
+            "CVE-2026-107891"
+          ]
+        },
+        "libcrypto3": {
+          "minimum": "3.5.8-r0",
+          "advisories": []
+        },
+        "libssl3": {
+          "minimum": "3.5.8-r0",
+          "advisories": []
+        }
+      }
+    },
+    "gitleaks": {
+      "base": "zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f",
+      "packages": {
+        "openssh-client-common": {
+          "minimum": "9.7_p1-r0",
+          "advisories": [
+            "CVE-2023-51767"
+          ]
+        },
+        "openssh-client-default": {
+          "minimum": "9.7_p1-r0",
+          "advisories": [
+            "CVE-2023-51767"
+          ]
+        },
+        "openssh-keygen": {
+          "minimum": "9.7_p1-r0",
+          "advisories": [
+            "CVE-2023-51767"
+          ]
+        },
+        "git": {
+          "minimum": "2.43.6-r0",
+          "advisories": []
+        },
+        "musl": {
+          "minimum": "1.2.4_git20230717-r5",
+          "advisories": []
+        },
+        "musl-utils": {
+          "minimum": "1.2.4_git20230717-r5",
+          "advisories": []
+        },
+        "libexpat": {
+          "minimum": "2.7.2-r0",
+          "advisories": []
+        }
+      }
     }
   },
-  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z)."
+  "source": "Advisory ids and fixed versions taken from the raw Trivy 0.76.0 reports of the pinned images in CI run 40318152278 (vulnerability DB UpdatedAt 2026-10-26T07:15:18Z). Extended 2026-10-29 in PR ci/extend-candidate-images to add chromium, node-gyp, ca-certificates, ca-certificates-bundle to shannon; musl, musl-utils, libcrypto3, libssl3 to temporal; openssh, git, musl, musl-utils, libexpat to gitleaks. Only result_class=os-pkgs findings are tracked here; cargo (e.g. quinn-proto) and node-pkg findings are not apk-installable and require upstream releases. Gitleaks candidate base updated in this PR to v8.30.1 (upstream release 2026-03-21) for verification; production pin in core/supply_chain/images.py remains at v8.21.2."
 }

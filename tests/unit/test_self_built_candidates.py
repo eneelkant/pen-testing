@@ -345,15 +345,40 @@ def _from_line(path):
     return re.search(r"^FROM\s+(\S+)", (ROOT / path).read_text(encoding="utf-8"), re.M).group(1)
 
 
-def test_candidates_build_on_the_current_production_pins():
+def test_candidate_bases_match_their_manifest_and_production_pins():
+    """Candidate Dockerfiles must match their manifest base AND be digest-pinned.
+
+    Candidates may differ from production pins (they are verification candidates
+    for upstream releases that may resolve inherited findings). Production pins
+    in core/supply_chain/images.py:PINNED_IMAGES must remain at their current
+    versions; this test fails closed if any production pin drifts.
+    """
     pins = {item["name"]: item["ref"] for item in PINNED_IMAGES}
     requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))["candidates"]
-    assert _from_line("docker/candidates/shannon/Dockerfile") == requirements["shannon"]["base"] == pins["shannon-worker"]
-    assert _from_line("docker/candidates/trivy/Dockerfile") == requirements["trivy"]["base"] == pins["trivy-scanner"]
-
+    expected = {
+        "shannon": ("docker/candidates/shannon/Dockerfile", "shannon-worker", "keygraph/shannon:3.4.0@sha256:"),
+        "trivy": ("docker/candidates/trivy/Dockerfile", "trivy-scanner", "aquasec/trivy:0.76.0@sha256:"),
+        "temporal": ("docker/candidates/temporal/Dockerfile", "temporal", "temporalio/temporal:1.7.0@sha256:"),
+        "gitleaks": ("docker/candidates/gitleaks/Dockerfile", "gitleaks", "zricethezav/gitleaks:v8.21.2@sha256:"),
+    }
+    assert set(expected) <= set(requirements)
+    for candidate, (path, pin_name, prod_prefix) in expected.items():
+        # Candidate Dockerfile FROM must match its manifest base, both digest-pinned.
+        assert _from_line(path) == requirements[candidate]["base"], candidate
+        assert "@sha256:" in requirements[candidate]["base"], candidate
+        # Production pin must stay at its current version (drift = blocker).
+        assert pins[pin_name].startswith(prod_prefix), (
+            f"production {pin_name} pin drifted from {prod_prefix}; refusing to merge "
+            f"a candidate PR that also moves production."
+        )
 
 def test_candidate_dockerfiles_are_digest_pinned_and_never_skip_signatures():
-    for path in ("docker/candidates/shannon/Dockerfile", "docker/candidates/trivy/Dockerfile"):
+    for path in (
+        "docker/candidates/shannon/Dockerfile",
+        "docker/candidates/trivy/Dockerfile",
+        "docker/candidates/temporal/Dockerfile",
+        "docker/candidates/gitleaks/Dockerfile",
+    ):
         text = (ROOT / path).read_text(encoding="utf-8")
         assert re.search(r"^FROM \S+@sha256:[0-9a-f]{64}\s*$", text, re.M), path
         assert "--allow-untrusted" not in text and "--no-verify" not in text, path
@@ -370,12 +395,18 @@ def test_shannon_candidate_uses_only_already_trusted_signing_keys():
 
 def test_requirements_cover_the_findings_the_candidates_target():
     data = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))
-    shannon, trivy = data["candidates"]["shannon"]["packages"], data["candidates"]["trivy"]["packages"]
+    candidates = data["candidates"]
+    shannon, trivy = candidates["shannon"]["packages"], candidates["trivy"]["packages"]
+    temporal, gitleaks = candidates["temporal"]["packages"], candidates["gitleaks"]["packages"]
     assert shannon["nodejs-22"]["minimum"] == "22.23.4-r0"
     assert {shannon[p]["minimum"] for p in ("curl", "libcurl-openssl4")} == {"8.23.0-r0"}
     assert trivy["libcurl"]["minimum"] == "8.23.0-r0"
-    for spec in list(shannon.values()) + list(trivy.values()):
-        assert re.fullmatch(r"[0-9][0-9A-Za-z._]*-r[0-9]+", spec["minimum"])
+    assert temporal["libcrypto3"]["minimum"] == "3.5.8-r0"
+    assert temporal["libssl3"]["minimum"] == "3.5.8-r0"
+    assert gitleaks["git"]["minimum"] == "2.43.6-r0"
+    for candidate in candidates.values():
+        for spec in candidate["packages"].values():
+            assert re.fullmatch(r"[0-9][0-9A-Za-z._]*-r[0-9]+", spec["minimum"])
 
 
 # --------------------------------------------------------- script and workflow
@@ -418,7 +449,10 @@ def test_script_runtime_tests_the_candidate_not_the_original_worker():
 def test_script_writes_acceptance_outputs_only_after_runtime_validation():
     output_at = SCRIPT.index('>> "$GITHUB_OUTPUT"')
     assert SCRIPT.index("bash scripts/shannon_e2e_verify.sh") < output_at
-    assert SCRIPT.index("scan_and_verify trivy") < output_at
+    for candidate in ("shannon", "trivy", "temporal", "gitleaks"):
+        assert f"scan_and_verify {candidate}" in SCRIPT
+    for candidate in ("temporal", "gitleaks"):
+        assert f"{candidate}-runtime.log" in SCRIPT
     assert SCRIPT.count("GITHUB_OUTPUT") == 2  # the guard and the single write
 
 
@@ -427,7 +461,9 @@ def test_publication_requires_main_opt_in_and_both_candidates_acceptable():
     condition = publish[:publish.index("runs-on:")]
     for clause in ("github.event_name == 'workflow_dispatch'", "inputs.publish_candidates == true",
                    "github.ref == 'refs/heads/main'", "needs.build-and-scan.outputs.shannon_acceptable == 'true'",
-                   "needs.build-and-scan.outputs.trivy_acceptable == 'true'"):
+                   "needs.build-and-scan.outputs.trivy_acceptable == 'true'",
+                   "needs.build-and-scan.outputs.temporal_acceptable == 'true'",
+                   "needs.build-and-scan.outputs.gitleaks_acceptable == 'true'"):
         assert clause in condition
     assert "--require-clean" in publish
     assert "--image-src remote" in publish and "--require-clean" in publish[publish.index("verify_published()"):]

@@ -33,6 +33,8 @@ UPSTREAM_REPOS = {
         "docker_repo": "temporalio/temporal",
         "last_evaluated_tag": "v1.32.1",
         "production_pin_tag": "1.7.0",
+        "note": "GitHub releases use server versioning (v1.31.x); Docker Hub tags use CLI versioning (1.7.0, 1.9.1). Monitor both separately.",
+        "last_evaluated_docker_tag": "1.9.1",
     },
     "gitleaks": {
         "github_repo": "zricethezav/gitleaks",
@@ -49,13 +51,16 @@ UPSTREAM_REPOS = {
 }
 
 
-def fetch_latest_release(github_repo: str) -> dict | None:
+def fetch_latest_release(github_repo: str, token: str = "") -> dict | None:
     """Fetch the latest non-prerelease from GitHub API."""
     url = f"https://api.github.com/repos/{github_repo}/releases?per_page=10"
-    req = urllib.request.Request(url, headers={
+    headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "pen-testing-release-monitor",
-    })
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             releases = json.loads(resp.read().decode("utf-8"))
@@ -117,7 +122,7 @@ def main() -> int:
         print(f"  production pin: {prod_pin}")
         print(f"  last evaluated: {last_eval}")
 
-        release = fetch_latest_release(github_repo)
+        release = fetch_latest_release(github_repo, token=args.token)
         if release is None:
             print(f"  latest release: UNAVAILABLE (API error or no stable releases)")
             continue
@@ -131,8 +136,13 @@ def main() -> int:
 
         if is_new:
             # Resolve Docker Hub digest
+            # Note: Docker Hub tags may differ from GitHub release tags
+            # (e.g., Temporal uses CLI versioning for Docker, server versioning for GitHub)
             docker_tag = latest_tag.lstrip("v") if name != "gitleaks" else latest_tag
             digest = fetch_docker_tag(config["docker_repo"], docker_tag)
+            if digest is None and "last_evaluated_docker_tag" in config:
+                # Try the Docker Hub tag directly if GitHub tag doesn't match
+                print(f"  note: Docker Hub tag may differ from GitHub release tag")
             print(f"  docker digest: {digest or 'UNAVAILABLE'}")
             print(f"  release URL: {release.get('html_url', '?')}")
             body = (release.get("body") or "")[:200]

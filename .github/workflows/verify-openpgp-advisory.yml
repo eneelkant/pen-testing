@@ -1,0 +1,100 @@
+name: Verify GO-2026-5932 openpgp advisory applicability
+
+# Builds a controlled Go binary that imports golang.org/x/crypto/bcrypt
+# (NOT the openpgp subpackage) and scans it with the repo's pinned Trivy
+# scanner. If GO-2026-5932 is reported, it confirms the advisory is being
+# applied at module level without checking import-level reachability.
+#
+# Evidence collection only. Does not change production pins, baselines,
+# or candidate acceptance.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-openpgp-advisory.yml"
+      - "scripts/verify_openpgp_advisory.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-scan:
+    name: Build controlled Go binary and scan for GO-2026-5932
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18d82c7da7331a96fbd2f7  # v5
+        with:
+          go-version: "1.23"
+
+      - name: Build a Go binary that imports golang.org/x/crypto/bcrypt (NOT openpgp)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/testapp
+          cat > /tmp/testapp/go.mod <<'GOMOD'
+          module testapp
+          go 1.23
+          require golang.org/x/crypto v0.31.0
+          GOMOD
+          cat > /tmp/testapp/main.go <<'GO'
+          package main
+          import (
+            "fmt"
+            "golang.org/x/crypto/bcrypt"
+          )
+          func main() {
+            h, _ := bcrypt.GenerateFromPassword([]byte("test"), bcrypt.DefaultCost)
+            fmt.Println(string(h))
+          }
+          GO
+          cd /tmp/testapp
+          go mod tidy
+          echo "--- go.mod ---"
+          cat go.mod
+          echo "--- building binary ---"
+          CGO_ENABLED=0 go build -o /tmp/test-binary .
+          echo "--- go version -m (build metadata) ---"
+          go version -m /tmp/test-binary
+          echo "--- checking for openpgp in binary symbols ---"
+          if strings /tmp/test-binary | grep -i "openpgp"; then
+            echo "::error::openpgp symbols found in binary — the advisory IS applicable"
+            exit 1
+          else
+            echo "::notice::No openpgp symbols found in binary — the advisory should NOT be applicable"
+          fi
+
+      - name: Scan the controlled binary with pinned Trivy
+        run: |
+          set -euo pipefail
+          SCANNER="$(python -c 'from core.supply_chain.images import TRIVY_IMAGE; print(TRIVY_IMAGE)')"
+          echo "Pinned scanner: $SCANNER"
+          docker pull --platform linux/amd64 "$SCANNER" >/dev/null
+          mkdir -p /tmp/scan-output
+          docker run --rm --platform linux/amd64 \
+            -v /tmp/test-binary:/test-binary:ro \
+            -v /tmp/scan-output:/reports \
+            "$SCANNER" rootfs --scanners vuln --format json --quiet \
+            --output /reports/scan.json /
+          echo "--- scan completed ---"
+
+      - name: Check if GO-2026-5932 is reported for a binary that does NOT import openpgp
+        run: |
+          set -euo pipefail
+          python scripts/verify_openpgp_advisory.py /tmp/scan-output/scan.json
+
+      - name: Upload scan evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: openpgp-advisory-test-evidence
+          path: /tmp/scan-output/
+          if-no-files-found: error
+          retention-days: 30

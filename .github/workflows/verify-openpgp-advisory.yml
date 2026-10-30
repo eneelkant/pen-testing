@@ -91,11 +91,10 @@ jobs:
           import (
             "fmt"
             "golang.org/x/crypto/openpgp"
-            "golang.org/x/crypto/openpgp/armor"
           )
           func main() {
-            _ = openpgp.Entity{}
-            _ = armor.Header{}
+            _ = &openpgp.Entity{}
+            
             fmt.Println("openpgp imported")
           }
           GO

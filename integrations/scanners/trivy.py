@@ -122,6 +122,25 @@ class TrivyAdapter(SecurityAdapter):
                 status="timed_out" if result.timed_out else "failed",
                 error=result.stderr or "trivy failed",
             )
+        # Fail closed on missing or malformed scanner output.
+        if not report.exists():
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="failed",
+                error="Scanner exited successfully but output report was not created.",
+                metadata={"scanner_exit_code": result.returncode},
+            )
+        try:
+            json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="failed",
+                error=f"Scanner output is missing or malformed: {exc}",
+                metadata={"scanner_exit_code": result.returncode},
+            )
         findings = self._parse(report, execution_id, str(target))
         return ExecutionResult(
             tool=self.name,

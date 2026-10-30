@@ -646,6 +646,11 @@ def run_security_assessment(
     # demo=true is a Briar-only local smoke path; it must not waive confirm_authorized
     # for Shannon/headers/other active tools.
     briar_demo = bool(demo and tool == "briar")
+    # Briar demo mode is a local-only smoke test. It must NOT accept
+    # arbitrary remote targets. Override the target to the fixed local
+    # fixture so skip_scope_check cannot be abused for live scanning.
+    if briar_demo:
+        target = "http://127.0.0.1:18080/"
     if not dry_run and not confirm_authorized and not briar_demo:
         return {
             "ok": False,

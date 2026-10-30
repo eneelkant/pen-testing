@@ -1,5 +1,6 @@
 """Regression tests for post-merge security hardening."""
 
+import json
 from __future__ import annotations
 
 import os
@@ -156,6 +157,15 @@ def test_trivy_docker_cmd_uses_network_none(tmp_path: Path):
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
+        # When the trivy --output flag is in the command, create a valid
+        # empty-results JSON file at that path so the adapter's report
+        # validation passes (P0 false-zero prevention fix).
+        if "--output" in cmd:
+            output_idx = cmd.index("--output") + 1
+            if output_idx < len(cmd):
+                Path(cmd[output_idx]).write_text(
+                    json.dumps({"Results": []}), encoding="utf-8"
+                )
 
         class R:
             ok = True

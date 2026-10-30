@@ -1,137 +1,108 @@
 #!/usr/bin/env python3
-"""Analyze Trivy scan results for GO-2026-5932 across two controlled binaries.
+"""Compare Trivy's GO-2026-5932 result for controlled Go binaries.
 
-Tests two Go binaries:
-1. no-openpgp: imports golang.org/x/crypto/bcrypt (NOT openpgp)
-2. with-openpgp: imports golang.org/x/crypto/openpgp (the affected package)
-
-Determines whether Trivy's gobinary scanner implements import-level
-reachability checks or reports at module level only.
+This experiment evaluates scanner reporting granularity only. It does not
+prove that any production image does or does not contain affected code.
 
 Exit codes:
-  0: Both cases produced documented results (evidence collected successfully)
-  2: Scan output missing or malformed (NOT_VERIFIED)
+  0: Both valid scans show a recognized, interpretable result.
+  2: Missing/malformed scan data or an inconclusive result combination.
 """
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
+ADVISORY_ID = "GO-2026-5932"
 
 
-def find_go_2026_5932(scan_path: str) -> list[dict]:
-    """Find GO-2026-5932 findings in a Trivy scan JSON."""
-    scan_file = Path(scan_path)
-    if not scan_file.exists():
-        return []
+def load_findings(scan_path: str) -> list[dict[str, Any]]:
+    """Load and validate Trivy JSON; never treat missing data as no findings."""
+    path = Path(scan_path)
+    if not path.is_file():
+        raise ValueError(f"scan file does not exist: {path}")
     try:
-        data = json.loads(scan_file.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
-    findings = []
-    for result in data.get("Results", []):
-        for vuln in result.get("Vulnerabilities", []) or []:
-            if vuln.get("VulnerabilityID") == "GO-2026-5932":
-                findings.append(vuln)
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError(f"scan file is unreadable or invalid JSON: {path}: {exc}") from exc
+    if not isinstance(document, dict) or not isinstance(document.get("Results"), list):
+        raise ValueError(f"scan JSON has no valid Results array: {path}")
+
+    findings: list[dict[str, Any]] = []
+    for result in document["Results"]:
+        if not isinstance(result, dict):
+            raise ValueError(f"malformed result entry in {path}")
+        vulnerabilities = result.get("Vulnerabilities") or []
+        if not isinstance(vulnerabilities, list):
+            raise ValueError(f"malformed Vulnerabilities entry in {path}")
+        for vulnerability in vulnerabilities:
+            if not isinstance(vulnerability, dict):
+                raise ValueError(f"malformed vulnerability entry in {path}")
+            if vulnerability.get("VulnerabilityID") == ADVISORY_ID:
+                findings.append(vulnerability)
     return findings
 
 
+def describe(label: str, findings: list[dict[str, Any]]) -> None:
+    print(f"{label}: {ADVISORY_ID} reported: {'YES' if findings else 'NO'}")
+    for finding in findings[:3]:
+        print(
+            "  PkgName={pkg} InstalledVersion={version} Severity={severity} "
+            "PkgPath={path}".format(
+                pkg=finding.get("PkgName", "?"),
+                version=finding.get("InstalledVersion", "?"),
+                severity=finding.get("Severity", "?"),
+                path=finding.get("PkgPath") or "(empty)",
+            )
+        )
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Analyze GO-2026-5932 across two controlled binaries."
-    )
-    parser.add_argument(
-        "--no-openpgp-scan",
-        required=True,
-        help="Trivy scan JSON for the binary WITHOUT openpgp imports",
-    )
-    parser.add_argument(
-        "--with-openpgp-scan",
-        required=True,
-        help="Trivy scan JSON for the binary WITH openpgp imports",
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--no-openpgp-scan", required=True)
+    parser.add_argument("--with-openpgp-scan", required=True)
     args = parser.parse_args()
 
-    no_openpgp_findings = find_go_2026_5932(args.no_openpgp_scan)
-    with_openpgp_findings = find_go_2026_5932(args.with_openpgp_scan)
+    try:
+        no_openpgp = load_findings(args.no_openpgp_scan)
+        with_openpgp = load_findings(args.with_openpgp_scan)
+    except ValueError as exc:
+        print(f"NOT_VERIFIED: {exc}", file=sys.stderr)
+        return 2
 
-    print("=" * 60)
-    print("GO-2026-5932 Advisory Applicability Analysis")
-    print("=" * 60)
-    print()
+    print("=" * 64)
+    print("GO-2026-5932 controlled-binary comparison")
+    print("=" * 64)
+    describe("Negative control (bcrypt; no openpgp import)", no_openpgp)
+    describe("Positive control (openpgp import)", with_openpgp)
 
-    # Case 1: Binary WITHOUT openpgp
-    print("Case 1: Binary importing golang.org/x/crypto/bcrypt (NOT openpgp)")
-    print(f"  GO-2026-5932 reported: {'YES' if no_openpgp_findings else 'NO'}")
-    if no_openpgp_findings:
-        print(f"  Finding count: {len(no_openpgp_findings)}")
-        for f in no_openpgp_findings[:3]:
-            print(f"    PkgName: {f.get('PkgName', '?')}")
-            print(f"    InstalledVersion: {f.get('InstalledVersion', '?')}")
-            print(f"    Severity: {f.get('Severity', '?')}")
-            print(f"    PkgPath: {f.get('PkgPath', '(empty)')}")
-        if no_openpgp_findings:
-            print()
-            print("  → FALSE POSITIVE: advisory reported despite no openpgp import")
-            print("  → Trivy does NOT implement import-level reachability checks")
-        else:
-            print()
-            print("  → CORRECT: advisory NOT reported when openpgp is not imported")
-            print("  → Trivy DOES implement import-level reachability checks")
-    print()
-
-    # Case 2: Binary WITH openpgp
-    print("Case 2: Binary importing golang.org/x/crypto/openpgp (affected package)")
-    print(f"  GO-2026-5932 reported: {'YES' if with_openpgp_findings else 'NO'}")
-    if with_openpgp_findings:
-        print(f"  Finding count: {len(with_openpgp_findings)}")
-        for f in with_openpgp_findings[:3]:
-            print(f"    PkgName: {f.get('PkgName', '?')}")
-            print(f"    InstalledVersion: {f.get('InstalledVersion', '?')}")
-            print(f"    Severity: {f.get('Severity', '?')}")
-            print(f"    PkgPath: {f.get('PkgPath', '(empty)')}")
-        print()
-        print("  → CORRECT: advisory reported when openpgp IS imported")
+    if no_openpgp and with_openpgp:
+        print("\nRESULT: MODULE_LEVEL_REPORTING")
+        print(
+            "Trivy reports the advisory for both controls. This demonstrates "
+            "module-level reporting for this test and a potential false "
+            "positive for the negative-control binary."
+        )
+    elif not no_openpgp and with_openpgp:
+        print("\nRESULT: IMPORT_SENSITIVE_REPORTING")
+        print(
+            "The advisory appears only for the positive control in this test."
+        )
     else:
-        print()
-        print("  → UNEXPECTED: advisory NOT reported despite openpgp import")
-        print("  → This may indicate a scanner bug or database issue")
-    print()
+        print(
+            "\nNOT_VERIFIED: unexpected result combination "
+            f"(negative_control={bool(no_openpgp)}, "
+            f"positive_control={bool(with_openpgp)}).",
+            file=sys.stderr,
+        )
+        return 2
 
-    # Summary
-    print("=" * 60)
-    print("Summary")
-    print("=" * 60)
-    scanner_implements_import_checks = (
-        not no_openpgp_findings and with_openpgp_findings
+    print(
+        "\nLIMITATION: This controlled experiment does not establish the "
+        "package contents or reachability of Temporal, Trivy, or any other "
+        "production image. Those artifacts require separate evidence."
     )
-    scanner_module_level_only = (
-        no_openpgp_findings and with_openpgp_findings
-    )
-
-    if scanner_implements_import_checks:
-        print("  Trivy DOES implement import-level reachability checks.")
-        print("  GO-2026-5932 is correctly applied only when openpgp is imported.")
-        print("  → Temporal and Trivy images should NOT have this finding")
-        print("    (neither imports openpgp in production code).")
-    elif scanner_module_level_only:
-        print("  Trivy does NOT implement import-level reachability checks.")
-        print("  GO-2026-5932 is reported at MODULE level for any binary")
-        print("  that includes golang.org/x/crypto, regardless of whether")
-        print("  the openpgp subpackage is imported.")
-        print()
-        print("  This confirms GO-2026-5932 is a MODULE-LEVEL FALSE POSITIVE")
-        print("  for binaries that do NOT import openpgp (e.g., Temporal, Trivy).")
-        print()
-        print("  Recommended upstream fix for aquasecurity/trivy:")
-        print("    When the advisory's ecosystem_specific.imports field is")
-        print("    present, check whether any of the listed import paths are")
-        print("    in the binary's symbol table before reporting the finding.")
-    else:
-        print(f"  Unexpected combination: no-openpgp={bool(no_openpgp_findings)}, "
-              f"with-openpgp={bool(with_openpgp_findings)}")
-        print("  Manual investigation required.")
-    print()
-    print("Evidence collected successfully. Workflow exits 0.")
     return 0
 
 

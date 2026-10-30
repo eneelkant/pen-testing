@@ -158,17 +158,9 @@ def test_trivy_docker_cmd_uses_network_none(tmp_path: Path):
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
-        # When the trivy --output flag is in the command, create a valid
-        # empty-results JSON file at that path so the adapter's report
-        # validation passes (P0 false-zero prevention fix).
-        if "--output" in cmd:
-            output_idx = cmd.index("--output") + 1
-            if output_idx < len(cmd):
-                out_path = Path(cmd[output_idx])
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_text(
-                    json.dumps({"Results": []}), encoding="utf-8"
-                )
+        # Mock doesn't create a report file. After the P0 false-zero fix,
+        # the adapter returns status='failed' when the report is missing.
+        # The test verifies --network none, not the scan result.
 
         class R:
             ok = True

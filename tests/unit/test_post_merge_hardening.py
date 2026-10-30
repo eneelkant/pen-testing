@@ -1,6 +1,5 @@
 """Regression tests for post-merge security hardening."""
 
-import json
 from __future__ import annotations
 
 import os

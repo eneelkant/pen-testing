@@ -93,3 +93,25 @@ class TestBriarDemoTargetOverride:
         skip_pos = source.index("skip_scope_check=briar_demo")
         assert override_pos < skip_pos, \
             "Demo target override must come before skip_scope_check is set"
+
+
+class TestShannonFalseZeroPrevention:
+    """Shannon adapter must not report succeeded+0 findings when no reports exist."""
+
+    def test_run_checks_for_report_files_before_succeeded(self):
+        """run() must check discover_reports() before returning succeeded."""
+        from integrations.shannon.adapter import ShannonAdapter
+        import inspect
+        source = inspect.getsource(ShannonAdapter.run)
+        assert "discover_reports" in source, \
+            "Shannon run() must call discover_reports() before returning succeeded"
+        assert "no report files" in source or "not discovered" in source, \
+            "Shannon run() must fail when no reports are discovered"
+
+    def test_discover_reports_returns_empty_for_missing_dir(self, tmp_path):
+        """discover_reports returns [] for a nonexistent directory."""
+        from integrations.shannon.adapter import ShannonAdapter
+        from core.config import PlatformConfig
+        adapter = ShannonAdapter(PlatformConfig())
+        result = adapter.discover_reports(tmp_path / "nonexistent")
+        assert result == []

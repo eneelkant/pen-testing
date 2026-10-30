@@ -164,7 +164,9 @@ def test_trivy_docker_cmd_uses_network_none(tmp_path: Path):
         if "--output" in cmd:
             output_idx = cmd.index("--output") + 1
             if output_idx < len(cmd):
-                Path(cmd[output_idx]).write_text(
+                out_path = Path(cmd[output_idx])
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(
                     json.dumps({"Results": []}), encoding="utf-8"
                 )
 

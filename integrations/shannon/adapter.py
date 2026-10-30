@@ -234,6 +234,24 @@ class ShannonAdapter(SecurityAdapter):
         )
         timeout = request.timeout_seconds or self.config.default_timeout_seconds
         result = self.runner.run(cmd, timeout=timeout, log_path=log_path, env=env_extra or None)
+        # Fail closed on missing scanner output (P0 false-zero prevention).
+        # A scanner exiting 0 with no report files is NOT a clean scan.
+        discovered = self.discover_reports(out_dir)
+        if result.ok and not discovered:
+            audit_event(
+                "shannon.no_output",
+                execution_id=execution_id,
+                reason="Shannon exited successfully but produced no report files",
+            )
+            return ExecutionResult(
+                tool=self.name,
+                execution_id=execution_id,
+                status="failed",
+                error="Shannon exited successfully but produced no report files.",
+                artifacts={"output_dir": str(out_dir), "log": str(log_path)},
+                logs=[result.stdout[-2000:], result.stderr[-2000:]],
+                metadata={"returncode": result.returncode, "network_mode": network_mode},
+            )
         findings = self._collect_findings(out_dir, execution_id, request.target)
         status = "succeeded" if result.ok else ("timed_out" if result.timed_out else "failed")
         return ExecutionResult(

@@ -103,7 +103,7 @@ jobs:
         run: |
           /tmp/clean-venv/bin/python -c "
           from core.scope.engine import ScopeEngine
-          from core.config import resolve_platform_config
+          from mcp_server.config import resolve_platform_config
           cfg = resolve_platform_config()
           from pathlib import Path
           if Path(cfg.scopes_file).exists():

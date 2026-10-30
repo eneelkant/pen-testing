@@ -1,0 +1,51 @@
+name: Upstream release monitor
+
+# Scheduled check for new stable releases from the 4 upstream image sources.
+# Creates a report artifact; never changes production pins or merges automatically.
+
+on:
+  schedule:
+    # Weekly on Mondays at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/upstream-release-monitor.yml"
+      - "scripts/check_upstream_releases.py"
+      - "scripts/upstream_release_state.json"
+
+permissions:
+  contents: read
+
+jobs:
+  check-releases:
+    name: Check upstream releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
+        with:
+          python-version: "3.12"
+
+      - name: Check for new upstream releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/check_upstream_releases.py --token "$GH_TOKEN" || true
+
+      - name: Upload release monitor report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: upstream-release-report
+          path: |
+            scripts/upstream_release_state.json
+          if-no-files-found: warn
+          retention-days: 30

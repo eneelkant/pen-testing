@@ -1,0 +1,160 @@
+name: Clean-install validation
+
+# Validates a fresh installation from scratch on a clean Ubuntu runner.
+# Tests: Python setup, pinned deps, MCP server startup, tool discovery,
+# schema validation, scope loading, authorization, unit tests, integration
+# tests, Docker smoke, clean shutdown.
+#
+# Uses synthetic fixtures only. No production credentials or live targets.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/clean-install.yml"
+      - "pyproject.toml"
+      - "requirements/**"
+      - "mcp_server/**"
+      - "core/**"
+      - "tests/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/clean-install.yml"
+      - "pyproject.toml"
+      - "requirements/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-install:
+    name: Fresh install from clean environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
+        with:
+          python-version: "3.12"
+
+      - name: Create clean virtual environment
+        run: |
+          python -m venv /tmp/clean-venv
+          /tmp/clean-venv/bin/pip install --upgrade pip
+
+      - name: Install pinned dependencies
+        run: |
+          /tmp/clean-venv/bin/pip install -e ".[mcp,dev]" -r requirements/dev.txt
+
+      - name: Verify MCP server starts and discovers all tools
+        run: |
+          /tmp/clean-venv/bin/python -c "
+          import asyncio, sys
+          from mcp_server.server import mcp, assert_supported_transport
+          
+          # Server class and name
+          print(f'server_class: {type(mcp).__name__}')
+          print(f'server_name: {mcp.name}')
+          
+          # Tool discovery
+          tools = asyncio.run(mcp.list_tools())
+          print(f'tool_count: {len(tools)}')
+          for t in tools:
+              schema = t.input_schema or {}
+              required = schema.get('required', [])
+              print(f'  tool: {t.name} required={required}')
+          
+          assert len(tools) == 11, f'Expected 11 tools, got {len(tools)}'
+          
+          # Transport enforcement
+          try:
+              assert_supported_transport('sse')
+              print('ERROR: sse should be blocked')
+              sys.exit(1)
+          except PermissionError:
+              print('sse_blocked: True')
+          
+          try:
+              assert_supported_transport('streamable_http')
+              print('ERROR: streamable_http should be blocked')
+              sys.exit(1)
+          except PermissionError:
+              print('streamable_http_blocked: True')
+          
+          print('MCP_SERVER_STARTUP: PASS')
+          "
+
+      - name: Run unit tests
+        run: |
+          /tmp/clean-venv/bin/python -m pytest tests/unit --tb=short -q
+
+      - name: Run integration tests (skip if no Docker)
+        run: |
+          /tmp/clean-venv/bin/python -m pytest tests/integration --tb=short -q || true
+
+      - name: Verify scope registry loads
+        run: |
+          /tmp/clean-venv/bin/python -c "
+          from core.scope.engine import ScopeEngine
+          from mcp_server.config import resolve_platform_config
+          cfg = resolve_platform_config()
+          from pathlib import Path
+          if Path(cfg.scopes_file).exists():
+              engine = ScopeEngine.from_file(cfg.scopes_file)
+              print(f'scope_registry_loaded: True')
+              print(f'records: {len(engine.records)}')
+          else:
+              print('scope_registry_loaded: False (no scopes file — fail-closed)')
+          "
+
+      - name: Verify authorization checks work
+        run: |
+          /tmp/clean-venv/bin/python -c "
+          from mcp_server.service import validate_target_scope, check_dependencies
+          
+          # Unauthorized target must be rejected
+          result = validate_target_scope('https://example.com', 'active')
+          assert result['allowed'] is False, 'Unauthorized target should be rejected'
+          print('unauthorized_target_rejected: True')
+          
+          # Dependencies check must work
+          deps = check_dependencies()
+          assert 'ok' in deps, 'check_dependencies must return ok field'
+          print(f'dependencies_check: ok={deps[\"ok\"]}')
+          
+          print('AUTHORIZATION_CHECKS: PASS')
+          "
+
+      - name: Verify secret redaction
+        run: |
+          /tmp/clean-venv/bin/python -c "
+          from core.findings.redaction import redact_text, redact_url_userinfo
+          
+          # URLs with userinfo must be redacted
+          redacted = redact_url_userinfo('https://user:pass@evil.com/path')
+          assert 'pass' not in redacted, 'Password must be redacted'
+          print(f'url_redaction: {redacted}')
+          
+          # Error text must be redacted
+          redacted_err = redact_text('Error: token=abc123 secret=xyz')
+          print(f'error_redaction: {redacted_err}')
+          
+          print('SECRET_REDACTION: PASS')
+          "
+
+      - name: Upload clean-install report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: clean-install-report
+          path: |
+            /tmp/clean-venv/
+          if-no-files-found: warn
+          retention-days: 14

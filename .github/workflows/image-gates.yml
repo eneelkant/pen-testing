@@ -3,33 +3,8 @@ name: Image security gates
 on:
   push:
     branches: [main, "cursor/**"]
-    paths:
-      - ".github/workflows/image-gates.yml"
-      - "Dockerfile"
-      - ".dockerignore"
-      - "docker-compose.yml"
-      - "docker/**"
-      - "core/supply_chain/**"
-      - "requirements/**"
-      - "pyproject.toml"
-      - "scripts/docker_runtime_verify.sh"
-      - "scripts/verify_image_candidate.py"
-      - "scripts/verify_self_built_candidates.sh"
-  # Workflow-definition-only edits are checked by normal CI/review; image gates
-  # still run on main pushes for this workflow and on PRs changing image inputs.
   pull_request:
     branches: [main]
-    paths:
-      - "Dockerfile"
-      - ".dockerignore"
-      - "docker-compose.yml"
-      - "docker/**"
-      - "core/supply_chain/**"
-      - "requirements/**"
-      - "pyproject.toml"
-      - "scripts/docker_runtime_verify.sh"
-      - "scripts/verify_image_candidate.py"
-      - "scripts/verify_self_built_candidates.sh"
 
 permissions:
   contents: read
@@ -41,8 +16,54 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  detect-changes:
+    name: Detect image-sensitive changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needs_image_gate: ${{ steps.detect.outputs.needs_image_gate }}
+      changed_sensitive_files_json: ${{ steps.detect.outputs.changed_sensitive_files_json }}
+    steps:
+      - name: Checkout full history for an exact base/head diff
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
+        with:
+          python-version: "3.12"
+
+      - name: Classify changed paths
+        id: detect
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            BASE_SHA="$PR_BASE_SHA"
+            HEAD_SHA="$PR_HEAD_SHA"
+          elif [[ "$EVENT_NAME" == "push" ]]; then
+            BASE_SHA="$PUSH_BEFORE_SHA"
+            HEAD_SHA="$PUSH_HEAD_SHA"
+          else
+            echo "::error::Unsupported event for image-gate change detection: $EVENT_NAME"
+            exit 1
+          fi
+          python scripts/detect_image_sensitive_changes.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
   image-scan:
-    name: Pinned image vulnerability scans
+    name: Pinned image vulnerability scans (scan)
+    needs: [detect-changes]
+    if: ${{ needs.detect-changes.outputs.needs_image_gate == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -202,8 +223,10 @@ jobs:
   # result above, which stays visible here and is the release gate (Option A).
   # A green regression gate does not mean the images are free of vulnerabilities.
 
-  image-regression-gate:
-    name: Pinned image regression gate
+  image-regression-gate-scan:
+    name: Pinned image regression gate (scan)
+    needs: [detect-changes]
+    if: ${{ needs.detect-changes.outputs.needs_image_gate == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -245,3 +268,42 @@ jobs:
             image-regression.json
             image-regression-raw/
           if-no-files-found: error
+
+  # Stable required context. This job always reports, even when the scan job is
+  # intentionally skipped for a non-image change. NOT_APPLICABLE is not scan
+  # evidence and never satisfies the separate release-time absolute gate.
+  image-regression-gate:
+    name: Pinned image regression gate
+    if: always()
+    needs: [detect-changes, image-regression-gate-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source for the shared status evaluator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Evaluate required regression-gate result
+        env:
+          DETECT_RESULT: ${{ needs.detect-changes.result }}
+          NEEDS_IMAGE_GATE: ${{ needs.detect-changes.outputs.needs_image_gate }}
+          SCAN_RESULT: ${{ needs.image-regression-gate-scan.result }}
+        run: python scripts/image_gate_status.py --gate regression
+
+  # Visible but non-required absolute scan context. The actual absolute policy
+  # remains release-enforced in release.yml and is not weakened here.
+  image-vulnerability-scans:
+    name: Pinned image vulnerability scans
+    if: always()
+    needs: [detect-changes, image-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source for the shared status evaluator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Evaluate absolute image-scan result
+        env:
+          DETECT_RESULT: ${{ needs.detect-changes.result }}
+          NEEDS_IMAGE_GATE: ${{ needs.detect-changes.outputs.needs_image_gate }}
+          SCAN_RESULT: ${{ needs.image-scan.result }}
+        run: python scripts/image_gate_status.py --gate absolute

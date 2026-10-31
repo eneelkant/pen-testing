@@ -60,7 +60,7 @@ jobs:
             --head "$HEAD_SHA" \
             --github-output "$GITHUB_OUTPUT"
 
-  image-scan-job:
+  image-scan:
     name: Pinned image vulnerability scans (scan)
     needs: [detect-changes]
     if: ${{ needs.detect-changes.outputs.needs_image_gate == 'true' }}
@@ -291,7 +291,7 @@ jobs:
   image-vulnerability-scans:
     name: Pinned image vulnerability scans
     if: always()
-    needs: [detect-changes, image-scan-job]
+    needs: [detect-changes, image-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -299,5 +299,5 @@ jobs:
         env:
           DETECT_RESULT: ${{ needs.detect-changes.result }}
           NEEDS_IMAGE_GATE: ${{ needs.detect-changes.outputs.needs_image_gate }}
-          SCAN_RESULT: ${{ needs.image-scan-job.result }}
+          SCAN_RESULT: ${{ needs.image-scan.result }}
         run: python scripts/image_gate_status.py --gate absolute

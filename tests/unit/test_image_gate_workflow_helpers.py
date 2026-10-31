@@ -47,7 +47,7 @@ def test_non_image_paths_do_not_trigger_gate(path: str) -> None:
 
 
 def test_normalizes_windows_separators_and_dot_prefix() -> None:
-    sensitive, matched = classify_paths([r".\\docker\\Dockerfile"])
+    sensitive, matched = classify_paths([r".\docker\Dockerfile"])
     assert sensitive is True
     assert matched == ["docker/Dockerfile"]
 

@@ -77,6 +77,7 @@ class SecurityAdapter(ABC):
             request.target,
             test_category=request.test_category,
             require_non_production=not self.config.allow_production_active,
+            for_live_execution=not request.dry_run,
         )
         if not request.dry_run:
             enforce_rate_limit(decision)

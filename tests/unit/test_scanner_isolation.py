@@ -1057,3 +1057,90 @@ def test_live_briar_blocks_ambiguous_unrelated_networks(tmp_path: Path, monkeypa
     assert result.status == "blocked"
     assert "ambiguous" in (result.error or "").lower()
     assert (result.metadata or {}).get("isolation") == "briar_network_internal"
+
+@pytest.mark.parametrize("adapter_cls", [ShannonAdapter, BriarAdapter])
+def test_live_execution_disabled_scope_record_blocks_adapter_before_healthcheck(
+    adapter_cls, tmp_path: Path, monkeypatch
+):
+    """Direct CLI/adapter execution must honor live_execution_allowed=False."""
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    url = "https://live-disabled.example.invalid"
+    record = AuthorizationRecord(
+        program_name="t",
+        program_url="https://example.invalid",
+        target_id="live-disabled",
+        asset_type="url",
+        scope_source="test",
+        policy_reference="live-disabled-fixture",
+        allowed_assets=[url],
+        allowed_test_categories=["active", "passive", "dast"],
+        environment="local",
+        live_execution_allowed=False,
+    )
+    adapter = adapter_cls(
+        PlatformConfig(reports_dir=tmp_path),
+        ScopeEngine([record]),
+    )
+    adapter.healthcheck = MagicMock(return_value={
+        "healthy": True,
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+    })
+
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            test_category="active",
+            dry_run=False,
+        )
+    )
+
+    assert result.status == "blocked"
+    assert "does not permit live execution" in (result.error or "").lower()
+    adapter.healthcheck.assert_not_called()
+
+
+@pytest.mark.parametrize("adapter_cls", [ShannonAdapter, BriarAdapter])
+def test_live_execution_disabled_scope_record_still_allows_dry_run(
+    adapter_cls, tmp_path: Path, monkeypatch
+):
+    """A non-live plan may be inspected without granting live execution."""
+    monkeypatch.setenv("PEN_BRIAR_EXEC", "compose")
+    url = "https://live-disabled.example.invalid"
+    record = AuthorizationRecord(
+        program_name="t",
+        program_url="https://example.invalid",
+        target_id="live-disabled",
+        asset_type="url",
+        scope_source="test",
+        policy_reference="live-disabled-fixture",
+        allowed_assets=[url],
+        allowed_test_categories=["active", "passive", "dast"],
+        environment="local",
+        live_execution_allowed=False,
+    )
+    adapter = adapter_cls(
+        PlatformConfig(reports_dir=tmp_path),
+        ScopeEngine([record]),
+    )
+    adapter.healthcheck = MagicMock(return_value={
+        "healthy": True,
+        "cli_reachable": True,
+        "docker_available": True,
+        "errors": [],
+    })
+
+    result = adapter.run(
+        AdapterRequest(
+            target=url,
+            repo_path=str(Path(__file__).resolve().parents[2]),
+            test_category="active",
+            dry_run=True,
+        )
+    )
+
+    assert result.status == "skipped"
+    adapter.healthcheck.assert_called_once()
+

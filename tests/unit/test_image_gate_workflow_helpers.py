@@ -124,3 +124,19 @@ def test_not_applicable_is_not_release_evidence() -> None:
 def test_detector_fails_closed_when_git_diff_cannot_be_resolved() -> None:
     with pytest.raises(subprocess.CalledProcessError):
         changed_paths("not-a-real-base", "not-a-real-head")
+
+def test_required_gate_workflow_runs_without_path_filters_and_aggregators_checkout_code() -> None:
+    workflow = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "image-gates.yml"
+    text = workflow.read_text(encoding="utf-8")
+    trigger = text.split("permissions:", 1)[0]
+    assert "pull_request:" in trigger
+    assert "paths:" not in trigger
+    regression = text.split("  image-regression-gate:\\n", 1)[1].split(
+        "  # Visible but non-required absolute scan context", 1
+    )[0]
+    absolute = text.split("  image-vulnerability-scans:\\n", 1)[1]
+    assert "actions/checkout@" in regression
+    assert "actions/checkout@" in absolute
+    assert "if: always()" in regression
+    assert "if: always()" in absolute
+\n

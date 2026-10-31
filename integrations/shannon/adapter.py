@@ -236,8 +236,12 @@ class ShannonAdapter(SecurityAdapter):
         result = self.runner.run(cmd, timeout=timeout, log_path=log_path, env=env_extra or None)
         # Fail closed on missing scanner output (P0 false-zero prevention).
         # A scanner exiting 0 with no report files is NOT a clean scan.
+        # Exception: --validate-model mode validates the Shannon model without
+        # producing scan reports. Its success is determined by the exit code,
+        # not by report file presence.
+        is_validate_only = bool(request.extra.get("validate_model"))
         discovered = self.discover_reports(out_dir)
-        if result.ok and not discovered:
+        if result.ok and not discovered and not is_validate_only:
             audit_event(
                 "shannon.no_output",
                 execution_id=execution_id,

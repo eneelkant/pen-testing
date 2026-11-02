@@ -39,7 +39,7 @@ checkov = [
   "checkov==3.3.29; python_version >= '3.10' and python_version < '3.13'",
 ]
 mobsfscan = [
-  "mobsfscan==1.0.1",
+  "mobsfscan==1.1.0",
 ]
 dev = [
   "pytest>=8.0,<10",

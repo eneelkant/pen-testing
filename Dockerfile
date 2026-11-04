@@ -4,7 +4,7 @@
 # in Trivy 0.76.0 scans on 2026-10-24 (DB UpdatedAt 01:18:19Z and 07:11:13Z).
 # Every Debian python:3.12 slim digest still carries unscored findings
 # (perl-base CVE-2026-82560 has no fix), so Bookworm cannot pass the gate.
-FROM python:3.12.15-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d
+FROM python:3.15.0-alpine3.24@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

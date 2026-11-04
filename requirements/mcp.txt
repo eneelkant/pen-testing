@@ -2,8 +2,8 @@
 -r base.txt
 mcp==2.3.0
 anyio==4.15.1
-pydantic==2.14.1
-pydantic-core==2.50.1
+pydantic==2.14.2
+pydantic-core==2.50.2
 starlette==1.7.0
 uvicorn==0.54.0
 sse-starlette==3.5.0

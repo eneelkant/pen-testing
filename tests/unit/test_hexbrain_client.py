@@ -105,7 +105,7 @@ def test_429_is_sanitized():
     def opener(*args, **kwargs):
         raise HTTPError("https://hexbrainai.com", 429, "rate", {}, io.BytesIO(b"key"))
 
-    with pytest.raises(HexBrainError, match="Rate limit"):
+    with pytest.raises(HexBrainError, match="rate limit"):
         HexBrainClient(config=cfg(), opener=opener).call("list_classes", {})
 
 
@@ -161,3 +161,13 @@ def test_non_object_response_fails_closed():
 
     with pytest.raises(HexBrainError, match="unexpected response shape"):
         HexBrainClient(config=cfg(), opener=opener).call("list_classes", {})
+
+
+
+def test_request_redirect_is_not_followed():
+    def opener(*args, **kwargs):
+        raise HTTPError("https://hexbrainai.com/api/v1/list_classes", 302, "redirect", {}, io.BytesIO())
+
+    client = HexBrainClient(config=cfg(), opener=opener)
+    with pytest.raises(HexBrainError, match="HTTP 302"):
+        client.call("list_classes", {})

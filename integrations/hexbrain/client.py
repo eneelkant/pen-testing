@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 _DEFAULT_BASE_URL = "https://hexbrainai.com/api/v1"
 _TOOL_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -34,6 +34,18 @@ _ALLOWED_TOOLS = frozenset({
     "get_cve",
     "get_attack_surface",
 })
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    """Never forward a bearer credential across an HTTP redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _open_without_redirects(request: Request, *, timeout: float):
+    """Use urllib while refusing redirects instead of forwarding credentials."""
+    return build_opener(_RejectRedirects()).open(request, timeout=timeout)
 
 
 class HexBrainError(RuntimeError):
@@ -56,6 +68,12 @@ def load_config(environ: dict[str, str] | None = None) -> HexBrainConfig:
         raise HexBrainError("HEXBRAIN_API_URL must be an absolute HTTPS URL")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise HexBrainError("HEXBRAIN_API_URL must not contain userinfo, query, or fragment")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HexBrainError("HEXBRAIN_API_URL has an invalid port") from exc
+    if port not in (None, 443):
+        raise HexBrainError("HEXBRAIN_API_URL must use the standard HTTPS port")
     if parsed.hostname.lower() not in {"hexbrainai.com", "www.hexbrainai.com"}:
         # Explicit host allow-list prevents an environment typo or hostile config
         # from forwarding the secret to an arbitrary server.
@@ -119,7 +137,7 @@ class HexBrainClient:
         self,
         *,
         config: HexBrainConfig | None = None,
-        opener: Any = urlopen,
+        opener: Any = _open_without_redirects,
         max_response_bytes: int = 1_000_000,
     ) -> None:
         self.config = config or load_config()
